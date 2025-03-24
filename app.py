@@ -92,32 +92,54 @@ openai_model = st.sidebar.selectbox("Modelo de embeddings OpenAI", ["text-embedd
 gpt_model = st.sidebar.selectbox("Modelo para nombrar clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
 sample_size = st.sidebar.slider("Tamaño de muestra para embeddings", min_value=100, max_value=2000, value=1000, help="Número de keywords a utilizar para embeddings (ahorra costes)")
 
-# Función para cargar NLTK y SpaCy
+# Función para cargar NLTK y SpaCy (MODIFICADA)
 @st.cache_resource
 def load_nlp_resources():
     with st.spinner("Cargando recursos de NLP..."):
         # Download NLTK resources if not already downloaded
         if not st.session_state.nltk_downloaded:
-            nltk.download('stopwords', quiet=True)
-            nltk.download('wordnet', quiet=True)
-            st.session_state.nltk_downloaded = True
+            try:
+                nltk.download('stopwords', quiet=True)
+                nltk.download('wordnet', quiet=True)
+                st.session_state.nltk_downloaded = True
+            except Exception as e:
+                st.warning(f"Error al descargar recursos NLTK: {str(e)}")
         
-        # Load SpaCy model if not already loaded
+        # Load SpaCy model
         if not st.session_state.nlp_loaded:
             try:
+                # Intenta cargar el modelo pre-instalado
                 nlp = spacy.load("en_core_web_sm")
                 st.session_state.nlp_loaded = True
             except OSError:
-                st.warning("Descargando modelo de SpaCy (esto puede tardar un momento)...")
-                os.system("python -m spacy download en_core_web_sm")
-                nlp = spacy.load("en_core_web_sm")
-                st.session_state.nlp_loaded = True
+                try:
+                    # Intenta descargar el modelo si no está instalado
+                    st.info("Descargando modelo de SpaCy (esto puede tardar un momento)...")
+                    import subprocess
+                    subprocess.call([
+                        "python", "-m", "spacy", "download", "en_core_web_sm"
+                    ])
+                    nlp = spacy.load("en_core_web_sm")
+                    st.session_state.nlp_loaded = True
+                except Exception as e:
+                    # Si falla, usa un modelo en blanco como fallback
+                    st.warning(f"No se pudo cargar el modelo SpaCy: {str(e)}")
+                    st.info("Usando modelo básico en su lugar.")
+                    nlp = spacy.blank("en")
+                    st.session_state.nlp_loaded = True
+            
             return nlp
     return None
 
 # Función para preprocesar keywords
 def preprocess_keywords(keywords, nlp):
-    stop_words = set(stopwords.words('french')).union(stopwords.words('english'))
+    try:
+        stop_words = set(stopwords.words('french')).union(stopwords.words('english'))
+    except:
+        # Fallback si no se pueden cargar stopwords
+        stop_words = set(['a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what',
+                         'le', 'la', 'les', 'un', 'une', 'des', 'et', 'ou', 'mais', 'si'])
+    
     processed_keywords = []
     
     progress_bar = st.progress(0)
@@ -128,13 +150,18 @@ def preprocess_keywords(keywords, nlp):
             processed_keywords.append("")
             continue
 
-        doc = nlp(keyword.lower())  # Process keyword with SpaCy
-        tokens = [token.text for token in doc if token.is_alpha and token.text.lower() not in stop_words]
+        try:
+            doc = nlp(keyword.lower())  # Process keyword with SpaCy
+            tokens = [token.text for token in doc if token.is_alpha and token.text.lower() not in stop_words]
 
-        # Preserve named entities
-        entities = [ent.text for ent in doc.ents]
+            # Preserve named entities
+            entities = [ent.text for ent in doc.ents]
 
-        processed_text = ' '.join(tokens) if tokens else keyword.lower()
+            processed_text = ' '.join(tokens) if tokens else keyword.lower()
+        except Exception as e:
+            # Fallback para procesamiento básico
+            processed_text = keyword.lower()
+        
         processed_keywords.append(processed_text)
         
         # Update progress bar every 100 items
@@ -144,7 +171,7 @@ def preprocess_keywords(keywords, nlp):
     progress_bar.progress(1.0)
     return processed_keywords
 
-# Función para generar embeddings con Sentence-BERT
+# Función para generar embeddings con Sentence-BERT (MODIFICADA)
 def generate_sbert_embeddings(texts):
     try:
         from sentence_transformers import SentenceTransformer
@@ -154,20 +181,64 @@ def generate_sbert_embeddings(texts):
         progress_text = st.empty()
         progress_bar = st.progress(0)
         
-        # Load a lightweight model that's good for keyword-style short text
-        model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+        try:
+            # Load a lightweight model that's good for keyword-style short text
+            model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
 
-        # Generate embeddings locally
-        progress_text.text("Generando embeddings con Sentence-BERT...")
-        embeddings = model.encode(texts, show_progress_bar=False)
-        
-        progress_bar.progress(1.0)
-        progress_text.text(f"✅ Generados {len(embeddings)} embeddings usando Sentence-BERT")
-        
-        return embeddings, True
-    except ImportError:
-        st.warning("Sentence-BERT no disponible, usando alternativa...")
+            # Generate embeddings locally
+            progress_text.text("Generando embeddings con Sentence-BERT...")
+            embeddings = model.encode(texts, show_progress_bar=False)
+            
+            progress_bar.progress(1.0)
+            progress_text.text(f"✅ Generados {len(embeddings)} embeddings usando Sentence-BERT")
+            
+            return embeddings, True
+        except Exception as e:
+            st.warning(f"Error al generar embeddings con Sentence-BERT: {str(e)}")
+            return None, False
+            
+    except ImportError as e:
+        st.warning(f"Sentence-BERT no disponible: {str(e)}")
+        st.info("Usando alternativa...")
         return None, False
+    except Exception as e:
+        st.warning(f"Error inesperado al cargar Sentence-BERT: {str(e)}")
+        return None, False
+
+# Función para generar embeddings con TF-IDF (fallback seguro)
+def generate_tfidf_embeddings(texts):
+    st.info("Usando TF-IDF para vectorización de texto...")
+    progress_bar = st.progress(0)
+    
+    try:
+        # Crear un vectorizador con parámetros seguros
+        vectorizer = TfidfVectorizer(
+            max_features=300,  # Limitar características para prevenir problemas de memoria
+            min_df=2,          # Ignorar términos que aparecen en menos de 2 documentos
+            max_df=0.95,       # Ignorar términos que aparecen en más del 95% de los documentos
+            stop_words='english'
+        )
+        
+        # Asegurar que no hay valores nulos
+        clean_texts = [t if isinstance(t, str) and t else " " for t in texts]
+        
+        # Generar matriz TF-IDF
+        progress_bar.progress(0.3)
+        tfidf_matrix = vectorizer.fit_transform(clean_texts)
+        progress_bar.progress(0.8)
+        
+        # Convertir a array denso
+        embeddings = tfidf_matrix.toarray()
+        progress_bar.progress(1.0)
+        
+        st.success(f"✅ Generados {embeddings.shape[1]} vectores TF-IDF")
+        return embeddings
+    except Exception as e:
+        st.error(f"Error generando embeddings TF-IDF: {str(e)}")
+        # Último recurso: generar vectores aleatorios
+        st.warning("Generando vectores aleatorios como último recurso")
+        random_embeddings = np.random.rand(len(texts), 100)
+        return random_embeddings
 
 # Función para generar embeddings con OpenAI
 def sample_and_embed_keywords(keywords, client, sample_size=1000, model="text-embedding-ada-002"):
@@ -179,76 +250,93 @@ def sample_and_embed_keywords(keywords, client, sample_size=1000, model="text-em
     
     progress_text.text("Preparando muestreo de keywords...")
     
-    if N <= sample_size:
-        # For small datasets, embed everything
-        sample_indices = list(range(N))
-        full_sample = keywords
-    else:
-        # For large datasets, use intelligent sampling:
-        # 1. Split keywords into chunks and take representatives from each
-        chunk_size = N // (sample_size // 2)
-        sample_indices = []
-
-        # Get keywords from each chunk
-        for i in range(0, N, chunk_size):
-            chunk = keywords[i:i+chunk_size]
-            # Take ~2 keywords from each chunk
-            sample_count = max(1, min(2, len(chunk) // 5))
-            chunk_indices = list(range(i, min(i+chunk_size, N)))
-            if chunk_indices:
-                selected = np.random.choice(chunk_indices, sample_count, replace=False)
-                sample_indices.extend(selected)
-
-        # 2. Add some completely random keywords to ensure diversity
-        remaining = sample_size - len(sample_indices)
-        if remaining > 0:
-            remaining_indices = list(set(range(N)) - set(sample_indices))
-            if remaining_indices:
-                random_indices = np.random.choice(remaining_indices,
-                                                min(remaining, len(remaining_indices)),
-                                                replace=False)
-                sample_indices.extend(random_indices)
-
-        full_sample = [keywords[i] for i in sample_indices]
-    
-    progress_text.text(f"Generando embeddings para {len(full_sample)} keywords con OpenAI...")
-    progress_bar.progress(0.2)
-    
-    # Generate embeddings for the sample
+    # Implementar manejo de errores robusto
     try:
-        # Filter out empty strings
-        valid_samples = [(i, k) for i, k in enumerate(full_sample) if k]
-        valid_indices = [i for i, _ in valid_samples]
-        valid_keywords = [k for _, k in valid_samples]
-        
-        # Only make API call if we have valid keywords
-        if valid_keywords:
-            response = client.embeddings.create(
-                model=model,
-                input=valid_keywords
-            )
-            
-            # Reindex the returned embeddings
-            sample_embeddings_dict = {}
-            for i, emb_data in enumerate(response.data):
-                original_idx = valid_indices[i]
-                sample_embeddings_dict[original_idx] = np.array(emb_data.embedding)
-            
-            # Convert to array format expected by rest of code
-            sample_embeddings = np.zeros((len(full_sample), len(next(iter(sample_embeddings_dict.values())))))
-            for idx, emb in sample_embeddings_dict.items():
-                sample_embeddings[idx] = emb
+        if N <= sample_size:
+            # For small datasets, embed everything
+            sample_indices = list(range(N))
+            full_sample = keywords
         else:
-            st.error("No valid keywords for embedding")
-            return None, sample_indices
-        
-        progress_bar.progress(1.0)
-        progress_text.text(f"✅ Generados embeddings para {len(sample_embeddings)} keywords de muestra")
+            # For large datasets, use intelligent sampling:
+            # 1. Split keywords into chunks and take representatives from each
+            chunk_size = N // (sample_size // 2)
+            sample_indices = []
 
-        return sample_embeddings, sample_indices
+            # Get keywords from each chunk
+            for i in range(0, N, chunk_size):
+                chunk = keywords[i:i+chunk_size]
+                # Take ~2 keywords from each chunk
+                sample_count = max(1, min(2, len(chunk) // 5))
+                chunk_indices = list(range(i, min(i+chunk_size, N)))
+                if chunk_indices:
+                    selected = np.random.choice(chunk_indices, sample_count, replace=False)
+                    sample_indices.extend(selected)
+
+            # 2. Add some completely random keywords to ensure diversity
+            remaining = sample_size - len(sample_indices)
+            if remaining > 0:
+                remaining_indices = list(set(range(N)) - set(sample_indices))
+                if remaining_indices:
+                    random_indices = np.random.choice(remaining_indices,
+                                                    min(remaining, len(remaining_indices)),
+                                                    replace=False)
+                    sample_indices.extend(random_indices)
+
+            full_sample = [keywords[i] for i in sample_indices]
+        
+        progress_text.text(f"Generando embeddings para {len(full_sample)} keywords con OpenAI...")
+        progress_bar.progress(0.2)
+        
+        # Generate embeddings for the sample
+        try:
+            # Filter out empty strings
+            valid_samples = [(i, k) for i, k in enumerate(full_sample) if k]
+            valid_indices = [i for i, _ in valid_samples]
+            valid_keywords = [k for _, k in valid_samples]
+            
+            # Only make API call if we have valid keywords
+            if valid_keywords:
+                # Implementar retry con backoff
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        response = client.embeddings.create(
+                            model=model,
+                            input=valid_keywords
+                        )
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            wait_time = 2 ** attempt  # Backoff exponencial
+                            st.warning(f"Error en intento {attempt+1}. Reintentando en {wait_time} segundos...")
+                            time.sleep(wait_time)
+                        else:
+                            raise e
+                
+                # Reindex the returned embeddings
+                sample_embeddings_dict = {}
+                for i, emb_data in enumerate(response.data):
+                    original_idx = valid_indices[i]
+                    sample_embeddings_dict[original_idx] = np.array(emb_data.embedding)
+                
+                # Convert to array format expected by rest of code
+                sample_embeddings = np.zeros((len(full_sample), len(next(iter(sample_embeddings_dict.values())))))
+                for idx, emb in sample_embeddings_dict.items():
+                    sample_embeddings[idx] = emb
+            else:
+                st.error("No valid keywords for embedding")
+                return None, sample_indices
+            
+            progress_bar.progress(1.0)
+            progress_text.text(f"✅ Generados embeddings para {len(sample_embeddings)} keywords de muestra")
+
+            return sample_embeddings, sample_indices
+        except Exception as e:
+            st.error(f"Error generando embeddings con OpenAI: {str(e)}")
+            return None, sample_indices
     except Exception as e:
-        st.error(f"Error generando embeddings: {str(e)}")
-        return None, sample_indices
+        st.error(f"Error inesperado en muestreo: {str(e)}")
+        return None, list(range(min(N, sample_size)))
 
 # Función para propagar embeddings a keywords similares
 def propagate_embeddings(df, sample_embeddings, sample_indices, keyword_column='keyword_processed'):
@@ -256,43 +344,49 @@ def propagate_embeddings(df, sample_embeddings, sample_indices, keyword_column='
     progress_bar = st.progress(0)
     progress_text.text("Propagando embeddings a todas las keywords...")
     
-    # Create TF-IDF matrix for all keywords
-    vectorizer = TfidfVectorizer()
-    tfidf_matrix = vectorizer.fit_transform(df[keyword_column].fillna(''))
-    progress_bar.progress(0.3)
-    
-    # For each non-sampled keyword, find the most similar sampled keyword and use its embedding
-    keyword_embeddings = np.zeros((len(df), sample_embeddings.shape[1]))
-    for i in sample_indices:
-        keyword_embeddings[i] = sample_embeddings[sample_indices.index(i)]
-    
-    progress_bar.progress(0.5)
-    
-    # Group non-sampled keywords into batches for faster processing
-    non_sampled = [i for i in range(len(df)) if i not in sample_indices]
-    batch_size = max(100, len(non_sampled) // 20)  # Split into ~20 batches
-    total_batches = len(non_sampled) // batch_size + (1 if len(non_sampled) % batch_size != 0 else 0)
-    
-    for batch_idx in range(total_batches):
-        start_idx = batch_idx * batch_size
-        end_idx = min((batch_idx + 1) * batch_size, len(non_sampled))
-        batch = non_sampled[start_idx:end_idx]
+    try:
+        # Create TF-IDF matrix for all keywords
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform(df[keyword_column].fillna(''))
+        progress_bar.progress(0.3)
         
-        for i in batch:
-            similarities = cosine_similarity(
-                tfidf_matrix[i:i+1],
-                tfidf_matrix[sample_indices]
-            )[0]
-            most_similar_idx = sample_indices[np.argmax(similarities)]
-            keyword_embeddings[i] = keyword_embeddings[most_similar_idx]
+        # For each non-sampled keyword, find the most similar sampled keyword and use its embedding
+        keyword_embeddings = np.zeros((len(df), sample_embeddings.shape[1]))
+        for i in sample_indices:
+            keyword_embeddings[i] = sample_embeddings[sample_indices.index(i)]
         
-        # Update progress
-        progress_bar.progress(0.5 + 0.5 * (batch_idx + 1) / total_batches)
-    
-    progress_bar.progress(1.0)
-    progress_text.text(f"✅ Propagados embeddings a todas las {len(keyword_embeddings)} keywords")
-    
-    return keyword_embeddings
+        progress_bar.progress(0.5)
+        
+        # Group non-sampled keywords into batches for faster processing
+        non_sampled = [i for i in range(len(df)) if i not in sample_indices]
+        batch_size = max(100, len(non_sampled) // 20)  # Split into ~20 batches
+        total_batches = len(non_sampled) // batch_size + (1 if len(non_sampled) % batch_size != 0 else 0)
+        
+        for batch_idx in range(total_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min((batch_idx + 1) * batch_size, len(non_sampled))
+            batch = non_sampled[start_idx:end_idx]
+            
+            for i in batch:
+                similarities = cosine_similarity(
+                    tfidf_matrix[i:i+1],
+                    tfidf_matrix[sample_indices]
+                )[0]
+                most_similar_idx = sample_indices[np.argmax(similarities)]
+                keyword_embeddings[i] = keyword_embeddings[most_similar_idx]
+            
+            # Update progress
+            progress_bar.progress(0.5 + 0.5 * (batch_idx + 1) / total_batches)
+        
+        progress_bar.progress(1.0)
+        progress_text.text(f"✅ Propagados embeddings a todas las {len(keyword_embeddings)} keywords")
+        
+        return keyword_embeddings
+    except Exception as e:
+        st.error(f"Error propagando embeddings: {str(e)}")
+        # Como fallback, retornar embeddings predeterminados
+        st.warning("Usando embeddings predeterminados como fallback")
+        return np.random.rand(len(df), sample_embeddings.shape[1])
 
 # Función para generar nombres de clusters
 def generate_improved_cluster_names(clusters_with_representatives, client, model="gpt-3.5-turbo"):
@@ -323,17 +417,18 @@ def generate_improved_cluster_names(clusters_with_representatives, client, model
                 cluster_order.append(cluster_id)
                 analysis_prompt += f"Cluster {cluster_id} representative keywords: {', '.join(keywords[:15])}\n\n"
 
-            analysis_response = client.chat.completions.create(
-                model=model,  # Use cheaper model for analysis
-                messages=[{"role": "user", "content": analysis_prompt}],
-                temperature=0.1,
-                max_tokens=300
-            )
+            try:
+                analysis_response = client.chat.completions.create(
+                    model=model,  # Use cheaper model for analysis
+                    messages=[{"role": "user", "content": analysis_prompt}],
+                    temperature=0.1,
+                    max_tokens=300
+                )
 
-            analysis_text = analysis_response.choices[0].message.content.strip()
+                analysis_text = analysis_response.choices[0].message.content.strip()
 
-            # Step 2: Generate names and descriptions based on analysis
-            naming_prompt = f"""Based on the following analysis of keyword clusters, provide a specific name and description for each cluster.
+                # Step 2: Generate names and descriptions based on analysis
+                naming_prompt = f"""Based on the following analysis of keyword clusters, provide a specific name and description for each cluster.
 
 Analysis:
 {analysis_text}
@@ -345,61 +440,66 @@ For each cluster, provide:
 Format your response as a JSON array, with each element containing cluster_id, cluster_name, and description for clusters {', '.join(map(str, cluster_order))}.
 """
 
-            naming_response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": naming_prompt}],
-                temperature=0.2,
-                max_tokens=400,
-                response_format={"type": "json_object"}
-            )
+                naming_response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": naming_prompt}],
+                    temperature=0.2,
+                    max_tokens=400,
+                    response_format={"type": "json_object"}
+                )
 
-            naming_text = naming_response.choices[0].message.content.strip()
+                naming_text = naming_response.choices[0].message.content.strip()
 
-            try:
-                data = json.loads(naming_text)
+                try:
+                    data = json.loads(naming_text)
 
-                # Handle different JSON structures that might be returned
-                clusters_data = None
-                if "clusters" in data:
-                    clusters_data = data["clusters"]
-                elif isinstance(data, list):
-                    clusters_data = data
-                else:
-                    # Try to find any list in the response
-                    for key, value in data.items():
-                        if isinstance(value, list) and len(value) > 0:
-                            clusters_data = value
-                            break
+                    # Handle different JSON structures that might be returned
+                    clusters_data = None
+                    if "clusters" in data:
+                        clusters_data = data["clusters"]
+                    elif isinstance(data, list):
+                        clusters_data = data
+                    else:
+                        # Try to find any list in the response
+                        for key, value in data.items():
+                            if isinstance(value, list) and len(value) > 0:
+                                clusters_data = value
+                                break
 
-                if not clusters_data:
-                    raise ValueError("Could not find clusters data in JSON response")
+                    if not clusters_data:
+                        raise ValueError("Could not find clusters data in JSON response")
 
-                # Match clusters by position if IDs don't match
-                if len(clusters_data) == len(cluster_order):
-                    for i, cluster_info in enumerate(clusters_data):
-                        actual_id = cluster_order[i]
-                        results[actual_id] = (
-                            cluster_info.get("cluster_name", f"Cluster {actual_id}"),
-                            cluster_info.get("description", "No description provided.")
-                        )
-                else:
-                    # Try matching by ID if available
-                    for cluster_info in clusters_data:
-                        if "cluster_id" in cluster_info:
-                            # Try to match cluster IDs flexibly
-                            cluster_id_str = str(cluster_info["cluster_id"]).strip()
-                            for actual_id in cluster_order:
-                                if str(actual_id) == cluster_id_str:
-                                    results[actual_id] = (
-                                        cluster_info.get("cluster_name", f"Cluster {actual_id}"),
-                                        cluster_info.get("description", "No description provided.")
-                                    )
+                    # Match clusters by position if IDs don't match
+                    if len(clusters_data) == len(cluster_order):
+                        for i, cluster_info in enumerate(clusters_data):
+                            actual_id = cluster_order[i]
+                            results[actual_id] = (
+                                cluster_info.get("cluster_name", f"Cluster {actual_id}"),
+                                cluster_info.get("description", "No description provided.")
+                            )
+                    else:
+                        # Try matching by ID if available
+                        for cluster_info in clusters_data:
+                            if "cluster_id" in cluster_info:
+                                # Try to match cluster IDs flexibly
+                                cluster_id_str = str(cluster_info["cluster_id"]).strip()
+                                for actual_id in cluster_order:
+                                    if str(actual_id) == cluster_id_str:
+                                        results[actual_id] = (
+                                            cluster_info.get("cluster_name", f"Cluster {actual_id}"),
+                                            cluster_info.get("description", "No description provided.")
+                                        )
 
-            except json.JSONDecodeError as e:
-                st.warning(f"Error analizando respuesta JSON para batch {batch_idx+1}/{total_batches}")
-                # Handle the error gracefully - assign default names
-                for i, cluster_id in enumerate(cluster_order):
-                    results[cluster_id] = (f"Cluster {cluster_id}", "Error parsing JSON response")
+                except json.JSONDecodeError as e:
+                    st.warning(f"Error analizando respuesta JSON para batch {batch_idx+1}/{total_batches}")
+                    # Handle the error gracefully - assign default names
+                    for i, cluster_id in enumerate(cluster_order):
+                        results[cluster_id] = (f"Cluster {cluster_id}", "Error parsing JSON response")
+            except Exception as e:
+                st.warning(f"Error en la API de OpenAI para batch {batch_idx+1}/{total_batches}: {str(e)}")
+                # Assign default names
+                for cluster_id in cluster_order:
+                    results[cluster_id] = (f"Grupo {cluster_id}", f"Grupo de keywords similares {cluster_id}")
 
             # Fill in any missing clusters from this batch
             for cluster_id, _ in batch_clusters:
@@ -427,16 +527,26 @@ def calculate_cluster_coherence(cluster_embeddings):
     if len(cluster_embeddings) <= 1:
         return 1.0  # Perfect coherence for single element
 
-    # Calculate centroid
-    centroid = np.mean(cluster_embeddings, axis=0)
+    try:
+        # Calculate centroid
+        centroid = np.mean(cluster_embeddings, axis=0)
 
-    # Calculate average cosine similarity to centroid
-    similarities = []
-    for emb in cluster_embeddings:
-        similarity = np.dot(emb, centroid) / (np.linalg.norm(emb) * np.linalg.norm(centroid))
-        similarities.append(similarity)
+        # Calculate average cosine similarity to centroid
+        similarities = []
+        for emb in cluster_embeddings:
+            # Evitar divisiones por cero
+            norm_emb = np.linalg.norm(emb)
+            norm_centroid = np.linalg.norm(centroid)
+            if norm_emb > 0 and norm_centroid > 0:
+                similarity = np.dot(emb, centroid) / (norm_emb * norm_centroid)
+                similarities.append(similarity)
+            else:
+                similarities.append(0.0)
 
-    return np.mean(similarities)
+        return np.mean(similarities) if similarities else 0.0
+    except Exception as e:
+        st.warning(f"Error calculando coherencia: {str(e)}")
+        return 0.5  # Valor predeterminado en caso de error
 
 # Función principal para ejecutar el clustering
 def run_clustering():
@@ -453,19 +563,36 @@ def run_clustering():
     # Configurar cliente OpenAI si se proporciona la clave API
     client = None
     if openai_api_key:
-        client = OpenAI(api_key=openai_api_key)
+        try:
+            client = OpenAI(api_key=openai_api_key)
+        except Exception as e:
+            st.warning(f"Error configurando cliente OpenAI: {str(e)}")
+            st.info("Continuando sin funcionalidades de OpenAI")
     
     # Cargar recursos NLP
     nlp = load_nlp_resources()
     if nlp is None:
-        st.error("Error cargando recursos de NLP. Por favor, inténtalo de nuevo.")
-        return
+        st.error("Error cargando recursos de NLP. Usando procesamiento básico.")
+        nlp = spacy.blank("en")  # Fallback a modelo en blanco
     
     # Cargar y procesar el CSV
     try:
         # Leer CSV
-        df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
-        st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV")
+        try:
+            df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
+            st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV")
+        except Exception as e:
+            st.error(f"Error leyendo CSV: {str(e)}")
+            st.info("Intentando formato alternativo...")
+            # Intentar otros formatos/separadores
+            try:
+                content = uploaded_file.getvalue().decode('utf-8')
+                df = pd.read_csv(StringIO(content), sep=None, engine='python', header=None)
+                df.columns = ["keyword"]
+                st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV (formato alternativo)")
+            except Exception as e2:
+                st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
+                return
         
         # Preprocesar keywords
         st.subheader("Preprocesamiento de Keywords")
@@ -486,10 +613,8 @@ def run_clustering():
             )
             
             if sample_embeddings is None:
-                st.warning("Usando TF-IDF como alternativa")
-                vectorizer = TfidfVectorizer(max_features=300)
-                tfidf_matrix = vectorizer.fit_transform(df['keyword_processed'].fillna(''))
-                keyword_embeddings = tfidf_matrix.toarray()
+                st.warning("Usando TF-IDF como alternativa a OpenAI")
+                keyword_embeddings = generate_tfidf_embeddings(df['keyword_processed'].fillna(''))
             else:
                 # Propagar embeddings a keywords similares
                 keyword_embeddings = propagate_embeddings(df, sample_embeddings, sample_indices)
@@ -502,51 +627,75 @@ def run_clustering():
             else:
                 # Fallback a TF-IDF
                 st.warning("Usando TF-IDF como alternativa para embeddings")
-                vectorizer = TfidfVectorizer(max_features=300)
-                tfidf_matrix = vectorizer.fit_transform(df['keyword_processed'].fillna(''))
-                keyword_embeddings = tfidf_matrix.toarray()
+                keyword_embeddings = generate_tfidf_embeddings(df['keyword_processed'].fillna(''))
         
         # Aplicar PCA
         st.subheader("Reducción de Dimensionalidad (PCA)")
         
-        pca_progress = st.progress(0)
-        pca_text = st.empty()
-        pca_text.text("Analizando varianza explicada...")
-        
-        # Determine optimal number of components experimentally
-        pca = PCA()
-        pca.fit(keyword_embeddings)
-        cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-        pca_progress.progress(0.3)
-        
-        # Find the number of components that explain the desired variance
-        target_variance = pca_variance / 100.0
-        n_components = np.argmax(cumulative_variance >= target_variance) + 1
-        pca_text.text(f"Componentes para {pca_variance}% de varianza: {n_components}")
-        pca_progress.progress(0.6)
-        
-        # Use that number (with a reasonable cap)
-        max_components = min(n_components, max_pca_components)
-        pca = PCA(n_components=max_components)
-        keyword_embeddings = pca.fit_transform(keyword_embeddings)
-        
-        pca_progress.progress(1.0)
-        pca_text.text(f"✅ PCA aplicado: {max_components} dimensiones ({pca_variance}% de varianza explicada)")
+        try:
+            pca_progress = st.progress(0)
+            pca_text = st.empty()
+            pca_text.text("Analizando varianza explicada...")
+            
+            # Determine optimal number of components experimentally
+            pca = PCA()
+            pca.fit(keyword_embeddings)
+            cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+            pca_progress.progress(0.3)
+            
+            # Find the number of components that explain the desired variance
+            target_variance = pca_variance / 100.0
+            n_components = np.argmax(cumulative_variance >= target_variance) + 1
+            # Si no hay suficientes componentes para la varianza deseada, usar el máximo
+            if n_components == 1 and len(cumulative_variance) > 1:
+                n_components = min(max_pca_components, len(cumulative_variance))
+                
+            pca_text.text(f"Componentes para {pca_variance}% de varianza: {n_components}")
+            pca_progress.progress(0.6)
+            
+            # Use that number (with a reasonable cap)
+            max_components = min(n_components, max_pca_components)
+            pca = PCA(n_components=max_components)
+            keyword_embeddings = pca.fit_transform(keyword_embeddings)
+            
+            pca_progress.progress(1.0)
+            pca_text.text(f"✅ PCA aplicado: {max_components} dimensiones ({pca_variance}% de varianza explicada)")
+        except Exception as e:
+            st.error(f"Error aplicando PCA: {str(e)}")
+            st.info("Continuando sin reducción de dimensionalidad")
+            # En caso de error, mantener los embeddings originales
+            pass
         
         # Aplicar clustering jerárquico
         st.subheader("Clustering Jerárquico")
         
-        cluster_progress = st.progress(0)
-        cluster_text = st.empty()
-        cluster_text.text("Aplicando clustering jerárquico...")
-        
-        Z = linkage(keyword_embeddings, method="ward")
-        cluster_progress.progress(0.5)
-        
-        df["cluster_id"] = fcluster(Z, t=num_clusters, criterion="maxclust")
-        
-        cluster_progress.progress(1.0)
-        cluster_text.text(f"✅ Keywords agrupadas en {num_clusters} clusters")
+        try:
+            cluster_progress = st.progress(0)
+            cluster_text = st.empty()
+            cluster_text.text("Aplicando clustering jerárquico...")
+            
+            Z = linkage(keyword_embeddings, method="ward")
+            cluster_progress.progress(0.5)
+            
+            df["cluster_id"] = fcluster(Z, t=num_clusters, criterion="maxclust")
+            
+            cluster_progress.progress(1.0)
+            cluster_text.text(f"✅ Keywords agrupadas en {num_clusters} clusters")
+        except Exception as e:
+            st.error(f"Error en clustering jerárquico: {str(e)}")
+            st.info("Intentando clustering alternativo...")
+            
+            # Fallback: Asignar clusters de manera más básica
+            try:
+                from sklearn.cluster import KMeans
+                kmeans = KMeans(n_clusters=num_clusters, random_state=42)
+                df["cluster_id"] = kmeans.fit_predict(keyword_embeddings) + 1  # +1 para empezar desde 1
+                st.success("✅ Clustering completado usando K-Means como alternativa")
+            except Exception as e2:
+                st.error(f"Error en clustering alternativo: {str(e2)}")
+                # Último recurso: asignar clusters aleatorios
+                df["cluster_id"] = np.random.randint(1, num_clusters + 1, size=len(df))
+                st.warning("⚠️ Se han asignado clusters aleatorios como último recurso")
         
         # Identificar keywords representativas para cada cluster
         st.subheader("Análisis de Clusters")
@@ -556,41 +705,53 @@ def run_clustering():
         rep_text.text("Identificando keywords representativas...")
         
         clusters_with_representatives = {}
-        for i, cluster_num in enumerate(df['cluster_id'].unique()):
-            cluster_size = len(df[df['cluster_id'] == cluster_num])
-            n_representatives = min(15, cluster_size)
+        try:
+            for i, cluster_num in enumerate(df['cluster_id'].unique()):
+                cluster_size = len(df[df['cluster_id'] == cluster_num])
+                n_representatives = min(15, cluster_size)
+                
+                # Get indices of keywords in this cluster
+                indices = df[df['cluster_id'] == cluster_num].index.tolist()
+                
+                # Calculate centroid of the cluster
+                cluster_embeddings = np.array([keyword_embeddings[i] for i in indices])
+                centroid = np.mean(cluster_embeddings, axis=0)
+                
+                # Calculate distance to centroid for each keyword
+                distances = [np.linalg.norm(keyword_embeddings[i] - centroid) for i in indices]
+                
+                # Get indices of keywords closest to centroid
+                sorted_indices = np.argsort(distances)[:n_representatives]
+                representative_indices = [indices[i] for i in sorted_indices]
+                representative_keywords = df.iloc[representative_indices]['keyword'].tolist()
+                
+                clusters_with_representatives[cluster_num] = representative_keywords
+                
+                # Update progress
+                rep_progress.progress((i+1) / len(df['cluster_id'].unique()))
             
-            # Get indices of keywords in this cluster
-            indices = df[df['cluster_id'] == cluster_num].index.tolist()
-            
-            # Calculate centroid of the cluster
-            cluster_embeddings = np.array([keyword_embeddings[i] for i in indices])
-            centroid = np.mean(cluster_embeddings, axis=0)
-            
-            # Calculate distance to centroid for each keyword
-            distances = [np.linalg.norm(keyword_embeddings[i] - centroid) for i in indices]
-            
-            # Get indices of keywords closest to centroid
-            sorted_indices = np.argsort(distances)[:n_representatives]
-            representative_indices = [indices[i] for i in sorted_indices]
-            representative_keywords = df.iloc[representative_indices]['keyword'].tolist()
-            
-            clusters_with_representatives[cluster_num] = representative_keywords
-            
-            # Update progress
-            rep_progress.progress((i+1) / len(df['cluster_id'].unique()))
-        
-        rep_progress.progress(1.0)
-        rep_text.text(f"✅ Identificadas keywords representativas para {len(clusters_with_representatives)} clusters")
+            rep_progress.progress(1.0)
+            rep_text.text(f"✅ Identificadas keywords representativas para {len(clusters_with_representatives)} clusters")
+        except Exception as e:
+            st.error(f"Error identificando keywords representativas: {str(e)}")
+            # Fallback: tomar las primeras N keywords de cada cluster
+            for cluster_num in df['cluster_id'].unique():
+                cluster_keywords = df[df['cluster_id'] == cluster_num]['keyword'].tolist()
+                clusters_with_representatives[cluster_num] = cluster_keywords[:min(15, len(cluster_keywords))]
+            st.warning("Se han seleccionado keywords representativas básicas como alternativa")
         
         # Generar nombres para los clusters si está disponible OpenAI
         if client:
             st.subheader("Generación de Nombres para Clusters")
-            cluster_names = generate_improved_cluster_names(
-                clusters_with_representatives, 
-                client,
-                model=gpt_model
-            )
+            try:
+                cluster_names = generate_improved_cluster_names(
+                    clusters_with_representatives, 
+                    client,
+                    model=gpt_model
+                )
+            except Exception as e:
+                st.error(f"Error generando nombres de clusters: {str(e)}")
+                cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
         else:
             st.warning("No se pueden generar nombres de clusters sin API Key de OpenAI")
             cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
@@ -619,17 +780,24 @@ def run_clustering():
         
         df['cluster_coherence'] = 0.0
         
-        for i, cluster_num in enumerate(df['cluster_id'].unique()):
-            cluster_indices = df[df['cluster_id'] == cluster_num].index.tolist()
-            cluster_embeddings = np.array([keyword_embeddings[i] for i in cluster_indices])
-            coherence = calculate_cluster_coherence(cluster_embeddings)
-            df.loc[df['cluster_id'] == cluster_num, 'cluster_coherence'] = coherence
+        try:
+            for i, cluster_num in enumerate(df['cluster_id'].unique()):
+                cluster_indices = df[df['cluster_id'] == cluster_num].index.tolist()
+                cluster_embeddings = np.array([keyword_embeddings[i] for i in cluster_indices])
+                coherence = calculate_cluster_coherence(cluster_embeddings)
+                df.loc[df['cluster_id'] == cluster_num, 'cluster_coherence'] = coherence
+                
+                # Update progress
+                coh_progress.progress((i+1) / len(df['cluster_id'].unique()))
             
-            # Update progress
-            coh_progress.progress((i+1) / len(df['cluster_id'].unique()))
-        
-        coh_progress.progress(1.0)
-        coh_text.text("✅ Coherencia semántica calculada para todos los clusters")
+            coh_progress.progress(1.0)
+            coh_text.text("✅ Coherencia semántica calculada para todos los clusters")
+        except Exception as e:
+            st.error(f"Error calculando coherencia semántica: {str(e)}")
+            # Asignar un valor predeterminado de coherencia
+            for cluster_num in df['cluster_id'].unique():
+                df.loc[df['cluster_id'] == cluster_num, 'cluster_coherence'] = 0.5
+            st.warning("Se ha asignado un valor de coherencia predeterminado")
         
         # Guardar los resultados en la sesión
         st.session_state.df_results = df
