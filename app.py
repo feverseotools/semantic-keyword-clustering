@@ -604,7 +604,7 @@ elif not openai_api_key or openai_api_key.strip() == "":
         
     except Exception as e:
         st.error(f"Error durante el proceso: {str(e)}")
-        return None
+        st.stop()  # Detiene la ejecución, alternativa a return
 
 # Botón para ejecutar el clustering
 if uploaded_file is not None and not st.session_state.process_complete:
