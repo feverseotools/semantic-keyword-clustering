@@ -1225,15 +1225,139 @@ else:
 
 # 3. Parámetros de clustering
 st.sidebar.markdown("<div class='sub-header'>Parámetros</div>", unsafe_allow_html=True)
-num_clusters = st.sidebar.slider("Número de clusters", min_value=2, max_value=50, value=10, help="Número de grupos en los que dividir las keywords")
-pca_variance = st.sidebar.slider("Varianza explicada PCA (%)", min_value=50, max_value=99, value=95, help="Porcentaje de varianza a mantener en la reducción de dimensionalidad")
-max_pca_components = st.sidebar.slider("Máximo de componentes PCA", min_value=10, max_value=300, value=100, help="Número máximo de componentes PCA a utilizar")
+
+# Panel de explicación de parámetros - Colocado antes de los sliders
+with st.sidebar.expander("ℹ️ Guía de Parámetros", expanded=False):
+    st.markdown("""
+    ### Guía de Parámetros de Clustering
+    
+    Aquí encontrarás explicaciones sobre cada parámetro y cómo ajustarlo para obtener mejores resultados:
+    
+    #### Número de clusters
+    **¿Qué es?** El número de grupos en los que se dividirán tus keywords.
+    
+    **Cómo usarlo:** 
+    - **↑ Aumentar** si necesitas una división más detallada y específica por temas.
+    - **↓ Disminuir** si prefieres grupos más generales y amplios.
+    
+    **Resultado:**
+    - **Valores altos** (15-30): Muchos grupos pequeños y muy específicos.
+    - **Valores bajos** (5-10): Pocos grupos pero más amplios temáticamente.
+    - **Ideal:** Generalmente entre 8-15 para 1000 keywords. Aumenta proporcionalmente con la cantidad de keywords.
+    
+    ---
+    
+    #### Varianza explicada PCA (%)
+    **¿Qué es?** Determina cuánta información original se conserva al simplificar los datos. Piensa en esto como el "nivel de detalle" que se mantiene.
+    
+    **Cómo usarlo:**
+    - **↑ Aumentar** para mayor precisión y preservar más matices semánticos.
+    - **↓ Disminuir** para acelerar el procesamiento con conjuntos grandes.
+    
+    **Resultado:**
+    - **Valores altos** (95-99%): Mayor precisión semántica pero más lento.
+    - **Valores bajos** (80-90%): Procesamiento más rápido pero puede perderse algunos matices.
+    - **Ideal:** 90-95% ofrece un buen equilibrio entre precisión y velocidad.
+    
+    ---
+    
+    #### Máximo de componentes PCA
+    **¿Qué es?** Limita la complejidad máxima del modelo de análisis. Similar a establecer un límite para evitar un exceso de complejidad.
+    
+    **Cómo usarlo:**
+    - **↑ Aumentar** para datasets grandes o con alta diversidad temática.
+    - **↓ Disminuir** para datasets más pequeños o centrados en un solo tema.
+    
+    **Resultado:**
+    - **Valores altos** (100-200): Captura más relaciones complejas entre palabras.
+    - **Valores bajos** (30-75): Más eficiente pero puede simplificar demasiado.
+    - **Ideal:** Entre 75-100 para la mayoría de casos.
+    
+    ---
+    
+    #### Frecuencia mínima de términos
+    **¿Qué es?** Ignora palabras que aparecen en muy pocas keywords. Ayuda a filtrar palabras raras o errores tipográficos.
+    
+    **Cómo usarlo:**
+    - **↑ Aumentar** para eliminar términos poco comunes y posible ruido.
+    - **↓ Disminuir** para incluir términos poco frecuentes que podrían ser importantes.
+    
+    **Resultado:**
+    - **Valores altos** (3-5): Elimina más términos raros, clustering más "limpio".
+    - **Valores bajos** (1-2): Conserva términos poco comunes, puede mantener más ruido.
+    - **Ideal:** 1-2 para datasets pequeños, 2-3 para datasets grandes (+5000 keywords).
+    
+    ---
+    
+    #### Frecuencia máxima de términos (%)
+    **¿Qué es?** Ignora palabras que aparecen en un alto porcentaje de keywords. Similar a eliminar "palabras comodín" que están en todas partes.
+    
+    **Cómo usarlo:**
+    - **↑ Aumentar** para incluir más términos comunes.
+    - **↓ Disminuir** para filtrar palabras demasiado genéricas.
+    
+    **Resultado:**
+    - **Valores altos** (90-100%): Incluye casi todos los términos, incluso los muy comunes.
+    - **Valores bajos** (70-85%): Enfoque en palabras más distintivas, ignorando las genéricas.
+    - **Ideal:** 85-95% funciona bien para la mayoría de datasets.
+    """)
+    
+    st.info("""
+    **Consejo:** Si no estás seguro, mantén los valores predeterminados. La aplicación está optimizada para funcionar bien con estos parámetros en la mayoría de los casos.
+    
+    Para datasets grandes (+5000 keywords), considera aumentar ligeramente el número de clusters y reducir la varianza explicada PCA para mantener tiempos de procesamiento razonables.
+    """)
+
+# Sliders para los parámetros con descripciones mejoradas
+num_clusters = st.sidebar.slider(
+    "Número de clusters", 
+    min_value=2, 
+    max_value=50, 
+    value=10, 
+    help="Número de grupos en los que se dividirán tus keywords. Más clusters = grupos más específicos."
+)
+
+pca_variance = st.sidebar.slider(
+    "Varianza explicada PCA (%)", 
+    min_value=50, 
+    max_value=99, 
+    value=95, 
+    help="Porcentaje de información que se conserva. Mayor valor = mayor precisión pero más lento."
+)
+
+max_pca_components = st.sidebar.slider(
+    "Máximo de componentes PCA", 
+    min_value=10, 
+    max_value=300, 
+    value=100, 
+    help="Límite de complejidad del modelo. Mayor valor = captura más relaciones complejas."
+)
 
 # 4. Opciones avanzadas
 st.sidebar.markdown("<div class='sub-header'>Opciones avanzadas</div>", unsafe_allow_html=True)
-min_df = st.sidebar.slider("Frecuencia mínima de términos", min_value=1, max_value=10, value=1, help="Ignora términos que aparecen en menos documentos que este")
-max_df = st.sidebar.slider("Frecuencia máxima de términos (%)", min_value=50, max_value=100, value=95, help="Ignora términos que aparecen en más del N% de documentos")
-gpt_model = st.sidebar.selectbox("Modelo para nombrar clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
+
+min_df = st.sidebar.slider(
+    "Frecuencia mínima de términos", 
+    min_value=1, 
+    max_value=10, 
+    value=1, 
+    help="Ignora términos poco frecuentes. Mayor valor = elimina más palabras raras."
+)
+
+max_df = st.sidebar.slider(
+    "Frecuencia máxima de términos (%)", 
+    min_value=50, 
+    max_value=100, 
+    value=95, 
+    help="Ignora términos demasiado comunes. Menor valor = elimina más palabras genéricas."
+)
+
+gpt_model = st.sidebar.selectbox(
+    "Modelo para nombrar clusters", 
+    ["gpt-3.5-turbo", "gpt-4"], 
+    index=0,
+    help="GPT-4 proporciona nombres más precisos pero es más costoso y lento."
+)
 
 # Botón para ejecutar el clustering
 if uploaded_file is not None and not st.session_state.process_complete:
