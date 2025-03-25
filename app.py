@@ -108,7 +108,6 @@ st.sidebar.markdown("<div class='sub-header'>Opciones avanzadas</div>", unsafe_a
 min_df = st.sidebar.slider("Frecuencia mínima de términos", min_value=1, max_value=10, value=1, help="Ignora términos que aparecen en menos documentos que este")
 max_df = st.sidebar.slider("Frecuencia máxima de términos (%)", min_value=50, max_value=100, value=95, help="Ignora términos que aparecen en más del N% de documentos")
 gpt_model = st.sidebar.selectbox("Modelo para nombrar clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
-
 # Función simplificada para preprocesar texto
 def preprocess_text(text, use_lemmatization=True):
     if not isinstance(text, str) or not text.strip():
@@ -308,8 +307,7 @@ Format your response as a JSON array, with each element containing cluster_id, c
     progress_text.text(f"✅ Nombres y descripciones generados para {len(results)} clusters")
     
     return results
-
-# Función para calcular coherencia de clusters
+    # Función para calcular coherencia de clusters
 def calculate_cluster_coherence(cluster_embeddings):
     """Calculate semantic coherence of a cluster based on embedding similarity"""
     if len(cluster_embeddings) <= 1:
@@ -354,7 +352,7 @@ def run_clustering():
             else:
                 # Creamos el cliente con la API key proporcionada
                 os.environ["OPENAI_API_KEY"] = openai_api_key  # También la establecemos como variable de entorno
-                client = OpenAI(api_key=openai_api_key)
+                client = OpenAI(api_key=openai_api_key)  # Eliminado el parámetro 'proxies'
                 
                 # Verificamos la conexión con una solicitud simple
                 try:
@@ -537,8 +535,7 @@ def run_clustering():
         else:
             st.warning("No se pueden generar nombres de clusters sin API Key de OpenAI")
             cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
-        
-        # Aplicar resultados al DataFrame
+            # Aplicar resultados al DataFrame
         df['cluster_name'] = ''
         df['cluster_description'] = ''
         df['representative'] = False
@@ -609,7 +606,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
     with st.expander("Visualizaciones"):
         # Gráfico de barras con tamaño de clusters
         st.subheader("Distribución de Clusters")
-        
         cluster_sizes = df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
         cluster_sizes['label'] = cluster_sizes.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
         
@@ -696,7 +692,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
         summary_df.rename(columns={'cluster_coherence': 'Coherencia'}, inplace=True)
-        
         # Añadir keywords representativas
         def get_rep_keywords(cluster_id):
             reps = df[(df['cluster_id'] == cluster_id) & (df['representative'] == True)]['keyword'].tolist()
