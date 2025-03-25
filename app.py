@@ -333,7 +333,15 @@ def run_clustering():
     client = None
     if openai_api_key:
         try:
+            # Inicialización simplificada del cliente OpenAI
             client = OpenAI(api_key=openai_api_key)
+            
+            # Verificar que el cliente está configurado correctamente
+            client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Test connection"}],
+                max_tokens=5
+            )
         except Exception as e:
             st.warning(f"Error configurando cliente OpenAI: {str(e)}")
             st.info("Continuando sin funcionalidades de OpenAI")
