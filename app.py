@@ -355,7 +355,7 @@ def run_clustering():
         return
     
     st.info("Iniciando proceso de clustering semántico...")
-    
+
     # Configurar cliente OpenAI si se proporciona la clave API
 client = None
 if openai_api_key and openai_available:
