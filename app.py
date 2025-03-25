@@ -1,3 +1,13 @@
+import streamlit as st
+
+# Instalar la versión correcta de OpenAI al inicio
+st.write("Instalando dependencias...")
+import subprocess
+import sys
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "openai>=1.0.0"])
+st.write("Dependencias instaladas. Reiniciando aplicación...")
+st.experimental_rerun()
+
 import os
 import time
 import json
@@ -17,7 +27,11 @@ from io import StringIO
 
 # Para OpenAI, importamos con manejo de errores
 try:
+    # Asegurarse de importar el cliente correcto
     from openai import OpenAI
+    # Verificar la versión
+    import openai
+    st.sidebar.info(f"Versión de OpenAI: {openai.__version__}")
     openai_available = True
 except ImportError:
     openai_available = False
@@ -351,8 +365,8 @@ def run_clustering():
                 st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
             else:
                 # Creamos el cliente con la API key proporcionada
-                os.environ["OPENAI_API_KEY"] = openai_api_key  # También la establecemos como variable de entorno
-                client = OpenAI(api_key=openai_api_key)  # Eliminado el parámetro 'proxies'
+                os.environ["OPENAI_API_KEY"] = openai_api_key
+                client = OpenAI() 
                 
                 # Verificamos la conexión con una solicitud simple
                 try:
