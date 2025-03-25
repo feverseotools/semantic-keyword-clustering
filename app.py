@@ -149,14 +149,102 @@ def preprocess_keywords(keywords, use_advanced=True):
     progress_bar.progress(1.0)
     return processed_keywords
 
-# MEJORA 1: Embeddings mejorados
+# MEJORA 1: Embeddings mejorados con prioridad a OpenAI y límite de 5000 keywords
 def generate_embeddings(df, openai_available, openai_api_key=None):
     st.info("Generando embeddings para las keywords...")
     
-    # Opción 1: Usar Sentence Transformers (recomendado, sin costos de API)
+    # Opción 1: Usar OpenAI si está disponible y se proporciona API key
+    if openai_available and openai_api_key:
+        try:
+            st.info("Usando embeddings de OpenAI (alta precisión semántica)")
+            # Configurar OpenAI
+            os.environ["OPENAI_API_KEY"] = openai_api_key
+            client = OpenAI()
+            
+            # Procesar en batches para minimizar costos
+            keywords = df['keyword_processed'].fillna('').tolist()
+            all_embeddings = []
+            
+            # Aumentado a 5000 keywords (en lugar de 1000)
+            if len(keywords) > 5000:
+                st.warning(f"Limitando a 5000 keywords representativas de las {len(keywords)} totales")
+                # Seleccionar keywords estratégicamente (no solo las primeras)
+                step = max(1, len(keywords) // 5000)
+                sample_indices = list(range(0, len(keywords), step))[:5000]
+                sample_keywords = [keywords[i] for i in sample_indices]
+                
+                progress_bar = st.progress(0)
+                st.info("Procesando embeddings con OpenAI (esto puede tomar unos minutos)...")
+                
+                # Crear embeddings para muestra
+                response = client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=sample_keywords
+                )
+                progress_bar.progress(0.5)
+                
+                # Extraer embeddings
+                sample_embeddings = np.array([item.embedding for item in response.data])
+                
+                # Propagar embeddings al resto por similitud TF-IDF
+                st.info("Propagando embeddings al resto de keywords...")
+                vectorizer = TfidfVectorizer()
+                tfidf_matrix = vectorizer.fit_transform(keywords)
+                
+                all_embeddings = np.zeros((len(keywords), len(sample_embeddings[0])))
+                # Asignar embeddings a la muestra
+                for i, idx in enumerate(sample_indices):
+                    all_embeddings[idx] = sample_embeddings[i]
+                
+                # Para el resto, encontrar el más similar en TF-IDF
+                remaining_indices = [i for i in range(len(keywords)) if i not in sample_indices]
+                for i, idx in enumerate(remaining_indices):
+                    similarities = cosine_similarity(
+                        tfidf_matrix[idx:idx+1],
+                        tfidf_matrix[sample_indices]
+                    )[0]
+                    most_similar_idx = sample_indices[np.argmax(similarities)]
+                    all_embeddings[idx] = all_embeddings[most_similar_idx]
+                    
+                    # Actualizar progreso para la segunda mitad
+                    if i % 100 == 0:
+                        progress_bar.progress(0.5 + min(0.5, (i / len(remaining_indices) * 0.5)))
+                
+                progress_bar.progress(1.0)
+            else:
+                # Si son menos de 5000, procesar todas
+                progress_bar = st.progress(0)
+                st.info(f"Procesando embeddings para todas las {len(keywords)} keywords con OpenAI...")
+                
+                # Procesar en lotes de 1000 para evitar límites de API
+                batch_size = 1000
+                for i in range(0, len(keywords), batch_size):
+                    batch_end = min(i + batch_size, len(keywords))
+                    batch = keywords[i:batch_end]
+                    
+                    response = client.embeddings.create(
+                        model="text-embedding-3-small",
+                        input=batch
+                    )
+                    batch_embeddings = [item.embedding for item in response.data]
+                    all_embeddings.extend(batch_embeddings)
+                    
+                    progress_bar.progress(min(1.0, batch_end / len(keywords)))
+                
+                progress_bar.progress(1.0)
+                
+            embeddings = np.array(all_embeddings) if isinstance(all_embeddings, list) else all_embeddings
+            st.success(f"✅ Generados embeddings de {embeddings.shape[1]} dimensiones usando OpenAI")
+            return embeddings
+                
+        except Exception as e:
+            st.error(f"Error generando embeddings con OpenAI: {str(e)}")
+            st.info("Intentando con Sentence Transformers como alternativa...")
+    
+    # Opción 2: Usar Sentence Transformers como fallback (sin costo)
     if sentence_transformers_available:
         try:
-            st.success("Usando SentenceTransformer para embeddings de alta calidad")
+            st.success("Usando SentenceTransformer como fallback (sin costo)")
             
             # Usa un modelo multilingüe si tus keywords están en varios idiomas
             model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
@@ -181,70 +269,8 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         except Exception as e:
             st.error(f"Error con SentenceTransformer: {str(e)}")
     
-    # Opción 2: Usar OpenAI si está disponible
-    if openai_available and openai_api_key:
-        try:
-            st.info("Usando embeddings de OpenAI (más precisos pero con costo)")
-            # Configurar OpenAI
-            os.environ["OPENAI_API_KEY"] = openai_api_key
-            client = OpenAI()
-            
-            # Procesar en batches para minimizar costos
-            keywords = df['keyword_processed'].fillna('').tolist()
-            all_embeddings = []
-            
-            # Para mantener costos razonables, limitar a 1000 keywords representativas
-            if len(keywords) > 1000:
-                st.warning(f"Limitando a 1000 keywords representativas de las {len(keywords)} totales")
-                # Seleccionar keywords estratégicamente (no solo las primeras)
-                step = max(1, len(keywords) // 1000)
-                sample_indices = list(range(0, len(keywords), step))[:1000]
-                sample_keywords = [keywords[i] for i in sample_indices]
-                
-                # Crear embeddings para muestra
-                response = client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=sample_keywords
-                )
-                
-                # Extraer embeddings
-                sample_embeddings = np.array([item.embedding for item in response.data])
-                
-                # Propagar embeddings al resto por similitud TF-IDF
-                vectorizer = TfidfVectorizer()
-                tfidf_matrix = vectorizer.fit_transform(keywords)
-                
-                all_embeddings = np.zeros((len(keywords), len(sample_embeddings[0])))
-                # Asignar embeddings a la muestra
-                for i, idx in enumerate(sample_indices):
-                    all_embeddings[idx] = sample_embeddings[i]
-                
-                # Para el resto, encontrar el más similar en TF-IDF
-                for i in range(len(keywords)):
-                    if i not in sample_indices:
-                        similarities = cosine_similarity(
-                            tfidf_matrix[i:i+1],
-                            tfidf_matrix[sample_indices]
-                        )[0]
-                        most_similar_idx = sample_indices[np.argmax(similarities)]
-                        all_embeddings[i] = all_embeddings[most_similar_idx]
-            else:
-                # Si son menos de 1000, procesar todas
-                response = client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=keywords
-                )
-                all_embeddings = [item.embedding for item in response.data]
-                
-            embeddings = np.array(all_embeddings)
-            st.success(f"✅ Generados embeddings de {embeddings.shape[1]} dimensiones usando OpenAI")
-            return embeddings
-                
-        except Exception as e:
-            st.error(f"Error generando embeddings con OpenAI: {str(e)}")
-    
-    # Opción 3: Fallback a TF-IDF (menos preciso)
-    st.warning("Usando TF-IDF como alternativa (menos preciso semánticamente)")
+    # Opción 3: Fallback a TF-IDF (menos preciso) como último recurso
+    st.warning("Usando TF-IDF como último recurso (menos preciso semánticamente)")
     return generate_tfidf_embeddings(df['keyword_processed'].fillna(''))
 
 # Función original TF-IDF como fallback
@@ -873,7 +899,7 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
     elif not openai_available:
         st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
     elif not openai_api_key or openai_api_key.strip() == "":
-        st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
+        st.info("No se ha proporcionado API Key de OpenAI. Se usará SentenceTransformers como alternativa gratuita.")
     
     try:
         # Cargar y procesar el CSV
@@ -1123,18 +1149,24 @@ Sube tu archivo CSV con las keywords y configura los parámetros para obtener cl
 """)
 
 # Mostrar estado de librerías avanzadas
-with st.expander("Estado de bibliotecas avanzadas", expanded=False):
+with st.expander("Estado de bibliotecas semánticas", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
-        if sentence_transformers_available:
-            st.success("✅ SentenceTransformers disponible")
-        else:
-            st.warning("⚠️ SentenceTransformers no disponible")
-            
         if openai_available:
-            st.success("✅ OpenAI disponible")
+            st.success("✅ OpenAI disponible (con API Key)")
         else:
             st.warning("⚠️ OpenAI no disponible")
+            
+        if sentence_transformers_available:
+            st.success("✅ SentenceTransformers disponible (sin costo)")
+        else:
+            st.warning("⚠️ SentenceTransformers no disponible")
+            st.markdown("""
+            Para instalar:
+            ```
+            pip install sentence-transformers
+            ```
+            """)
     
     with col2:
         if spacy_available:
@@ -1169,17 +1201,27 @@ st.sidebar.markdown("<div class='sub-header'>Configuración</div>", unsafe_allow
 # 1. Subir CSV
 uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV de keywords", type=['csv'])
 
-# 2. API Key de OpenAI (opcional)
-openai_api_key = st.sidebar.text_input("API Key de OpenAI (opcional)", type="password", help="Necesaria para embeddings semánticos avanzados y generar nombres de clusters")
+# 2. API Key de OpenAI (ajustado el mensaje para indicar preferencia)
+openai_api_key = st.sidebar.text_input(
+    "API Key de OpenAI (recomendado)",
+    type="password", 
+    help="Proporciona tu API Key de OpenAI para embeddings de alta calidad (hasta 5000 keywords). Si no se proporciona, se usará SentenceTransformers como alternativa gratuita."
+)
 
-# Mostrar estado de OpenAI
+# Mostrar estado de procesamiento semántico
 if openai_available:
     if openai_api_key:
-        st.sidebar.success("✅ API Key proporcionada")
+        st.sidebar.success("✅ API Key proporcionada - Se usará OpenAI para embeddings de alta precisión")
     else:
-        st.sidebar.info("ℹ️ Sin API Key (embeddings y nombres menos precisos)")
+        if sentence_transformers_available:
+            st.sidebar.info("ℹ️ Sin API Key - Se usará SentenceTransformers como alternativa gratuita")
+        else:
+            st.sidebar.warning("⚠️ Sin API Key ni SentenceTransformers - Se usará TF-IDF (precisión reducida)")
 else:
-    st.sidebar.error("❌ Biblioteca OpenAI no disponible")
+    if sentence_transformers_available:
+        st.sidebar.info("ℹ️ OpenAI no disponible - Se usará SentenceTransformers como alternativa gratuita")
+    else:
+        st.sidebar.error("❌ Métodos avanzados no disponibles - Se usará TF-IDF (precisión reducida)")
 
 # 3. Parámetros de clustering
 st.sidebar.markdown("<div class='sub-header'>Parámetros</div>", unsafe_allow_html=True)
@@ -1344,9 +1386,9 @@ with st.expander("Información sobre el Clustering Semántico Avanzado"):
     1. **Preprocesamiento Lingüístico**: Las keywords se analizan usando NLP avanzado para extraer entidades nombradas, bigramas relevantes y tokens significativos.
     
     2. **Embeddings de Alta Calidad**: Se utilizan modelos de embeddings de última generación:
-       - Sentence Transformers (modelos BERT/transformers)
-       - OpenAI Embeddings (si se proporciona API key)
-       - TF-IDF como fallback
+       - OpenAI Embeddings (hasta 5000 keywords) si se proporciona API key
+       - Sentence Transformers (sin costo) como alternativa o fallback
+       - TF-IDF como último recurso
     
     3. **Reducción Inteligente de Dimensionalidad**: PCA optimizado para preservar las relaciones semánticas más importantes.
     
@@ -1372,9 +1414,9 @@ with st.expander("Información sobre el Clustering Semántico Avanzado"):
     
     - **Preprocesamiento**: Asegúrate de que tus keywords no contengan errores ortográficos o caracteres extraños.
     
-    - **Número de clusters**: Considera usar la determinación automática del número óptimo de clusters.
+    - **API Key de OpenAI**: Proporciona una API Key para embeddings de mayor calidad, aunque SentenceTransformers ofrece buenos resultados sin costo.
     
-    - **Embeddings**: Los modelos transformer proporcionan embeddings de mucha mayor calidad para capturar relaciones semánticas.
+    - **Número de clusters**: Considera usar la determinación automática del número óptimo de clusters.
     
     - **Evaluación iterativa**: Examina los clusters con baja coherencia y considera ajustar parámetros o dividirlos.
     """)
@@ -1384,7 +1426,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: #888;">
-        Desarrollado para clustering semántico avanzado de keywords | Versión 2.0
+        Desarrollado para clustering semántico avanzado de keywords | Versión 2.1 con OpenAI/SentenceTransformers híbrido
     </div>
     """, 
     unsafe_allow_html=True
