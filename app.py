@@ -58,6 +58,173 @@ except Exception as e:
 # FUNCIONES AUXILIARES MEJORADAS
 #############################
 
+# Función para calcular el coste estimado de la API
+def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
+    """
+    Calcula el coste estimado de usar la API de OpenAI basado en el número de keywords
+    
+    Args:
+        num_keywords: Número total de keywords
+        selected_model: Modelo para nombrar clusters (gpt-3.5-turbo o gpt-4)
+        num_clusters: Número estimado de clusters
+    
+    Returns:
+        dict: Desglose de costes por componente y coste total
+    """
+    # Precios actualizados (marzo 2025)
+    EMBEDDING_COST_PER_1K = 0.02  # text-embedding-3-small por 1K tokens
+    
+    # Costes de GPT-3.5-Turbo
+    GPT35_INPUT_COST_PER_1K = 0.0005
+    GPT35_OUTPUT_COST_PER_1K = 0.0015
+    
+    # Costes de GPT-4
+    GPT4_INPUT_COST_PER_1K = 0.03
+    GPT4_OUTPUT_COST_PER_1K = 0.06
+    
+    # Resultados
+    results = {
+        "embedding_cost": 0,
+        "naming_cost": 0,
+        "total_cost": 0,
+        "processed_keywords": 0
+    }
+    
+    # 1. Coste de embeddings - limitado a 5000 keywords
+    keywords_for_embeddings = min(num_keywords, 5000)
+    results["processed_keywords"] = keywords_for_embeddings
+    
+    # Estimamos un promedio de 2 tokens por keyword (algunas tendrán 1, otras más)
+    estimated_tokens = keywords_for_embeddings * 2
+    results["embedding_cost"] = (estimated_tokens / 1000) * EMBEDDING_COST_PER_1K
+    
+    # 2. Coste de nombrar clusters
+    # Estimamos tokens para nombrar clusters (depende del número de clusters)
+    # El prompt para análisis + Keywords representativas (aprox. 15 por cluster) + Respuesta
+    avg_tokens_per_cluster = 200  # Tokens por cluster para el input (incluyendo keywords)
+    avg_output_tokens_per_cluster = 80  # Tokens de salida por cluster (nombre + descripción en JSON)
+    
+    estimated_input_tokens = num_clusters * avg_tokens_per_cluster
+    estimated_output_tokens = num_clusters * avg_output_tokens_per_cluster
+    
+    if selected_model == "gpt-3.5-turbo":
+        input_cost = (estimated_input_tokens / 1000) * GPT35_INPUT_COST_PER_1K
+        output_cost = (estimated_output_tokens / 1000) * GPT35_OUTPUT_COST_PER_1K
+    else:  # gpt-4
+        input_cost = (estimated_input_tokens / 1000) * GPT4_INPUT_COST_PER_1K
+        output_cost = (estimated_output_tokens / 1000) * GPT4_OUTPUT_COST_PER_1K
+    
+    results["naming_cost"] = input_cost + output_cost
+    
+    # 3. Coste total
+    results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
+    
+    return results
+
+# Widget de calculadora de costes para Streamlit
+def add_cost_calculator():
+    st.sidebar.markdown("---")
+    with st.sidebar.expander("💰 Calculadora de Costes API", expanded=False):
+        st.markdown("""
+        ### Calculadora de Costes de API
+        
+        Calcula el coste aproximado de procesar tus keywords con OpenAI.
+        """)
+        
+        # Input de número de keywords
+        calc_num_keywords = st.number_input(
+            "Número de keywords a procesar", 
+            min_value=100, 
+            max_value=100000, 
+            value=1000,
+            step=500
+        )
+        
+        # Input de número de clusters
+        calc_num_clusters = st.number_input(
+            "Número aproximado de clusters",
+            min_value=2,
+            max_value=50,
+            value=10,
+            step=1
+        )
+        
+        # Selección de modelo
+        calc_model = st.radio(
+            "Modelo para nombrar clusters",
+            options=["gpt-3.5-turbo", "gpt-4"],
+            index=0,
+            horizontal=True
+        )
+        
+        # Botón para calcular
+        if st.button("Calcular Coste Estimado", use_container_width=True):
+            cost_results = calculate_api_cost(calc_num_keywords, calc_model, calc_num_clusters)
+            
+            # Mostrar resultados
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.metric(
+                    "Keywords procesadas con OpenAI", 
+                    f"{cost_results['processed_keywords']:,}",
+                    help="OpenAI procesa hasta 5,000 keywords, el resto se propaga mediante similitud"
+                )
+                
+                st.metric(
+                    "Coste embeddings", 
+                    f"${cost_results['embedding_cost']:.4f}",
+                    help="Coste de generar vectores semánticos con text-embedding-3-small"
+                )
+            
+            with col2:
+                st.metric(
+                    "Coste nombrar clusters", 
+                    f"${cost_results['naming_cost']:.4f}",
+                    help=f"Coste de generar nombres y descripciones usando {calc_model}"
+                )
+                
+                st.metric(
+                    "COSTE TOTAL", 
+                    f"${cost_results['total_cost']:.4f}",
+                    help="Coste total estimado de API (no incluye recursos computacionales)"
+                )
+            
+            st.info("""
+            **Nota:** Esta es una estimación aproximada. El coste real puede variar 
+            según la longitud de las keywords y la complejidad de los clusters.
+            Usando Sentence Transformers como alternativa, el coste es $0.
+            """)
+
+# Función para mostrar coste estimado del CSV cargado
+def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
+    if num_keywords > 0:
+        cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
+        
+        with st.sidebar.expander("💰 Coste Estimado (CSV actual)", expanded=True):
+            st.markdown(f"### Coste Estimado para {num_keywords:,} Keywords")
+            
+            # Mostrar desglose
+            st.markdown(f"""
+            - **Keywords procesadas con OpenAI**: {cost_results['processed_keywords']:,}
+            - **Coste embeddings**: ${cost_results['embedding_cost']:.4f}
+            - **Coste nombrar clusters**: ${cost_results['naming_cost']:.4f}
+            - **COSTE TOTAL**: ${cost_results['total_cost']:.4f}
+            """)
+            
+            if cost_results['processed_keywords'] < num_keywords:
+                st.info(f"""
+                Se procesan directamente {cost_results['processed_keywords']:,} keywords con OpenAI.
+                Las {num_keywords - cost_results['processed_keywords']:,} restantes se procesarán 
+                mediante propagación de similitud semántica.
+                """)
+            
+            st.markdown("""
+            **Ahorro de costes**: Si prefieres no usar OpenAI, puedes 
+            utilizar SentenceTransformers como alternativa gratuita con 
+            buenos resultados.
+            """)
+
 # MEJORA 4: Preprocesamiento Semántico Mejorado
 def enhanced_preprocessing(text, use_lemmatization=True):
     """Preprocesamiento mejorado con tratamiento de entidades y n-gramas"""
@@ -905,7 +1072,12 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
         # Cargar y procesar el CSV
         try:
             df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
-            st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV")
+            num_keywords = len(df)
+            st.success(f"✅ Cargadas {num_keywords} keywords del archivo CSV")
+            
+            # Mostrar estimación de costes basada en el CSV cargado
+            show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
+            
         except Exception as e:
             st.error(f"Error leyendo CSV: {str(e)}")
             st.info("Intentando formato alternativo...")
@@ -914,7 +1086,12 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 content = uploaded_file.getvalue().decode('utf-8')
                 df = pd.read_csv(StringIO(content), sep=None, engine='python', header=None)
                 df.columns = ["keyword"]
-                st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV (formato alternativo)")
+                num_keywords = len(df)
+                st.success(f"✅ Cargadas {num_keywords} keywords del archivo CSV (formato alternativo)")
+                
+                # Mostrar estimación de costes basada en el CSV cargado
+                show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
+                
             except Exception as e2:
                 st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
                 return False, None
@@ -1358,6 +1535,9 @@ gpt_model = st.sidebar.selectbox(
     index=0,
     help="GPT-4 proporciona nombres más precisos pero es más costoso y lento."
 )
+
+# Añadir calculadora de costes al sidebar (donde el usuario puede simular diferentes cantidades)
+add_cost_calculator()
 
 # Botón para ejecutar el clustering
 if uploaded_file is not None and not st.session_state.process_complete:
