@@ -408,7 +408,8 @@ elif not openai_api_key or openai_api_key.strip() == "":
                 st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV (formato alternativo)")
             except Exception as e2:
                 st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
-                return
+                # En lugar de return, usa una variable para controlar el flujo
+                st.stop()  # Esto detiene la ejecución del script
         
         # Preprocesar keywords
         st.subheader("Preprocesamiento de Keywords")
