@@ -357,37 +357,39 @@ def run_clustering():
     st.info("Iniciando proceso de clustering semántico...")
     
     # Configurar cliente OpenAI si se proporciona la clave API
-    client = None
-    if openai_api_key and openai_available:
-        try:
-            # Verificamos que la API key no esté vacía
-            if openai_api_key.strip() == "":
-                st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
-            else:
-                # Creamos el cliente con la API key proporcionada
-                os.environ["OPENAI_API_KEY"] = openai_api_key
-                client = OpenAI() 
-                
-                # Verificamos la conexión con una solicitud simple
-                try:
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[{"role": "user", "content": "Test"}],
-                        max_tokens=5
-                    )
-                    st.success("✅ Conexión con OpenAI establecida correctamente")
-                except Exception as e:
-                    st.error(f"Error al verificar la conexión con OpenAI: {str(e)}")
-                    st.error("Posible causa: API Key inválida o problemas de conexión")
-                    client = None
-        except Exception as e:
-            st.error(f"Error configurando cliente OpenAI: {str(e)}")
-            st.info("Continuando sin funcionalidades de OpenAI")
-            client = None
-    elif not openai_available:
-        st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
-    elif not openai_api_key or openai_api_key.strip() == "":
-        st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
+client = None
+if openai_api_key and openai_available:
+    try:
+        # Verificamos que la API key no esté vacía
+        if openai_api_key.strip() == "":
+            st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
+        else:
+            # Establecemos la API key como variable de entorno
+            os.environ["OPENAI_API_KEY"] = openai_api_key
+            
+            # Creamos el cliente sin parámetros adicionales
+            client = OpenAI()
+            
+            # Verificamos la conexión con una solicitud simple
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Test"}],
+                    max_tokens=5
+                )
+                st.success("✅ Conexión con OpenAI establecida correctamente")
+            except Exception as e:
+                st.error(f"Error al verificar la conexión con OpenAI: {str(e)}")
+                st.error("Posible causa: API Key inválida o problemas de conexión")
+                client = None
+    except Exception as e:
+        st.error(f"Error configurando cliente OpenAI: {str(e)}")
+        st.info("Continuando sin funcionalidades de OpenAI")
+        client = None
+elif not openai_available:
+    st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
+elif not openai_api_key or openai_api_key.strip() == "":
+    st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
     
     # Cargar y procesar el CSV
     try:
