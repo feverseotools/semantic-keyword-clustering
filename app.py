@@ -4,7 +4,6 @@ import json
 import numpy as np
 import pandas as pd
 import streamlit as st
-from openai import OpenAI
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
@@ -15,6 +14,13 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
 from io import StringIO
+
+# Para OpenAI, importamos con manejo de errores
+try:
+    from openai import OpenAI
+    openai_available = True
+except ImportError:
+    openai_available = False
 
 # Descargar recursos de NLTK al inicio para evitar problemas posteriores
 try:
@@ -331,20 +337,30 @@ def run_clustering():
     
     # Configurar cliente OpenAI si se proporciona la clave API
     client = None
-    if openai_api_key:
+    if openai_api_key and openai_available:
         try:
-            # Inicialización simplificada del cliente OpenAI
+            # Crear el cliente con solo el parámetro api_key
             client = OpenAI(api_key=openai_api_key)
             
-            # Verificar que el cliente está configurado correctamente
-            client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Test connection"}],
-                max_tokens=5
-            )
+            # Verificar que podemos hacer una solicitud básica
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": "Hello"}],
+                    max_tokens=5
+                )
+                st.success("✅ Conexión con OpenAI establecida correctamente")
+            except Exception as e:
+                st.warning(f"Error con la API de OpenAI: {str(e)}")
+                client = None
         except Exception as e:
             st.warning(f"Error configurando cliente OpenAI: {str(e)}")
             st.info("Continuando sin funcionalidades de OpenAI")
+            client = None
+    elif not openai_available:
+        st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
+    elif not openai_api_key:
+        st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
     
     # Cargar y procesar el CSV
     try:
