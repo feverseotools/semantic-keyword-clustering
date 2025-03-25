@@ -1,13 +1,3 @@
-import streamlit as st
-
-# Instalar la versión correcta de OpenAI al inicio
-st.write("Instalando dependencias...")
-import subprocess
-import sys
-subprocess.check_call([sys.executable, "-m", "pip", "install", "--upgrade", "openai>=1.0.0"])
-st.write("Dependencias instaladas. Reiniciando aplicación...")
-st.experimental_rerun()
-
 import os
 import time
 import json
@@ -27,11 +17,7 @@ from io import StringIO
 
 # Para OpenAI, importamos con manejo de errores
 try:
-    # Asegurarse de importar el cliente correcto
     from openai import OpenAI
-    # Verificar la versión
-    import openai
-    st.sidebar.info(f"Versión de OpenAI: {openai.__version__}")
     openai_available = True
 except ImportError:
     openai_available = False
@@ -44,85 +30,11 @@ try:
 except Exception as e:
     pass  # Continuar incluso si la descarga falla
 
-# Configuración de la página
-st.set_page_config(
-    page_title="Clustering Semántico de Keywords",
-    page_icon="🔍",
-    layout="wide"
-)
+#############################
+# FUNCIONES AUXILIARES
+#############################
 
-# Estilos CSS para mejorar la apariencia
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-    }
-    .info-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-    .success-box {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Título y descripción
-st.markdown("<div class='main-header'>Clustering Semántico de Keywords</div>", unsafe_allow_html=True)
-st.markdown("""
-Esta aplicación te permite agrupar keywords semánticamente similares utilizando técnicas de clustering avanzadas.
-Sube tu archivo CSV con las keywords y configura los parámetros para obtener clusters significativos.
-""")
-
-# Inicialización de sesión
-if 'process_complete' not in st.session_state:
-    st.session_state.process_complete = False
-if 'df_results' not in st.session_state:
-    st.session_state.df_results = None
-
-# Sidebar para la configuración
-st.sidebar.markdown("<div class='sub-header'>Configuración</div>", unsafe_allow_html=True)
-
-# 1. Subir CSV
-uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV de keywords", type=['csv'])
-
-# 2. API Key de OpenAI (opcional)
-openai_api_key = st.sidebar.text_input("API Key de OpenAI (opcional)", type="password", help="Necesaria solo para generar nombres de clusters")
-
-# Mostrar estado de OpenAI
-if openai_available:
-    if openai_api_key:
-        st.sidebar.success("✅ API Key proporcionada")
-    else:
-        st.sidebar.info("ℹ️ Sin API Key (los clusters tendrán nombres genéricos)")
-else:
-    st.sidebar.error("❌ Biblioteca OpenAI no disponible")
-
-# 3. Parámetros de clustering
-st.sidebar.markdown("<div class='sub-header'>Parámetros</div>", unsafe_allow_html=True)
-num_clusters = st.sidebar.slider("Número de clusters", min_value=2, max_value=50, value=10, help="Número de grupos en los que dividir las keywords")
-pca_variance = st.sidebar.slider("Varianza explicada PCA (%)", min_value=50, max_value=99, value=90, help="Porcentaje de varianza a mantener en la reducción de dimensionalidad")
-max_pca_components = st.sidebar.slider("Máximo de componentes PCA", min_value=10, max_value=200, value=75, help="Número máximo de componentes PCA a utilizar")
-
-# 4. Opciones avanzadas
-st.sidebar.markdown("<div class='sub-header'>Opciones avanzadas</div>", unsafe_allow_html=True)
-min_df = st.sidebar.slider("Frecuencia mínima de términos", min_value=1, max_value=10, value=1, help="Ignora términos que aparecen en menos documentos que este")
-max_df = st.sidebar.slider("Frecuencia máxima de términos (%)", min_value=50, max_value=100, value=95, help="Ignora términos que aparecen en más del N% de documentos")
-gpt_model = st.sidebar.selectbox("Modelo para nombrar clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
-# Función simplificada para preprocesar texto
+# Función para preprocesar texto
 def preprocess_text(text, use_lemmatization=True):
     if not isinstance(text, str) or not text.strip():
         return ""
@@ -321,7 +233,8 @@ Format your response as a JSON array, with each element containing cluster_id, c
     progress_text.text(f"✅ Nombres y descripciones generados para {len(results)} clusters")
     
     return results
-    # Función para calcular coherencia de clusters
+
+# Función para calcular coherencia de clusters
 def calculate_cluster_coherence(cluster_embeddings):
     """Calculate semantic coherence of a cluster based on embedding similarity"""
     if len(cluster_embeddings) <= 1:
@@ -349,51 +262,51 @@ def calculate_cluster_coherence(cluster_embeddings):
         return 0.5  # Valor predeterminado en caso de error
 
 # Función principal para ejecutar el clustering
-def run_clustering():
+def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, max_pca_components, min_df, max_df, gpt_model):
+    """Ejecuta el proceso completo de clustering y devuelve los resultados"""
     if uploaded_file is None:
         st.warning("Por favor, sube un archivo CSV con keywords.")
-        return
+        return False, None
     
     st.info("Iniciando proceso de clustering semántico...")
-
-    # Configurar cliente OpenAI si se proporciona la clave API
-client = None
-if openai_api_key and openai_available:
-    try:
-        # Verificamos que la API key no esté vacía
-        if openai_api_key.strip() == "":
-            st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
-        else:
-            # Establecemos la API key como variable de entorno
-            os.environ["OPENAI_API_KEY"] = openai_api_key
-            
-            # Creamos el cliente sin parámetros adicionales
-            client = OpenAI()
-            
-            # Verificamos la conexión con una solicitud simple
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": "Test"}],
-                    max_tokens=5
-                )
-                st.success("✅ Conexión con OpenAI establecida correctamente")
-            except Exception as e:
-                st.error(f"Error al verificar la conexión con OpenAI: {str(e)}")
-                st.error("Posible causa: API Key inválida o problemas de conexión")
-                client = None
-    except Exception as e:
-        st.error(f"Error configurando cliente OpenAI: {str(e)}")
-        st.info("Continuando sin funcionalidades de OpenAI")
-        client = None
-elif not openai_available:
-    st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
-elif not openai_api_key or openai_api_key.strip() == "":
-    st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
     
-    # Cargar y procesar el CSV
+    # Configurar cliente OpenAI si se proporciona la clave API
+    client = None
+    if openai_api_key and openai_available:
+        try:
+            # Verificamos que la API key no esté vacía
+            if openai_api_key.strip() == "":
+                st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
+            else:
+                # Establecemos la API key como variable de entorno
+                os.environ["OPENAI_API_KEY"] = openai_api_key
+                
+                # Creamos el cliente sin parámetros adicionales
+                client = OpenAI()
+                
+                # Verificamos la conexión con una solicitud simple
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": "Test"}],
+                        max_tokens=5
+                    )
+                    st.success("✅ Conexión con OpenAI establecida correctamente")
+                except Exception as e:
+                    st.error(f"Error al verificar la conexión con OpenAI: {str(e)}")
+                    st.error("Posible causa: API Key inválida o problemas de conexión")
+                    client = None
+        except Exception as e:
+            st.error(f"Error configurando cliente OpenAI: {str(e)}")
+            st.info("Continuando sin funcionalidades de OpenAI")
+            client = None
+    elif not openai_available:
+        st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
+    elif not openai_api_key or openai_api_key.strip() == "":
+        st.info("No se ha proporcionado API Key de OpenAI. Los nombres de clusters serán genéricos.")
+    
     try:
-        # Leer CSV
+        # Cargar y procesar el CSV
         try:
             df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
             st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV")
@@ -408,8 +321,7 @@ elif not openai_api_key or openai_api_key.strip() == "":
                 st.success(f"✅ Cargadas {len(df)} keywords del archivo CSV (formato alternativo)")
             except Exception as e2:
                 st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
-                # En lugar de return, usa una variable para controlar el flujo
-                st.stop()  # Esto detiene la ejecución del script
+                return False, None
         
         # Preprocesar keywords
         st.subheader("Preprocesamiento de Keywords")
@@ -552,7 +464,8 @@ elif not openai_api_key or openai_api_key.strip() == "":
         else:
             st.warning("No se pueden generar nombres de clusters sin API Key de OpenAI")
             cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
-            # Aplicar resultados al DataFrame
+        
+        # Aplicar resultados al DataFrame
         df['cluster_name'] = ''
         df['cluster_description'] = ''
         df['representative'] = False
@@ -595,23 +508,115 @@ elif not openai_api_key or openai_api_key.strip() == "":
                 df.loc[df['cluster_id'] == cluster_num, 'cluster_coherence'] = 0.5
             st.warning("Se ha asignado un valor de coherencia predeterminado")
         
-        # Guardar los resultados en la sesión
-        st.session_state.df_results = df
-        st.session_state.process_complete = True
-        
-        # Resumen final
-        st.markdown("<div class='success-box'>✅ Clustering semántico completado con éxito!</div>", unsafe_allow_html=True)
+        # Devolver los resultados
+        return True, df
         
     except Exception as e:
         st.error(f"Error durante el proceso: {str(e)}")
-        st.stop()  # Detiene la ejecución, alternativa a return
+        return False, None
+
+#############################
+# APLICACIÓN PRINCIPAL
+#############################
+
+# Configuración de la página
+st.set_page_config(
+    page_title="Clustering Semántico de Keywords",
+    page_icon="🔍",
+    layout="wide"
+)
+
+# Estilos CSS para mejorar la apariencia
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    .info-box {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .success-box {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Título y descripción
+st.markdown("<div class='main-header'>Clustering Semántico de Keywords</div>", unsafe_allow_html=True)
+st.markdown("""
+Esta aplicación te permite agrupar keywords semánticamente similares utilizando técnicas de clustering avanzadas.
+Sube tu archivo CSV con las keywords y configura los parámetros para obtener clusters significativos.
+""")
+
+# Inicialización de sesión
+if 'process_complete' not in st.session_state:
+    st.session_state.process_complete = False
+if 'df_results' not in st.session_state:
+    st.session_state.df_results = None
+
+# Sidebar para la configuración
+st.sidebar.markdown("<div class='sub-header'>Configuración</div>", unsafe_allow_html=True)
+
+# 1. Subir CSV
+uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV de keywords", type=['csv'])
+
+# 2. API Key de OpenAI (opcional)
+openai_api_key = st.sidebar.text_input("API Key de OpenAI (opcional)", type="password", help="Necesaria solo para generar nombres de clusters")
+
+# Mostrar estado de OpenAI
+if openai_available:
+    if openai_api_key:
+        st.sidebar.success("✅ API Key proporcionada")
+    else:
+        st.sidebar.info("ℹ️ Sin API Key (los clusters tendrán nombres genéricos)")
+else:
+    st.sidebar.error("❌ Biblioteca OpenAI no disponible")
+
+# 3. Parámetros de clustering
+st.sidebar.markdown("<div class='sub-header'>Parámetros</div>", unsafe_allow_html=True)
+num_clusters = st.sidebar.slider("Número de clusters", min_value=2, max_value=50, value=10, help="Número de grupos en los que dividir las keywords")
+pca_variance = st.sidebar.slider("Varianza explicada PCA (%)", min_value=50, max_value=99, value=90, help="Porcentaje de varianza a mantener en la reducción de dimensionalidad")
+max_pca_components = st.sidebar.slider("Máximo de componentes PCA", min_value=10, max_value=200, value=75, help="Número máximo de componentes PCA a utilizar")
+
+# 4. Opciones avanzadas
+st.sidebar.markdown("<div class='sub-header'>Opciones avanzadas</div>", unsafe_allow_html=True)
+min_df = st.sidebar.slider("Frecuencia mínima de términos", min_value=1, max_value=10, value=1, help="Ignora términos que aparecen en menos documentos que este")
+max_df = st.sidebar.slider("Frecuencia máxima de términos (%)", min_value=50, max_value=100, value=95, help="Ignora términos que aparecen en más del N% de documentos")
+gpt_model = st.sidebar.selectbox("Modelo para nombrar clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
 
 # Botón para ejecutar el clustering
 if uploaded_file is not None and not st.session_state.process_complete:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("Iniciar Clustering Semántico", type="primary", use_container_width=True):
-            run_clustering()
+            success, results = run_clustering(
+                uploaded_file, 
+                openai_api_key, 
+                num_clusters, 
+                pca_variance, 
+                max_pca_components, 
+                min_df, 
+                max_df,
+                gpt_model
+            )
+            if success:
+                st.session_state.df_results = results
+                st.session_state.process_complete = True
+                st.markdown("<div class='success-box'>✅ Clustering semántico completado con éxito!</div>", unsafe_allow_html=True)
 
 # Mostrar resultados si el proceso está completo
 if st.session_state.process_complete and st.session_state.df_results is not None:
@@ -709,6 +714,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
         summary_df.rename(columns={'cluster_coherence': 'Coherencia'}, inplace=True)
+        
         # Añadir keywords representativas
         def get_rep_keywords(cluster_id):
             reps = df[(df['cluster_id'] == cluster_id) & (df['representative'] == True)]['keyword'].tolist()
