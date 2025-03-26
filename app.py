@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import nltk
+import re
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
@@ -53,11 +54,6 @@ try:
     nltk.download('wordnet', quiet=True)
 except Exception as e:
     pass  # Continuar incluso si la descarga falla
-
-#############################
-# FUNCIONES AUXILIARES MEJORADAS
-#############################
-
 # Función para calcular el coste estimado de la API
 def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
     """
@@ -120,7 +116,6 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
     results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
     
     return results
-
 # Widget de calculadora de costes para Streamlit
 def add_cost_calculator():
     st.sidebar.markdown("---")
@@ -224,7 +219,6 @@ def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clu
             utilizar SentenceTransformers como alternativa gratuita con 
             buenos resultados.
             """)
-
 # MEJORA 4: Preprocesamiento Semántico Mejorado
 def enhanced_preprocessing(text, use_lemmatization=True):
     """Preprocesamiento mejorado con tratamiento de entidades y n-gramas"""
@@ -315,7 +309,6 @@ def preprocess_keywords(keywords, use_advanced=True):
     
     progress_bar.progress(1.0)
     return processed_keywords
-
 # MEJORA 1: Embeddings mejorados con prioridad a OpenAI y límite de 5000 keywords
 def generate_embeddings(df, openai_available, openai_api_key=None):
     st.info("Generando embeddings para las keywords...")
@@ -350,7 +343,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                 )
                 progress_bar.progress(0.5)
                 
-                # Extraer embeddings
+# Extraer embeddings
                 sample_embeddings = np.array([item.embedding for item in response.data])
                 
                 # Propagar embeddings al resto por similitud TF-IDF
@@ -407,8 +400,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         except Exception as e:
             st.error(f"Error generando embeddings con OpenAI: {str(e)}")
             st.info("Intentando con Sentence Transformers como alternativa...")
-    
-    # Opción 2: Usar Sentence Transformers como fallback (sin costo)
+# Opción 2: Usar Sentence Transformers como fallback (sin costo)
     if sentence_transformers_available:
         try:
             st.success("Usando SentenceTransformer como fallback (sin costo)")
@@ -474,7 +466,6 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         st.warning("Generando vectores aleatorios como último recurso")
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
-
 # MEJORA 2: Algoritmo de clustering mejorado
 def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
     st.info("Aplicando algoritmos de clustering avanzados...")
@@ -577,8 +568,7 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
                 return cluster_labels
         except Exception as e:
             st.warning(f"Error con HDBSCAN: {str(e)}. Usando clustering jerárquico.")
-    
-    # Fallback a clustering jerárquico
+# Fallback a clustering jerárquico
     try:
         st.info("Aplicando clustering jerárquico aglomerativo...")
         # Probar diferentes métodos de linkage para encontrar el mejor
@@ -658,7 +648,7 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
             
         normalized_distances = [(d - mean_dist) / std_dist for d in distances]
         
-        # Identificar outliers (keywords muy lejanas al centroide)
+# Identificar outliers (keywords muy lejanas al centroide)
         for i, norm_dist in enumerate(normalized_distances):
             if norm_dist > 2.0:  # Más de 2 desviaciones estándar
                 outliers.append((cluster_indices[i], cluster_id, norm_dist))
@@ -694,8 +684,7 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
         if best_cluster != original_cluster:
             df.loc[idx, original_cluster_column] = best_cluster
             reassigned += 1
-    
-    # 3. Combinar clusters demasiado similares
+# 3. Combinar clusters demasiado similares
     similar_pairs = []
     clusters = df[original_cluster_column].unique()
     
@@ -806,19 +795,50 @@ Your names should be concrete and specific, not generic. Focus on semantic meani
 Format your response as a JSON array, with each element containing cluster_id, cluster_name, and description for clusters {', '.join(map(str, cluster_order))}.
 """
 
-            naming_response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": naming_prompt}],
-                temperature=0.2,
-                max_tokens=600,
-                response_format={"type": "json_object"}
-            )
-
+            # Conditional parameter setting based on model
+            completion_params = {
+                "model": model,
+                "messages": [{"role": "user", "content": naming_prompt}],
+                "temperature": 0.2,
+                "max_tokens": 600
+            }
+            
+            # Only add response_format for gpt-3.5-turbo model
+            if "gpt-3.5-turbo" in model:
+                completion_params["response_format"] = {"type": "json_object"}
+                
+            naming_response = client.chat.completions.create(**completion_params)
             naming_text = naming_response.choices[0].message.content.strip()
-
-            # Procesar la respuesta JSON
+# Procesar la respuesta JSON
             try:
-                data = json.loads(naming_text)
+                # For GPT-4, we need to extract the JSON from the response text
+                # Find JSON-like content between curly braces
+                import re
+                import json
+                
+                # Try direct JSON parsing first
+                try:
+                    data = json.loads(naming_text)
+                except json.JSONDecodeError:
+                    # If direct parsing fails, try to extract JSON-like content
+                    json_match = re.search(r'({.*})', naming_text, re.DOTALL)
+                    if json_match:
+                        try:
+                            data = json.loads(json_match.group(1))
+                        except json.JSONDecodeError:
+                            # If still failing, try a more lenient approach - look for an array
+                            array_match = re.search(r'(\[.*\])', naming_text, re.DOTALL)
+                            if array_match:
+                                try:
+                                    # Try parsing as an array and then convert to expected format
+                                    array_data = json.loads(array_match.group(1))
+                                    data = {"clusters": array_data}
+                                except json.JSONDecodeError:
+                                    raise ValueError("Could not extract valid JSON from response")
+                            else:
+                                raise ValueError("Could not extract valid JSON from response")
+                    else:
+                        raise ValueError("Could not extract valid JSON from response")
 
                 # Handle different JSON structures that might be returned
                 clusters_data = None
@@ -844,9 +864,32 @@ Format your response as a JSON array, with each element containing cluster_id, c
                             )
             except Exception as e:
                 st.warning(f"Error analizando respuesta JSON para batch {batch_idx+1}/{total_batches}: {str(e)}")
-                # Fallback para este batch
-                for i, cluster_id in enumerate(cluster_order):
-                    results[cluster_id] = (f"Cluster {cluster_id}", "Error parsing JSON response")
+                # Fallback para este batch: intentar extraer manualmente la información
+                try:
+                    # Fallback more manual parsing for both models
+                    for i, cluster_id in enumerate(cluster_order):
+                        # Look for "Cluster {cluster_id}" or similar pattern in the text
+                        cluster_section = re.search(f"Cluster {cluster_id}[:\s]*(.*?)(?:Cluster \d|$)", 
+                                                   naming_text, re.DOTALL | re.IGNORECASE)
+                        
+                        if cluster_section:
+                            section_text = cluster_section.group(1).strip()
+                            # Try to extract name and description
+                            name_match = re.search(r"name[:\s]*(.*?)(?:description|\n|$)", 
+                                                 section_text, re.DOTALL | re.IGNORECASE)
+                            desc_match = re.search(r"description[:\s]*(.*?)(?:\n\n|$)", 
+                                                  section_text, re.DOTALL | re.IGNORECASE)
+                            
+                            name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
+                            desc = desc_match.group(1).strip() if desc_match else f"Grupo de keywords {cluster_id}"
+                            
+                            results[cluster_id] = (name, desc)
+                        else:
+                            results[cluster_id] = (f"Cluster {cluster_id}", f"Grupo de keywords {cluster_id}")
+                except Exception:
+                    # Ultimate fallback if all parsing fails
+                    for cluster_id in cluster_order:
+                        results[cluster_id] = (f"Cluster {cluster_id}", f"Grupo de keywords {cluster_id}")
 
             # Progress update
             progress_bar.progress((batch_idx + 1) / total_batches)
@@ -867,7 +910,6 @@ Format your response as a JSON array, with each element containing cluster_id, c
     progress_text.text(f"✅ Nombres y descripciones generados para {len(results)} clusters")
     
     return results
-
 # MEJORA 5: Evaluación avanzada de clusters
 def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
     """Evalúa la calidad de los clusters usando múltiples métricas"""
@@ -935,7 +977,7 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
             y='keyword', 
             color='score',
             size='keyword',
-            hover_data=['cluster_name'],
+hover_data=['cluster_name'],
             labels={
                 'score': 'Coherencia Semántica', 
                 'keyword': 'Tamaño del Cluster'
@@ -1023,7 +1065,6 @@ def calculate_cluster_coherence(cluster_embeddings):
     except Exception as e:
         st.warning(f"Error calculando coherencia: {str(e)}")
         return 0.5  # Valor predeterminado en caso de error
-
 # Función principal para ejecutar el clustering mejorado
 def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, max_pca_components, min_df, max_df, gpt_model):
     """Ejecuta el proceso completo de clustering y devuelve los resultados"""
@@ -1095,8 +1136,7 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
             except Exception as e2:
                 st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
                 return False, None
-        
-        # Preprocesar keywords
+# Preprocesar keywords
         st.subheader("Preprocesamiento de Keywords")
         st.info("Preprocesando keywords con análisis semántico mejorado...")
         
@@ -1158,8 +1198,7 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
             # No necesita PCA si la dimensionalidad ya es adecuada
             keyword_embeddings_reduced = keyword_embeddings
             st.info(f"Dimensionalidad de embeddings adecuada ({keyword_embeddings.shape[1]}). No se requiere PCA.")
-        
-        # Aplicar clustering mejorado
+# Aplicar clustering mejorado
         st.subheader("Clustering Semántico Avanzado")
         
         # MEJORA 2: Usar algoritmo de clustering mejorado
@@ -1231,8 +1270,7 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 cluster_keywords = df[df['cluster_id'] == cluster_num]['keyword'].tolist()
                 clusters_with_representatives[cluster_num] = cluster_keywords[:min(20, len(cluster_keywords))]
             st.warning("Se han seleccionado keywords representativas básicas como alternativa")
-        
-        # Generar nombres para los clusters si está disponible OpenAI
+# Generar nombres para los clusters si está disponible OpenAI
         if client:
             st.subheader("Generación de Nombres para Clusters")
             try:
@@ -1272,7 +1310,6 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
     except Exception as e:
         st.error(f"Error durante el proceso: {str(e)}")
         return False, None
-
 #############################
 # APLICACIÓN PRINCIPAL
 #############################
@@ -1371,7 +1408,6 @@ if 'process_complete' not in st.session_state:
     st.session_state.process_complete = False
 if 'df_results' not in st.session_state:
     st.session_state.df_results = None
-
 # Sidebar para la configuración
 st.sidebar.markdown("<div class='sub-header'>Configuración</div>", unsafe_allow_html=True)
 
@@ -1484,7 +1520,6 @@ with st.sidebar.expander("ℹ️ Guía de Parámetros", expanded=False):
     
     Para datasets grandes (+5000 keywords), considera aumentar ligeramente el número de clusters y reducir la varianza explicada PCA para mantener tiempos de procesamiento razonables.
     """)
-
 # Sliders para los parámetros con descripciones mejoradas
 num_clusters = st.sidebar.slider(
     "Número de clusters", 
@@ -1558,7 +1593,6 @@ if uploaded_file is not None and not st.session_state.process_complete:
                 st.session_state.df_results = results
                 st.session_state.process_complete = True
                 st.markdown("<div class='success-box'>✅ Clustering semántico completado con éxito!</div>", unsafe_allow_html=True)
-
 # Mostrar resultados si el proceso está completo
 if st.session_state.process_complete and st.session_state.df_results is not None:
     st.markdown("<div class='main-header'>Resultados del Clustering</div>", unsafe_allow_html=True)
@@ -1599,8 +1633,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             color_continuous_scale=px.colors.sequential.Greens
         )
         st.plotly_chart(fig2, use_container_width=True)
-        
-    # Pestaña para explorar clusters
+# Pestaña para explorar clusters
     with st.expander("Explorar Clusters", expanded=True):
         # Selector de cluster
         cluster_options = [f"{row['cluster_name']} (ID: {row['cluster_id']})" for _, row in 
@@ -1674,7 +1707,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
-
 # Botón para reiniciar
 if st.session_state.process_complete:
     if st.button("Reiniciar", type="secondary", use_container_width=True):
