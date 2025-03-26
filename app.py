@@ -36,8 +36,12 @@ try:
         nlp = spacy.load("en_core_web_sm")
         spacy_available = True
     except:
-        # Si el modelo no está descargado
-        spacy_available = False
+        # Si el modelo no está descargado, descárgalo
+        import subprocess
+        import sys
+        subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
+        nlp = spacy.load("en_core_web_sm")
+        spacy_available = True
 except ImportError:
     spacy_available = False
 
@@ -49,9 +53,12 @@ except ImportError:
 
 # Descargar recursos de NLTK al inicio para evitar problemas posteriores
 try:
-    nltk.download('stopwords', quiet=True)
-    nltk.download('punkt', quiet=True)
-    nltk.download('wordnet', quiet=True)
+    import nltk
+    for resource in ['stopwords', 'punkt', 'wordnet']:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+        except LookupError:
+            nltk.download(resource, quiet=True)
 except Exception as e:
     pass  # Continuar incluso si la descarga falla
 # Función para calcular el coste estimado de la API
