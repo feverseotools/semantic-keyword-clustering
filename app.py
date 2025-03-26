@@ -1712,7 +1712,7 @@ if st.session_state.process_complete:
     if st.button("Reiniciar", type="secondary", use_container_width=True):
         st.session_state.process_complete = False
         st.session_state.df_results = None
-        st.experimental_rerun()
+        st.rerun()
 
 # Información adicional
 with st.expander("Información sobre el Clustering Semántico Avanzado"):
