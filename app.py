@@ -6,7 +6,6 @@ import json
 import numpy as np
 import pandas as pd
 import streamlit as st
-import nltk
 import re
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
@@ -17,6 +16,13 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
 from io import StringIO
+
+# Basic NLTK imports - no downloads
+try:
+    import nltk
+    nltk_available = True
+except ImportError:
+    nltk_available = False
 
 # Para OpenAI, importamos con manejo de errores
 try:
@@ -32,16 +38,14 @@ try:
 except ImportError:
     sentence_transformers_available = False
 
+# Import spaCy without trying to load any model
 try:
     import spacy
-    try:
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
-    except:
-        # Si el modelo no está descargado
-        spacy_available = False
+    spacy_available = False  # Default to False without trying to load
+    nlp = None  # Initialize as None, will handle in functions
 except ImportError:
     spacy_available = False
+    nlp = None
 
 # Intentar importar TextBlob como alternativa a spaCy
 try:
@@ -55,14 +59,6 @@ try:
     hdbscan_available = True
 except ImportError:
     hdbscan_available = False
-
-# Descargar recursos de NLTK al inicio para evitar problemas posteriores
-try:
-    nltk.download('stopwords', quiet=True)
-    nltk.download('punkt', quiet=True)
-    nltk.download('wordnet', quiet=True)
-except Exception as e:
-    pass  # Continuar incluso si la descarga falla
 
 #END BLOCK 1
 
