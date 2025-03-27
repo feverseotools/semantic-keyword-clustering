@@ -1,47 +1,18 @@
-import os
-import time
-import json
-import numpy as np
-import pandas as pd
-import streamlit as st
-import nltk
-import re
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import PCA
-from scipy.cluster.hierarchy import linkage, fcluster
-from sklearn.metrics.pairwise import cosine_similarity
-import plotly.express as px
-from io import StringIO
-
-# Para OpenAI, importamos con manejo de errores
-try:
-    from openai import OpenAI
-    openai_available = True
-except ImportError:
-    openai_available = False
-
-# Intentar importar bibliotecas avanzadas con manejo de errores
-try:
-    from sentence_transformers import SentenceTransformer
-    sentence_transformers_available = True
-except ImportError:
-    sentence_transformers_available = False
-
 try:
     import spacy
     try:
         nlp = spacy.load("en_core_web_sm")
         spacy_available = True
     except:
-        # Si el modelo no está descargado, descárgalo
-        import subprocess
-        import sys
-        subprocess.check_call([sys.executable, "-m", "spacy", "download", "en_core_web_sm"])
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
+        # Si el modelo no está descargado, intentar descargarlo usando la API de spaCy
+        try:
+            import spacy.cli
+            spacy.cli.download("en_core_web_sm")
+            nlp = spacy.load("en_core_web_sm")
+            spacy_available = True
+        except:
+            st.warning("No se pudo descargar el modelo de spaCy. Se usarán funcionalidades limitadas.")
+            spacy_available = False
 except ImportError:
     spacy_available = False
 
