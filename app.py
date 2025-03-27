@@ -1,46 +1,73 @@
 #BLOCK 1
+
 import os
 import time
 import json
 import numpy as np
 import pandas as pd
 import streamlit as st
+import nltk
 import re
-from io import StringIO
-import plotly.express as px
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
+import plotly.express as px
+from io import StringIO
 
-# Set default flags - no package loading that might trigger subprocess
-openai_available = False
-nltk_available = False
-sentence_transformers_available = False
-spacy_available = False
-hdbscan_available = False
-nlp = None
-
-# Define empty language lists
-nltk_languages = ['english']
-stemmer_languages = ['english']
-spacy_language_models = {'english': 'en_core_web_sm'}
-
-# Safe import of OpenAI
+# Para OpenAI, importamos con manejo de errores
 try:
     from openai import OpenAI
     openai_available = True
 except ImportError:
-    pass
+    openai_available = False
 
-# Define a placeholder function for SpaCy
-def load_spacy_language_model(language):
-    return False
+# Intentar importar bibliotecas avanzadas con manejo de errores
+try:
+    from sentence_transformers import SentenceTransformer
+    sentence_transformers_available = True
+except ImportError:
+    sentence_transformers_available = False
 
-# The rest of the imports will be done inside functions when needed,
-# not at the module level, to avoid any subprocess calls during import
+try:
+    import spacy
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        spacy_available = True
+    except:
+        # Si el modelo no está descargado
+        spacy_available = False
+except ImportError:
+    spacy_available = False
+
+# Intentar importar TextBlob como alternativa a spaCy
+try:
+    from textblob import TextBlob
+    textblob_available = True
+except ImportError:
+    textblob_available = False
+
+try:
+    import hdbscan
+    hdbscan_available = True
+except ImportError:
+    hdbscan_available = False
+
+# Descargar recursos de NLTK al inicio para evitar problemas posteriores
+try:
+    nltk.download('stopwords', quiet=True)
+    nltk.download('punkt', quiet=True)
+    nltk.download('wordnet', quiet=True)
+except Exception as e:
+    pass  # Continuar incluso si la descarga falla
+
 #END BLOCK 1
+
 #BLOCK 2
+
 # Function to calculate the estimated API cost
 def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
     """
