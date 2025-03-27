@@ -13,70 +13,32 @@ from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Import libraries with error handling
-# OpenAI
+# Set default flags - no package loading that might trigger subprocess
+openai_available = False
+nltk_available = False
+sentence_transformers_available = False
+spacy_available = False
+hdbscan_available = False
+nlp = None
+
+# Define empty language lists
+nltk_languages = ['english']
+stemmer_languages = ['english']
+spacy_language_models = {'english': 'en_core_web_sm'}
+
+# Safe import of OpenAI
 try:
     from openai import OpenAI
     openai_available = True
 except ImportError:
-    openai_available = False
+    pass
 
-# NLTK - Minimal initialization to avoid any subprocess calls
-try:
-    import nltk
-    # Disable downloading completely at startup - will handle this later if needed
-    nltk_available = True
-    nltk_languages = ['english']  # Start with just English
-    stemmer_languages = ['english']
-except ImportError:
-    nltk_available = False
-    nltk_languages = ['english']
-    stemmer_languages = ['english']
+# Define a placeholder function for SpaCy
+def load_spacy_language_model(language):
+    return False
 
-# SentenceTransformers
-try:
-    from sentence_transformers import SentenceTransformer
-    sentence_transformers_available = True
-except ImportError:
-    sentence_transformers_available = False
-
-# SpaCy - Minimal initialization without any downloads
-try:
-    import spacy
-    # Just register the language models without loading
-    spacy_language_models = {
-        'english': 'en_core_web_sm',
-        'spanish': 'es_core_news_sm',
-        'french': 'fr_core_news_sm',
-        'german': 'de_core_news_sm',
-        'italian': 'it_core_news_sm',
-        'portuguese': 'pt_core_news_sm'
-    }
-    
-    # Don't try to load any models at import time
-    spacy_available = False
-    nlp = None
-    
-    # Define function but don't execute any loading logic yet
-    def load_spacy_language_model(language):
-        global nlp, spacy_available
-        # We'll implement this later when needed
-        st.info(f"SpaCy models not available for {language}. Using fallback processing methods.")
-        return False
-                    
-except ImportError:
-    spacy_available = False
-    spacy_language_models = {'english': 'en_core_web_sm'}
-    
-    def load_spacy_language_model(language):
-        return False
-
-# HDBSCAN
-try:
-    import hdbscan
-    hdbscan_available = True
-except ImportError:
-    hdbscan_available = False
+# The rest of the imports will be done inside functions when needed,
+# not at the module level, to avoid any subprocess calls during import
 #END BLOCK 1
 #BLOCK 2
 # Function to calculate the estimated API cost
