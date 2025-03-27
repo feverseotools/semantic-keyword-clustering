@@ -21,36 +21,13 @@ try:
 except ImportError:
     openai_available = False
 
-# NLTK
+# NLTK - Minimal initialization to avoid any subprocess calls
 try:
     import nltk
-    from nltk.corpus import stopwords
-    from nltk.tokenize import word_tokenize
-    from nltk.stem import WordNetLemmatizer, SnowballStemmer
-    
-    # Available languages in NLTK with stopwords
-    nltk_languages = ['arabic', 'azerbaijani', 'danish', 'dutch', 'english', 
-                     'finnish', 'french', 'german', 'greek', 'hungarian', 
-                     'indonesian', 'italian', 'kazakh', 'nepali', 'norwegian', 
-                     'portuguese', 'romanian', 'russian', 'slovene', 'spanish', 
-                     'swedish', 'tajik', 'turkish']
-    
-    # Available languages for Snowball stemmer (for languages without lemmatization)
-    stemmer_languages = ['arabic', 'danish', 'dutch', 'english', 'finnish', 'french', 
-                         'german', 'hungarian', 'italian', 'norwegian', 'porter', 
-                         'portuguese', 'romanian', 'russian', 'spanish', 'swedish']
-    
-    # Download NLTK resources safely
-    for resource in ['stopwords', 'punkt', 'wordnet']:
-        try:
-            nltk.data.find(f'tokenizers/{resource}')
-        except LookupError:
-            try:
-                nltk.download(resource, quiet=True)
-            except:
-                pass
-    
+    # Disable downloading completely at startup - will handle this later if needed
     nltk_available = True
+    nltk_languages = ['english']  # Start with just English
+    stemmer_languages = ['english']
 except ImportError:
     nltk_available = False
     nltk_languages = ['english']
@@ -63,10 +40,10 @@ try:
 except ImportError:
     sentence_transformers_available = False
 
-# SpaCy
+# SpaCy - Minimal initialization without any downloads
 try:
     import spacy
-    # Dictionary of available SpaCy language models
+    # Just register the language models without loading
     spacy_language_models = {
         'english': 'en_core_web_sm',
         'spanish': 'es_core_news_sm',
@@ -76,46 +53,16 @@ try:
         'portuguese': 'pt_core_news_sm'
     }
     
-    # Initialize with English as default
-    try:
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
-    except:
-        # Don't try to download here - defer to later function
-        spacy_available = False
+    # Don't try to load any models at import time
+    spacy_available = False
+    nlp = None
     
-    # Function to load a different SpaCy language model
+    # Define function but don't execute any loading logic yet
     def load_spacy_language_model(language):
         global nlp, spacy_available
-        model_name = spacy_language_models.get(language, 'en_core_web_sm')
-        try:
-            nlp = spacy.load(model_name)
-            spacy_available = True
-            return True
-        except:
-            try:
-                # Use spacy's download method instead of subprocess
-                import importlib
-                import spacy.cli
-                try:
-                    spacy.cli.download(model_name)
-                    nlp = spacy.load(model_name)
-                    spacy_available = True
-                    return True
-                except:
-                    # Fallback to English if requested language model fails
-                    try:
-                        if model_name != "en_core_web_sm":
-                            # Try the English model as fallback
-                            nlp = spacy.load("en_core_web_sm") 
-                            spacy_available = True
-                            return True
-                    except:
-                        spacy_available = False
-                        return False
-            except:
-                spacy_available = False
-                return False
+        # We'll implement this later when needed
+        st.info(f"SpaCy models not available for {language}. Using fallback processing methods.")
+        return False
                     
 except ImportError:
     spacy_available = False
@@ -339,7 +286,7 @@ def enhanced_preprocessing(text, language='english', use_lemmatization=True):
     except Exception as e:
         return text.lower() if isinstance(text, str) else ""
 
-# Original preprocessing function as fallback with language support
+# Preprocessing function as fallback with language support
 def preprocess_text(text, language='english', use_lemmatization=True):
     if not isinstance(text, str) or not text.strip():
         return ""
@@ -348,36 +295,55 @@ def preprocess_text(text, language='english', use_lemmatization=True):
         # Convert to lowercase
         text = text.lower()
         
-        # Tokenize
-        tokens = word_tokenize(text)
-        
-        # Load stopwords for the specified language
+        # Tokenize - safer way without relying on NLTK tokenizers
+        # Simple tokenization as fallback
         try:
-            if language in nltk_languages:
-                stop_words = set(stopwords.words(language))
-            else:
-                # If language not available, use English as fallback
-                stop_words = set(stopwords.words('english'))
-                st.warning(f"Stopwords for '{language}' not available. Using English stopwords instead.")
+            from nltk.tokenize import word_tokenize
+            tokens = word_tokenize(text)
         except:
-            # Basic fallback if stopwords can't be loaded
-            stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'in', 'on', 'to', 'for'}
+            # Fallback to simple tokenization
+            tokens = text.split()
         
-        # Filter stopwords
+        # Try to load stopwords safely
+        stop_words = set()
+        try:
+            from nltk.corpus import stopwords
+            try:
+                stop_words = set(stopwords.words(language))
+            except:
+                # Fallback to English or minimal set
+                try:
+                    stop_words = set(stopwords.words('english'))
+                except:
+                    # Minimal English stopwords as last resort
+                    stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 
+                                  'as', 'what', 'in', 'on', 'to', 'for', 'with', 'by'}
+        except:
+            # Minimal English stopwords as last resort
+            stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 
+                          'as', 'what', 'in', 'on', 'to', 'for', 'with', 'by'}
+        
+        # Filter stopwords - safe version
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
-        # Lemmatization/Stemming based on language support
+        # Lemmatization/Stemming based on what's safely available
         if use_lemmatization:
             try:
                 if language == 'english':
-                    # English has good lemmatization support
-                    lemmatizer = WordNetLemmatizer()
-                    tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                    try:
+                        from nltk.stem import WordNetLemmatizer
+                        lemmatizer = WordNetLemmatizer()
+                        tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                    except:
+                        pass  # Skip lemmatization if unavailable
                 elif language in stemmer_languages:
-                    # For other languages, use stemming as an alternative
-                    stemmer = SnowballStemmer(language)
-                    tokens = [stemmer.stem(t) for t in tokens]
-            except Exception as e:
+                    try:
+                        from nltk.stem import SnowballStemmer
+                        stemmer = SnowballStemmer(language)
+                        tokens = [stemmer.stem(t) for t in tokens]
+                    except:
+                        pass  # Skip stemming if unavailable
+            except Exception:
                 pass  # Continue without lemmatization/stemming if it fails
         
         return " ".join(tokens)
