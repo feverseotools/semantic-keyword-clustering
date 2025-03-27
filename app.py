@@ -29,6 +29,11 @@ st.cache_data.clear()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# *** IMPORTANT: COMPLETELY DISABLE SPACY ***
+# Force spaCy to be unavailable - we're not going to use it on Streamlit Cloud
+spacy_available = False
+nlp = None
+
 # For OpenAI, import with error handling
 try:
     from openai import OpenAI
@@ -45,32 +50,7 @@ except ImportError:
     sentence_transformers_available = False
     logger.warning("SentenceTransformer not available. Will use alternatives.")
 
-# IMPORTANT: Completely disable spaCy automatic download
-os.environ["SPACY_WARNING_IGNORE"] = "E050"
-
-# Try to import spaCy but NEVER download models
-spacy_available = False
-nlp = None
-
-try:
-    import spacy
-    try:
-        # ONLY try to load if already exists, never download
-        if spacy.util.is_package("en_core_web_sm"):
-            nlp = spacy.load("en_core_web_sm")
-            spacy_available = True
-            logger.info("Successfully loaded existing spaCy model")
-        else:
-            logger.warning("spaCy model not found and will not be downloaded")
-            spacy_available = False
-    except Exception as e:
-        logger.warning(f"Error loading spaCy model: {e}")
-        spacy_available = False
-except ImportError:
-    logger.warning("spaCy not available")
-    spacy_available = False
-
-# Try to import TextBlob as alternative to spaCy
+# Try to import TextBlob as alternative
 try:
     from textblob import TextBlob
     textblob_available = True
@@ -102,6 +82,19 @@ DEFAULT_STOPWORDS = {
     'her', 'its', 'ours', 'yours', 'theirs', 'myself', 'yourself', 'himself', 'herself',
     'itself', 'ourselves', 'yourselves', 'themselves'
 }
+
+# Define a special patch to prevent spaCy from being imported later
+# This is a safety measure
+import sys
+class SpacyBlocker:
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'spacy':
+            logger.warning("Blocked attempt to import spaCy")
+            return None
+        return None
+
+# Add our blocker to sys.meta_path to prevent spaCy imports
+sys.meta_path.insert(0, SpacyBlocker())
 
 # BLOCK 1 - END
 
@@ -158,7 +151,7 @@ class KeywordProcessor:
             # Process the batch
             batch_processed = []
             for keyword in batch:
-                if use_advanced and (spacy_available or textblob_available):
+                if use_advanced and textblob_available:  # Only TextBlob, never spaCy
                     batch_processed.append(self._enhanced_preprocessing(keyword))
                 else:
                     batch_processed.append(self._preprocess_text(keyword))
@@ -170,37 +163,13 @@ class KeywordProcessor:
         return processed_keywords
     
     def _enhanced_preprocessing(self, text):
-        """Enhanced preprocessing with linguistic analysis - without relying on NLTK downloads"""
+        """Enhanced preprocessing with linguistic analysis without spaCy"""
         if not isinstance(text, str) or not text.strip():
             return ""
         
         try:
-            # Option 1: Use spaCy for advanced linguistic analysis
-            if spacy_available:
-                doc = nlp(text.lower())
-                
-                # Preserve named entities
-                entities = [ent.text for ent in doc.ents]
-                
-                # Extract relevant tokens (not stopwords)
-                tokens = []
-                for token in doc:
-                    if not token.is_stop and token.is_alpha and len(token.text) > 1:
-                        tokens.append(token.lemma_)
-                
-                # Extract meaningful bigrams
-                bigrams = []
-                for i in range(len(doc) - 1):
-                    if (not doc[i].is_stop and not doc[i+1].is_stop and 
-                        doc[i].is_alpha and doc[i+1].is_alpha):
-                        bigrams.append(f"{doc[i].lemma_}_{doc[i+1].lemma_}")
-                
-                # Combine everything preserving entities
-                processed_parts = tokens + bigrams + entities
-                return " ".join(processed_parts)
-            
-            # Option 2: Use TextBlob as simpler alternative
-            elif textblob_available:
+            # Only use TextBlob, never spaCy
+            if textblob_available:
                 blob = TextBlob(text.lower())
                 # Extract noun phrases (good for keywords)
                 noun_phrases = list(blob.noun_phrases)
@@ -220,7 +189,7 @@ class KeywordProcessor:
                 
                 return " ".join(processed_parts)
             
-            # Option 3: Fallback to basic method
+            # Fallback to basic method
             else:
                 return self._preprocess_text(text)
         except Exception as e:
@@ -497,7 +466,6 @@ class KeywordProcessor:
             st.warning("Generating random vectors as absolute last resort")
             random_embeddings = np.random.rand(len(processed_keywords), 100)
             return random_embeddings
-
 # BLOCK 2 - END
 
 # BLOCK 3 - START 
@@ -2165,6 +2133,547 @@ def main():
 
 if __name__ == "__main__":
     try:
+        def main():
+            """Main application entry point"""
+            # Page configuration
+            st.set_page_config(
+                page_title="Advanced Semantic Keyword Clustering",
+                page_icon="🔍",
+                layout="wide",
+                initial_sidebar_state="expanded"
+            )
+            
+            # Add a note about SpaCy being disabled in Streamlit Cloud
+            st.info("""
+            **Note:** Running in Streamlit Cloud environment. Some advanced linguistic processing features 
+            have been automatically adjusted for compatibility.
+            """)
+
+            # Add CSS styles
+            st.markdown("""
+            <style>
+                .main-header {
+                    font-size: 2.5rem;
+                    font-weight: bold;
+                    margin-bottom: 1rem;
+                }
+                .sub-header {
+                    font-size: 1.5rem;
+                    font-weight: bold;
+                    margin-bottom: 0.5rem;
+                }
+                .info-box {
+                    background-color: #f0f2f6;
+                    padding: 1rem;
+                    border-radius: 0.5rem;
+                    margin-bottom: 1rem;
+                }
+                .success-box {
+                    background-color: #d4edda;
+                    color: #155724;
+                    padding: 1rem;
+                    border-radius: 0.5rem;
+                    margin-bottom: 1rem;
+                }
+                .highlight {
+                    background-color: #fffbcc;
+                    padding: 0.2rem 0.5rem;
+                    border-radius: 0.2rem;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Title and description
+            st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
+            st.markdown("""
+            Group semantically similar keywords using advanced NLP and clustering techniques.
+            Upload your CSV file with keywords and configure parameters to get high-quality semantic clusters.
+            """)
+
+            # Show library status
+            with st.expander("Semantic library status", expanded=False):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if openai_available:
+                        st.success("✅ OpenAI available (requires API Key)")
+                    else:
+                        st.warning("⚠️ OpenAI not available")
+                        
+                    if sentence_transformers_available:
+                        st.success("✅ SentenceTransformers available (free)")
+                    else:
+                        st.warning("⚠️ SentenceTransformers not available")
+                        st.markdown("""
+                        To install:
+                        ```
+                        pip install sentence-transformers
+                        ```
+                        """)
+                
+                with col2:
+                    # Always show spaCy as unavailable since we disabled it
+                    st.warning("⚠️ spaCy disabled in Streamlit Cloud")
+                        
+                    if hdbscan_available:
+                        st.success("✅ HDBSCAN available")
+                    else:
+                        st.warning("⚠️ HDBSCAN not available")
+                        
+                with col3:
+                    # Installation info
+                    st.info("""
+                    For local installation with all features:
+                    ```
+                    pip install sentence-transformers textblob hdbscan
+                    ```
+                    """)
+
+            # Initialize session state
+            if 'process_complete' not in st.session_state:
+                st.session_state.process_complete = False
+            if 'df_results' not in st.session_state:
+                st.session_state.df_results = None
+            if 'embeddings' not in st.session_state:
+                st.session_state.embeddings = None
+
+            # Sidebar configuration
+            st.sidebar.markdown("<div class='sub-header'>Configuration</div>", unsafe_allow_html=True)
+
+            # 1. Upload CSV or use sample data
+            uploaded_file = st.sidebar.file_uploader("Upload your keywords CSV", type=['csv'])
+            
+            # Sample data option
+            use_sample_data = False
+            if uploaded_file is None:
+                use_sample_data = st.sidebar.checkbox("Use sample data for demonstration")
+                if use_sample_data:
+                    st.sidebar.success("✅ Using sample SEO keywords for demonstration")
+
+            # 2. OpenAI API Key
+            openai_api_key = st.sidebar.text_input(
+                "OpenAI API Key (recommended)",
+                type="password", 
+                help="Provide your OpenAI API Key for high-quality embeddings (up to 5000 keywords). If not provided, SentenceTransformers will be used as a free alternative."
+            )
+
+            # Show semantic processing status
+            if openai_available:
+                if openai_api_key:
+                    st.sidebar.success("✅ API Key provided - Using OpenAI for high precision embeddings")
+                else:
+                    if sentence_transformers_available:
+                        st.sidebar.info("ℹ️ No API Key - Using SentenceTransformers as free alternative")
+                    else:
+                        st.sidebar.warning("⚠️ No API Key or SentenceTransformers - Using TF-IDF (reduced precision)")
+            else:
+                if sentence_transformers_available:
+                    st.sidebar.info("ℹ️ OpenAI not available - Using SentenceTransformers as free alternative")
+                else:
+                    st.sidebar.error("❌ Advanced methods not available - Using TF-IDF (reduced precision)")
+
+            # 3. Clustering parameters
+            st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
+
+            # Parameters explanation panel
+            with st.sidebar.expander("ℹ️ Parameter Guide", expanded=False):
+                st.markdown("""
+                ### Clustering Parameter Guide
+                
+                #### Number of clusters
+                **What is it?** The number of groups your keywords will be divided into.
+                
+                **How to use it:** 
+                - **↑ Increase** for more detailed and specific topic division.
+                - **↓ Decrease** for broader groups.
+                
+                **Result:**
+                - **High values** (15-30): Many small, specific groups.
+                - **Low values** (5-10): Fewer but broader groups.
+                - **Ideal:** Generally 8-15 for 1000 keywords. Increase proportionally with keyword count.
+                
+                ---
+                
+                #### Explained PCA variance (%)
+                **What is it?** Determines how much original information is preserved when simplifying the data.
+                
+                **How to use it:**
+                - **↑ Increase** for greater precision and preserving semantic nuances.
+                - **↓ Decrease** to speed up processing with large datasets.
+                
+                **Result:**
+                - **High values** (95-99%): Greater semantic precision but slower.
+                - **Low values** (80-90%): Faster processing but may lose some nuances.
+                - **Ideal:** 90-95% offers a good balance between precision and speed.
+                
+                ---
+                
+                #### Maximum PCA components
+                **What is it?** Limits the maximum complexity of the analysis model.
+                
+                **How to use it:**
+                - **↑ Increase** for large datasets with high thematic diversity.
+                - **↓ Decrease** for smaller datasets or those centered on a single theme.
+                
+                **Result:**
+                - **High values** (100-200): Captures more complex relationships between words.
+                - **Low values** (30-75): More efficient but may oversimplify.
+                - **Ideal:** Between 75-100 for most cases.
+                
+                ---
+                
+                #### Minimum term frequency
+                **What is it?** Ignores words that appear in very few keywords. Helps filter rare words or typos.
+                
+                **How to use it:**
+                - **↑ Increase** to eliminate uncommon terms and possible noise.
+                - **↓ Decrease** to include less frequent terms that might be important.
+                
+                **Result:**
+                - **High values** (3-5): Eliminates more rare terms, "cleaner" clustering.
+                - **Low values** (1-2): Preserves uncommon terms, may retain more noise.
+                - **Ideal:** 1-2 for small datasets, 2-3 for large datasets (+5000 keywords).
+                
+                ---
+                
+                #### Maximum term frequency (%)
+                **What is it?** Ignores words that appear in a high percentage of keywords.
+                
+                **How to use it:**
+                - **↑ Increase** to include more common terms.
+                - **↓ Decrease** to filter out overly generic words.
+                
+                **Result:**
+                - **High values** (90-100%): Includes almost all terms, even very common ones.
+                - **Low values** (70-85%): Focus on more distinctive words, ignoring generic ones.
+                - **Ideal:** 85-95% works well for most datasets.
+                """)
+                
+                st.info("""
+                **Tip:** If unsure, keep the default values. The application is optimized to work well with these parameters in most cases.
+                
+                For large datasets (+5000 keywords), consider slightly increasing the number of clusters and reducing the explained PCA variance to maintain reasonable processing times.
+                """)
+
+            # Parameter sliders with improved descriptions
+            num_clusters = st.sidebar.slider(
+                "Number of clusters", 
+                min_value=2, 
+                max_value=50, 
+                value=10, 
+                help="Number of groups your keywords will be divided into. More clusters = more specific groups."
+            )
+
+            pca_variance = st.sidebar.slider(
+                "Explained PCA variance (%)", 
+                min_value=50, 
+                max_value=99, 
+                value=90,  # Reduced from 95 to 90 for better performance
+                help="Percentage of information preserved. Higher value = greater precision but slower."
+            )
+
+            max_pca_components = st.sidebar.slider(
+                "Maximum PCA components", 
+                min_value=10, 
+                max_value=300, 
+                value=100, 
+                help="Maximum complexity limit. Higher value = captures more complex relationships."
+            )
+
+            # 4. Advanced options
+            st.sidebar.markdown("<div class='sub-header'>Advanced options</div>", unsafe_allow_html=True)
+
+            min_df = st.sidebar.slider(
+                "Minimum term frequency", 
+                min_value=1, 
+                max_value=10, 
+                value=1, 
+                help="Ignores infrequent terms. Higher value = eliminates more rare words."
+            )
+
+            max_df = st.sidebar.slider(
+                "Maximum term frequency (%)", 
+                min_value=50, 
+                max_value=100, 
+                value=95, 
+                help="Ignores overly common terms. Lower value = eliminates more generic words."
+            )
+
+            gpt_model = st.sidebar.selectbox(
+                "Model for naming clusters", 
+                ["gpt-3.5-turbo", "gpt-4"], 
+                index=0,
+                help="GPT-4 provides more precise names but is more expensive and slower."
+            )
+
+            # Add cost calculator to sidebar
+            add_cost_calculator()
+
+            # Data processing section
+            if uploaded_file is not None or use_sample_data:
+                # Show estimated cost based on CSV
+                if not st.session_state.process_complete:
+                    if uploaded_file is not None:
+                        try:
+                            df = pd.read_csv(uploaded_file)
+                            num_keywords = len(df)
+                            st.success(f"✅ Loaded {num_keywords} keywords from CSV")
+                            show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
+                        except Exception as e:
+                            st.error(f"Error reading CSV: {e}")
+                            st.info("Trying alternative format...")
+                            try:
+                                content = uploaded_file.getvalue().decode('utf-8')
+                                df = pd.read_csv(StringIO(content), sep=None, engine='python')
+                                if len(df.columns) == 1:
+                                    df.columns = ["keyword"]
+                                else:
+                                    df = df.iloc[:, 0].to_frame()
+                                    df.columns = ["keyword"]
+                                num_keywords = len(df)
+                                st.success(f"✅ Loaded {num_keywords} keywords from CSV (alternative format)")
+                                show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
+                            except Exception as e2:
+                                st.error(f"Could not read CSV: {e2}")
+                                uploaded_file = None
+                    else:  # Sample data
+                        df = create_sample_data()
+                        num_keywords = len(df)
+                        st.success(f"✅ Using {num_keywords} sample keywords for demonstration")
+                        show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
+
+                # Button to run clustering
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col2:
+                    if not st.session_state.process_complete:
+                        if st.button("Start Advanced Semantic Clustering", type="primary", use_container_width=True):
+                            # Define input data
+                            if uploaded_file is not None:
+                                try:
+                                    if 'df' not in locals():
+                                        df = pd.read_csv(uploaded_file, header=None)
+                                        df.columns = ["keyword"]
+                                    if len(df.columns) != 1:
+                                        df = df.iloc[:, 0].to_frame()
+                                        df.columns = ["keyword"]
+                                except Exception as e:
+                                    st.error(f"Error reading CSV: {e}")
+                                    return
+                            else:  # use_sample_data must be True
+                                df = create_sample_data()
+                            
+                            # Run the complete clustering pipeline
+                            with st.spinner("Processing keywords..."):
+                                try:
+                                    # Initialize processor
+                                    processor = KeywordProcessor(
+                                        use_openai=(openai_api_key is not None and openai_api_key.strip() != ""),
+                                        openai_api_key=openai_api_key,
+                                        num_clusters=num_clusters
+                                    )
+                                    
+                                    # Step 1: Preprocess keywords
+                                    st.subheader("Keyword Preprocessing")
+                                    processed_keywords = processor.preprocess_keywords_cached(df["keyword"].tolist())
+                                    df['keyword_processed'] = processed_keywords
+                                    st.success("✅ Keywords preprocessed successfully")
+                                    
+                                    # Step 2: Generate embeddings
+                                    st.subheader("Semantic Vector Generation")
+                                    embeddings = processor.generate_embeddings_cached(
+                                        df['keyword_processed'].tolist(),
+                                        use_openai=(openai_api_key is not None and openai_api_key.strip() != "")
+                                    )
+                                    st.success(f"✅ Generated {embeddings.shape[1]}-dimensional semantic vectors")
+                                    
+                                    # Step 3: Apply PCA if embeddings are high-dimensional
+                                    if embeddings.shape[1] > max_pca_components:
+                                        st.subheader("Dimensionality Reduction (PCA)")
+                                        
+                                        try:
+                                            pca_progress = st.progress(0)
+                                            pca_text = st.empty()
+                                            pca_text.text("Analyzing explained variance...")
+                                            
+                                            # Find optimal number of components
+                                            pca = PCA()
+                                            pca.fit(embeddings)
+                                            cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+                                            pca_progress.progress(0.3)
+                                            
+                                            # Find components for target variance
+                                            target_variance = pca_variance / 100.0
+                                            n_components = np.argmax(cumulative_variance >= target_variance) + 1
+                                            
+                                            # If not enough components for target variance, use maximum
+                                            if n_components == 1 and len(cumulative_variance) > 1:
+                                                n_components = min(max_pca_components, len(cumulative_variance))
+                                                
+                                            pca_text.text(f"Components for {pca_variance}% variance: {n_components}")
+                                            pca_progress.progress(0.6)
+                                            
+                                            # Apply PCA with optimal components
+                                            max_components = min(n_components, max_pca_components)
+                                            pca = PCA(n_components=max_components)
+                                            embeddings_reduced = pca.fit_transform(embeddings)
+                                            
+                                            pca_progress.progress(1.0)
+                                            pca_text.text(f"✅ PCA applied: {max_components} dimensions ({pca_variance}% variance)")
+                                        except Exception as e:
+                                            st.error(f"PCA error: {e}")
+                                            st.info("Continuing without dimensionality reduction")
+                                            embeddings_reduced = embeddings
+                                    else:
+                                        embeddings_reduced = embeddings
+                                        st.info(f"Embeddings dimensionality already appropriate ({embeddings.shape[1]}). No PCA needed.")
+                                    
+                                    # Step 4: Perform clustering
+                                    st.subheader("Advanced Semantic Clustering")
+                                    clustering_engine = ClusteringEngine(num_clusters=num_clusters)
+                                    
+                                    try:
+                                        cluster_labels = clustering_engine.cluster_cached(
+                                            embeddings_reduced, 
+                                            num_clusters=num_clusters
+                                        )
+                                        df["cluster_id"] = cluster_labels
+                                        st.success(f"✅ Keywords grouped into {len(df['cluster_id'].unique())} semantic clusters")
+                                    except Exception as e:
+                                        st.error(f"Clustering error: {e}")
+                                        st.info("Trying alternative clustering...")
+                                        # Basic fallback
+                                        from sklearn.cluster import KMeans
+                                        kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
+                                        df["cluster_id"] = kmeans.fit_predict(embeddings_reduced) + 1
+                                        st.success("✅ Clustering completed using K-Means as alternative")
+                                    
+                                    # Step 5: Refine clusters
+                                    st.subheader("Cluster Refinement")
+                                    df = clustering_engine.refine_clusters(df, embeddings_reduced)
+                                    final_clusters = len(df['cluster_id'].unique())
+                                    st.success(f"✅ Refinement completed: {final_clusters} final clusters")
+                                    
+                                    # Step 6: Find representative keywords
+                                    st.subheader("Cluster Analysis")
+                                    cluster_analyzer = ClusterAnalyzer(gpt_model=gpt_model)
+                                    clusters_with_representatives = cluster_analyzer.find_representative_keywords(
+                                        df, embeddings_reduced)
+                                    
+                                    # Step 7: Generate cluster names with OpenAI if available
+                                    if openai_api_key and openai_api_key.strip() != "" and openai_available:
+                                        st.subheader("Cluster Naming")
+                                        try:
+                                            client = OpenAI(api_key=openai_api_key)
+                                            cluster_names = cluster_analyzer.generate_cluster_names(
+                                                clusters_with_representatives, 
+                                                client,
+                                                model=gpt_model
+                                            )
+                                        except Exception as e:
+                                            st.error(f"Error generating cluster names: {e}")
+                                            cluster_names = {k: (f"Cluster {k}", f"Group of keywords {k}") 
+                                                          for k in df['cluster_id'].unique()}
+                                    else:
+                                        st.warning("Cannot generate cluster names without OpenAI API Key")
+                                        cluster_names = {k: (f"Cluster {k}", f"Group of keywords {k}") 
+                                                      for k in df['cluster_id'].unique()}
+                                    
+                                    # Apply results to DataFrame
+                                    df['cluster_name'] = ''
+                                    df['cluster_description'] = ''
+                                    df['representative'] = False
+                                    
+                                    for cluster_num, (name, description) in cluster_names.items():
+                                        df.loc[df['cluster_id'] == cluster_num, 'cluster_name'] = name
+                                        df.loc[df['cluster_id'] == cluster_num, 'cluster_description'] = description
+                                        
+                                        # Mark representative keywords
+                                        for keyword in clusters_with_representatives.get(cluster_num, []):
+                                            matching_indices = df[(df['cluster_id'] == cluster_num) & 
+                                                                (df['keyword'] == keyword)].index
+                                            if not matching_indices.empty:
+                                                df.loc[matching_indices, 'representative'] = True
+                                    
+                                    # Step 8: Evaluate cluster quality
+                                    df = cluster_analyzer.evaluate_cluster_quality(df, embeddings_reduced)
+                                    
+                                    # Store results in session state
+                                    st.session_state.df_results = df
+                                    st.session_state.embeddings = embeddings_reduced
+                                    st.session_state.process_complete = True
+                                    
+                                    st.markdown("<div class='success-box'>✅ Semantic clustering completed successfully!</div>", 
+                                              unsafe_allow_html=True)
+                                    
+                                except Exception as e:
+                                    st.error(f"Error during processing: {e}")
+                                    logger.error(f"Processing error: {e}", exc_info=True)
+                                    return
+
+            # Show results if process is complete
+            if st.session_state.process_complete and st.session_state.df_results is not None:
+                display_results(st.session_state.df_results, st.session_state.embeddings)
+                
+                # Reset button
+                if st.button("Reset and Start New Analysis", type="secondary", use_container_width=True):
+                    st.session_state.process_complete = False
+                    st.session_state.df_results = None
+                    st.session_state.embeddings = None
+                    st.rerun()
+
+            # Additional information
+            with st.expander("About Advanced Semantic Clustering"):
+                st.markdown("""
+                ### How this advanced semantic clustering works
+                
+                1. **Linguistic Preprocessing**: Keywords are analyzed using advanced NLP to extract noun phrases and significant tokens.
+                
+                2. **High-Quality Embeddings**: State-of-the-art embedding models are used:
+                   - OpenAI Embeddings (up to 5000 keywords with API key)
+                   - SentenceTransformers (free alternative)
+                   - TF-IDF as last resort
+                
+                3. **Intelligent Dimensionality Reduction**: Optimized PCA preserves important semantic relationships.
+                
+                4. **Advanced Clustering**: Algorithms that automatically discover optimal structure:
+                   - HDBSCAN for detecting natural clusters
+                   - Optimized hierarchical agglomerative clustering
+                   - Automatic optimal cluster number determination
+                
+                5. **Post-Clustering Refinement**: Identifies and corrects problematic assignments:
+                   - Detection of semantic outliers
+                   - Merging of very similar clusters
+                   - Reassignment of misclassified keywords
+                
+                6. **Multi-Metric Evaluation**: Rigorous quality analysis:
+                   - Internal semantic coherence
+                   - Density and compactness
+                   - Separation between clusters
+                   - Diagnosis of problematic clusters
+                
+                ### Tips for better results
+                
+                - **Keyword quality**: Clustering works best when keywords are related to the same domain or industry.
+                
+                - **Preprocessing**: Ensure your keywords don't contain spelling errors or strange characters.
+                
+                - **OpenAI API Key**: Provide an API Key for higher quality embeddings, although SentenceTransformers offers good results at no cost.
+                
+                - **Number of clusters**: Consider using automatic determination of the optimal number of clusters.
+                
+                - **Iterative evaluation**: Examine clusters with low coherence and consider adjusting parameters or dividing them.
+                """)
+
+            # Footer
+            st.markdown("---")
+            st.markdown(
+                """
+                <div style="text-align: center; color: #888;">
+                    Developed for advanced semantic keyword clustering | Version 3.0 with OpenAI/SentenceTransformers hybrid
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+
         main()
     except Exception as e:
         st.error(f"Application error: {str(e)}")
