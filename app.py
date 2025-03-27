@@ -45,22 +45,30 @@ except ImportError:
     sentence_transformers_available = False
     logger.warning("SentenceTransformer not available. Will use alternatives.")
 
+# IMPORTANT: Completely disable spaCy automatic download
+os.environ["SPACY_WARNING_IGNORE"] = "E050"
+
+# Try to import spaCy but NEVER download models
+spacy_available = False
+nlp = None
+
 try:
     import spacy
     try:
-        # Try loading spaCy without subprocess
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
-    except OSError:
-        # Model not found, but no subprocess to download it
-        logger.warning("spaCy model not found, continuing without it")
-        spacy_available = False
+        # ONLY try to load if already exists, never download
+        if spacy.util.is_package("en_core_web_sm"):
+            nlp = spacy.load("en_core_web_sm")
+            spacy_available = True
+            logger.info("Successfully loaded existing spaCy model")
+        else:
+            logger.warning("spaCy model not found and will not be downloaded")
+            spacy_available = False
     except Exception as e:
+        logger.warning(f"Error loading spaCy model: {e}")
         spacy_available = False
-        logger.warning(f"spaCy error: {e}")
 except ImportError:
+    logger.warning("spaCy not available")
     spacy_available = False
-    logger.warning("spaCy not available. Will use alternatives.")
 
 # Try to import TextBlob as alternative to spaCy
 try:
@@ -94,14 +102,6 @@ DEFAULT_STOPWORDS = {
     'her', 'its', 'ours', 'yours', 'theirs', 'myself', 'yourself', 'himself', 'herself',
     'itself', 'ourselves', 'yourselves', 'themselves'
 }
-
-# Create NLTK data directory if it doesn't exist - safer than downloading
-nltk_data_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
-if not os.path.exists(nltk_data_dir):
-    try:
-        os.makedirs(nltk_data_dir)
-    except Exception as e:
-        logger.warning(f"Could not create NLTK data directory: {e}")
 
 # BLOCK 1 - END
 
