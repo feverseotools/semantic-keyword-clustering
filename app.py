@@ -20,7 +20,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
 from io import StringIO
 import logging
-from multiprocessing import Pool, cpu_count
 from typing import Dict, List, Tuple, Union, Optional, Any
 
 # Setup streamlit caching
@@ -49,11 +48,16 @@ except ImportError:
 try:
     import spacy
     try:
+        # Try loading spaCy without subprocess
         nlp = spacy.load("en_core_web_sm")
         spacy_available = True
-    except:
+    except OSError:
+        # Model not found, but no subprocess to download it
+        logger.warning("spaCy model not found, continuing without it")
         spacy_available = False
-        logger.warning("spaCy model not loaded. Will use alternatives.")
+    except Exception as e:
+        spacy_available = False
+        logger.warning(f"spaCy error: {e}")
 except ImportError:
     spacy_available = False
     logger.warning("spaCy not available. Will use alternatives.")
@@ -73,7 +77,6 @@ except ImportError:
     hdbscan_available = False
     logger.warning("HDBSCAN not available. Will use hierarchical clustering.")
 
-# Try to import scikit-learn clustering modules
 try:
     from sklearn.cluster import KMeans, MiniBatchKMeans
     kmeans_available = True
@@ -81,13 +84,24 @@ except ImportError:
     kmeans_available = False
     logger.warning("scikit-learn clustering not available.")
 
-# Download NLTK resources at startup
-try:
-    nltk.download('stopwords', quiet=True)
-    nltk.download('punkt', quiet=True)
-    nltk.download('wordnet', quiet=True)
-except Exception as e:
-    logger.warning(f"Failed to download NLTK resources: {e}")
+# Define default stopwords to avoid NLTK downloads
+DEFAULT_STOPWORDS = {
+    'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'in', 
+    'on', 'to', 'for', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'this',
+    'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+    'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'would', 'should',
+    'could', 'ought', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'their', 'his',
+    'her', 'its', 'ours', 'yours', 'theirs', 'myself', 'yourself', 'himself', 'herself',
+    'itself', 'ourselves', 'yourselves', 'themselves'
+}
+
+# Create NLTK data directory if it doesn't exist - safer than downloading
+nltk_data_dir = os.path.join(os.path.expanduser("~"), "nltk_data")
+if not os.path.exists(nltk_data_dir):
+    try:
+        os.makedirs(nltk_data_dir)
+    except Exception as e:
+        logger.warning(f"Could not create NLTK data directory: {e}")
 
 # BLOCK 1 - END
 
@@ -156,7 +170,7 @@ class KeywordProcessor:
         return processed_keywords
     
     def _enhanced_preprocessing(self, text):
-        """Enhanced preprocessing with linguistic analysis"""
+        """Enhanced preprocessing with linguistic analysis - without relying on NLTK downloads"""
         if not isinstance(text, str) or not text.strip():
             return ""
         
@@ -195,7 +209,8 @@ class KeywordProcessor:
                 try:
                     stop_words = set(stopwords.words('english'))
                 except:
-                    stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'in', 'on', 'to', 'for'}
+                    # Use default stopwords
+                    stop_words = DEFAULT_STOPWORDS
                 
                 words = [word for word in blob.words if len(word) > 1 and word.lower() not in stop_words]
                 
@@ -213,7 +228,7 @@ class KeywordProcessor:
             return text.lower() if isinstance(text, str) else ""
     
     def _preprocess_text(self, text):
-        """Basic text preprocessing with NLTK"""
+        """Basic text preprocessing without relying on NLTK downloads"""
         if not isinstance(text, str) or not text.strip():
             return ""
         
@@ -221,20 +236,21 @@ class KeywordProcessor:
             # Convert to lowercase
             text = text.lower()
             
-            # Tokenize
-            tokens = word_tokenize(text)
+            # Simple tokenization without NLTK
+            tokens = text.split()
             
-            # Load stopwords
+            # Filter out short words and stopwords
             try:
+                # Try to use NLTK stopwords if available without downloading
                 stop_words = set(stopwords.words('english'))
             except:
-                # Basic fallback if stopwords can't be loaded
-                stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'in', 'on', 'to', 'for'}
+                # Use default stopwords if NLTK resources aren't available
+                stop_words = DEFAULT_STOPWORDS
             
-            # Filter stopwords
-            tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
+            # Filter tokens
+            tokens = [t for t in tokens if len(t) > 1 and t.isalpha() and t not in stop_words]
             
-            # Lemmatization
+            # Basic lemmatization (if available)
             try:
                 lemmatizer = WordNetLemmatizer()
                 tokens = [lemmatizer.lemmatize(t) for t in tokens]
@@ -2153,6 +2169,11 @@ if __name__ == "__main__":
     except Exception as e:
         st.error(f"Application error: {str(e)}")
         logger.exception("Unhandled application error")
+        
+        # Show full traceback in debug mode
+        import traceback
+        st.write("Detailed error information:")
+        st.code(traceback.format_exc())
         
         # Provide recovery options
         st.warning("""
