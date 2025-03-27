@@ -40,10 +40,15 @@ try:
                          'german', 'hungarian', 'italian', 'norwegian', 'porter', 
                          'portuguese', 'romanian', 'russian', 'spanish', 'swedish']
     
-    # Download resources for multiple languages
-    nltk.download('stopwords', quiet=True)
-    nltk.download('punkt', quiet=True)
-    nltk.download('wordnet', quiet=True)
+    # Download NLTK resources safely
+    for resource in ['stopwords', 'punkt', 'wordnet']:
+        try:
+            nltk.data.find(f'tokenizers/{resource}')
+        except LookupError:
+            try:
+                nltk.download(resource, quiet=True)
+            except:
+                pass
     
     nltk_available = True
 except ImportError:
@@ -72,29 +77,45 @@ try:
     }
     
     # Initialize with English as default
-    nlp = spacy.load("en_core_web_sm")
-    spacy_available = True
+    try:
+        nlp = spacy.load("en_core_web_sm")
+        spacy_available = True
+    except:
+        # Don't try to download here - defer to later function
+        spacy_available = False
     
     # Function to load a different SpaCy language model
     def load_spacy_language_model(language):
-        global nlp
+        global nlp, spacy_available
         model_name = spacy_language_models.get(language, 'en_core_web_sm')
         try:
             nlp = spacy.load(model_name)
+            spacy_available = True
             return True
         except:
             try:
+                # Use spacy's download method instead of subprocess
+                import importlib
                 import spacy.cli
-                spacy.cli.download(model_name)
-                nlp = spacy.load(model_name)
-                return True
-            except:
-                # Fallback to English if requested language model fails
                 try:
-                    nlp = spacy.load("en_core_web_sm")
-                    return False
+                    spacy.cli.download(model_name)
+                    nlp = spacy.load(model_name)
+                    spacy_available = True
+                    return True
                 except:
-                    return False
+                    # Fallback to English if requested language model fails
+                    try:
+                        if model_name != "en_core_web_sm":
+                            # Try the English model as fallback
+                            nlp = spacy.load("en_core_web_sm") 
+                            spacy_available = True
+                            return True
+                    except:
+                        spacy_available = False
+                        return False
+            except:
+                spacy_available = False
+                return False
                     
 except ImportError:
     spacy_available = False
@@ -109,7 +130,7 @@ try:
     hdbscan_available = True
 except ImportError:
     hdbscan_available = False
-    
+#END BLOCK 1
 #BLOCK 2
 # Function to calculate the estimated API cost
 def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
