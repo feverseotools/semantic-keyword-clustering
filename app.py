@@ -1,62 +1,141 @@
+#BLOCK 1
+import os
+import time
+import json
+import numpy as np
+import pandas as pd
+import streamlit as st
+import re
+from io import StringIO
+import plotly.express as px
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import PCA
+from scipy.cluster.hierarchy import linkage, fcluster
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Import libraries with error handling
+# OpenAI
+try:
+    from openai import OpenAI
+    openai_available = True
+except ImportError:
+    openai_available = False
+
+# NLTK
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    from nltk.tokenize import word_tokenize
+    from nltk.stem import WordNetLemmatizer, SnowballStemmer
+    
+    # Available languages in NLTK with stopwords
+    nltk_languages = ['arabic', 'azerbaijani', 'danish', 'dutch', 'english', 
+                     'finnish', 'french', 'german', 'greek', 'hungarian', 
+                     'indonesian', 'italian', 'kazakh', 'nepali', 'norwegian', 
+                     'portuguese', 'romanian', 'russian', 'slovene', 'spanish', 
+                     'swedish', 'tajik', 'turkish']
+    
+    # Available languages for Snowball stemmer (for languages without lemmatization)
+    stemmer_languages = ['arabic', 'danish', 'dutch', 'english', 'finnish', 'french', 
+                         'german', 'hungarian', 'italian', 'norwegian', 'porter', 
+                         'portuguese', 'romanian', 'russian', 'spanish', 'swedish']
+    
+    # Download resources for multiple languages
+    nltk.download('stopwords', quiet=True)
+    nltk.download('punkt', quiet=True)
+    nltk.download('wordnet', quiet=True)
+    
+    nltk_available = True
+except ImportError:
+    nltk_available = False
+    nltk_languages = ['english']
+    stemmer_languages = ['english']
+
+# SentenceTransformers
+try:
+    from sentence_transformers import SentenceTransformer
+    sentence_transformers_available = True
+except ImportError:
+    sentence_transformers_available = False
+
+# SpaCy
 try:
     import spacy
-    try:
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
-    except:
-        # Si el modelo no está descargado, intentar descargarlo usando la API de spaCy
+    # Dictionary of available SpaCy language models
+    spacy_language_models = {
+        'english': 'en_core_web_sm',
+        'spanish': 'es_core_news_sm',
+        'french': 'fr_core_news_sm',
+        'german': 'de_core_news_sm',
+        'italian': 'it_core_news_sm',
+        'portuguese': 'pt_core_news_sm'
+    }
+    
+    # Initialize with English as default
+    nlp = spacy.load("en_core_web_sm")
+    spacy_available = True
+    
+    # Function to load a different SpaCy language model
+    def load_spacy_language_model(language):
+        global nlp
+        model_name = spacy_language_models.get(language, 'en_core_web_sm')
         try:
-            import spacy.cli
-            spacy.cli.download("en_core_web_sm")
-            nlp = spacy.load("en_core_web_sm")
-            spacy_available = True
+            nlp = spacy.load(model_name)
+            return True
         except:
-            st.warning("No se pudo descargar el modelo de spaCy. Se usarán funcionalidades limitadas.")
-            spacy_available = False
+            try:
+                import spacy.cli
+                spacy.cli.download(model_name)
+                nlp = spacy.load(model_name)
+                return True
+            except:
+                # Fallback to English if requested language model fails
+                try:
+                    nlp = spacy.load("en_core_web_sm")
+                    return False
+                except:
+                    return False
+                    
 except ImportError:
     spacy_available = False
+    spacy_language_models = {'english': 'en_core_web_sm'}
+    
+    def load_spacy_language_model(language):
+        return False
 
+# HDBSCAN
 try:
     import hdbscan
     hdbscan_available = True
 except ImportError:
     hdbscan_available = False
-
-# Descargar recursos de NLTK al inicio para evitar problemas posteriores
-try:
-    import nltk
-    for resource in ['stopwords', 'punkt', 'wordnet']:
-        try:
-            nltk.data.find(f'tokenizers/{resource}')
-        except LookupError:
-            nltk.download(resource, quiet=True)
-except Exception as e:
-    pass  # Continuar incluso si la descarga falla
-# Función para calcular el coste estimado de la API
+    
+#BLOCK 2
+# Function to calculate the estimated API cost
 def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
     """
-    Calcula el coste estimado de usar la API de OpenAI basado en el número de keywords
+    Calculates the estimated cost of using the OpenAI API based on the number of keywords
     
     Args:
-        num_keywords: Número total de keywords
-        selected_model: Modelo para nombrar clusters (gpt-3.5-turbo o gpt-4)
-        num_clusters: Número estimado de clusters
+        num_keywords: Total number of keywords
+        selected_model: Model for naming clusters (gpt-3.5-turbo or gpt-4)
+        num_clusters: Estimated number of clusters
     
     Returns:
-        dict: Desglose de costes por componente y coste total
+        dict: Breakdown of costs by component and total cost
     """
-    # Precios actualizados (marzo 2025)
-    EMBEDDING_COST_PER_1K = 0.02  # text-embedding-3-small por 1K tokens
+    # Updated prices (March 2025)
+    EMBEDDING_COST_PER_1K = 0.02  # text-embedding-3-small per 1K tokens
     
-    # Costes de GPT-3.5-Turbo
+    # GPT-3.5-Turbo costs
     GPT35_INPUT_COST_PER_1K = 0.0005
     GPT35_OUTPUT_COST_PER_1K = 0.0015
     
-    # Costes de GPT-4
+    # GPT-4 costs
     GPT4_INPUT_COST_PER_1K = 0.03
     GPT4_OUTPUT_COST_PER_1K = 0.06
     
-    # Resultados
+    # Results
     results = {
         "embedding_cost": 0,
         "naming_cost": 0,
@@ -64,19 +143,19 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
         "processed_keywords": 0
     }
     
-    # 1. Coste de embeddings - limitado a 5000 keywords
+    # 1. Embedding cost - limited to 5000 keywords
     keywords_for_embeddings = min(num_keywords, 5000)
     results["processed_keywords"] = keywords_for_embeddings
     
-    # Estimamos un promedio de 2 tokens por keyword (algunas tendrán 1, otras más)
+    # We estimate an average of 2 tokens per keyword (some will have 1, others more)
     estimated_tokens = keywords_for_embeddings * 2
     results["embedding_cost"] = (estimated_tokens / 1000) * EMBEDDING_COST_PER_1K
     
-    # 2. Coste de nombrar clusters
-    # Estimamos tokens para nombrar clusters (depende del número de clusters)
-    # El prompt para análisis + Keywords representativas (aprox. 15 por cluster) + Respuesta
-    avg_tokens_per_cluster = 200  # Tokens por cluster para el input (incluyendo keywords)
-    avg_output_tokens_per_cluster = 80  # Tokens de salida por cluster (nombre + descripción en JSON)
+    # 2. Cost of naming clusters
+    # We estimate tokens for naming clusters (depends on the number of clusters)
+    # The prompt for analysis + Representative keywords (approx. 15 per cluster) + Response
+    avg_tokens_per_cluster = 200  # Tokens per cluster for input (including keywords)
+    avg_output_tokens_per_cluster = 80  # Output tokens per cluster (name + description in JSON)
     
     estimated_input_tokens = num_clusters * avg_tokens_per_cluster
     estimated_output_tokens = num_clusters * avg_output_tokens_per_cluster
@@ -90,196 +169,213 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
     
     results["naming_cost"] = input_cost + output_cost
     
-    # 3. Coste total
+    # 3. Total cost
     results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
     
     return results
-# Widget de calculadora de costes para Streamlit
+
+# Cost calculator widget for Streamlit
 def add_cost_calculator():
     st.sidebar.markdown("---")
-    with st.sidebar.expander("💰 Calculadora de Costes API", expanded=False):
+    with st.sidebar.expander("💰 API Cost Calculator", expanded=False):
         st.markdown("""
-        ### Calculadora de Costes de API
+        ### API Cost Calculator
         
-        Calcula el coste aproximado de procesar tus keywords con OpenAI.
+        Calculate the approximate cost of processing your keywords with OpenAI.
         """)
         
-        # Input de número de keywords
+        # Number of keywords input
         calc_num_keywords = st.number_input(
-            "Número de keywords a procesar", 
+            "Number of keywords to process", 
             min_value=100, 
             max_value=100000, 
             value=1000,
             step=500
         )
         
-        # Input de número de clusters
+        # Number of clusters input
         calc_num_clusters = st.number_input(
-            "Número aproximado de clusters",
+            "Approximate number of clusters",
             min_value=2,
             max_value=50,
             value=10,
             step=1
         )
         
-        # Selección de modelo
+        # Model selection
         calc_model = st.radio(
-            "Modelo para nombrar clusters",
+            "Model for naming clusters",
             options=["gpt-3.5-turbo", "gpt-4"],
             index=0,
             horizontal=True
         )
         
-        # Botón para calcular
-        if st.button("Calcular Coste Estimado", use_container_width=True):
+        # Calculate button
+        if st.button("Calculate Estimated Cost", use_container_width=True):
             cost_results = calculate_api_cost(calc_num_keywords, calc_model, calc_num_clusters)
             
-            # Mostrar resultados
+            # Show results
             col1, col2 = st.columns(2)
             
             with col1:
                 st.metric(
-                    "Keywords procesadas con OpenAI", 
+                    "Keywords processed with OpenAI", 
                     f"{cost_results['processed_keywords']:,}",
-                    help="OpenAI procesa hasta 5,000 keywords, el resto se propaga mediante similitud"
+                    help="OpenAI processes up to 5,000 keywords, the rest are propagated through similarity"
                 )
                 
                 st.metric(
-                    "Coste embeddings", 
+                    "Embedding cost", 
                     f"${cost_results['embedding_cost']:.4f}",
-                    help="Coste de generar vectores semánticos con text-embedding-3-small"
+                    help="Cost of generating semantic vectors with text-embedding-3-small"
                 )
             
             with col2:
                 st.metric(
-                    "Coste nombrar clusters", 
+                    "Cluster naming cost", 
                     f"${cost_results['naming_cost']:.4f}",
-                    help=f"Coste de generar nombres y descripciones usando {calc_model}"
+                    help=f"Cost of generating names and descriptions using {calc_model}"
                 )
                 
                 st.metric(
-                    "COSTE TOTAL", 
+                    "TOTAL COST", 
                     f"${cost_results['total_cost']:.4f}",
-                    help="Coste total estimado de API (no incluye recursos computacionales)"
+                    help="Total estimated API cost (does not include computational resources)"
                 )
             
             st.info("""
-            **Nota:** Esta es una estimación aproximada. El coste real puede variar 
-            según la longitud de las keywords y la complejidad de los clusters.
-            Usando Sentence Transformers como alternativa, el coste es $0.
+            **Note:** This is an approximate estimate. The actual cost may vary 
+            depending on the length of the keywords and the complexity of the clusters.
+            Using Sentence Transformers as an alternative, the cost is $0.
             """)
 
-# Función para mostrar coste estimado del CSV cargado
+# Function to show estimated cost of the loaded CSV
 def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
     if num_keywords > 0:
         cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
         
-        with st.sidebar.expander("💰 Coste Estimado (CSV actual)", expanded=True):
-            st.markdown(f"### Coste Estimado para {num_keywords:,} Keywords")
+        with st.sidebar.expander("💰 Estimated Cost (Current CSV)", expanded=True):
+            st.markdown(f"### Estimated Cost for {num_keywords:,} Keywords")
             
-            # Mostrar desglose
+            # Show breakdown
             st.markdown(f"""
-            - **Keywords procesadas con OpenAI**: {cost_results['processed_keywords']:,}
-            - **Coste embeddings**: ${cost_results['embedding_cost']:.4f}
-            - **Coste nombrar clusters**: ${cost_results['naming_cost']:.4f}
-            - **COSTE TOTAL**: ${cost_results['total_cost']:.4f}
+            - **Keywords processed with OpenAI**: {cost_results['processed_keywords']:,}
+            - **Embedding cost**: ${cost_results['embedding_cost']:.4f}
+            - **Cluster naming cost**: ${cost_results['naming_cost']:.4f}
+            - **TOTAL COST**: ${cost_results['total_cost']:.4f}
             """)
             
             if cost_results['processed_keywords'] < num_keywords:
                 st.info(f"""
-                Se procesan directamente {cost_results['processed_keywords']:,} keywords con OpenAI.
-                Las {num_keywords - cost_results['processed_keywords']:,} restantes se procesarán 
-                mediante propagación de similitud semántica.
+                {cost_results['processed_keywords']:,} keywords are directly processed with OpenAI.
+                The remaining {num_keywords - cost_results['processed_keywords']:,} will be processed 
+                through semantic similarity propagation.
                 """)
             
             st.markdown("""
-            **Ahorro de costes**: Si prefieres no usar OpenAI, puedes 
-            utilizar SentenceTransformers como alternativa gratuita con 
-            buenos resultados.
+            **Cost savings**: If you prefer not to use OpenAI, you can 
+            use SentenceTransformers as a free alternative with 
+            good results.
             """)
-# MEJORA 4: Preprocesamiento Semántico Mejorado
-def enhanced_preprocessing(text, use_lemmatization=True):
-    """Preprocesamiento mejorado con tratamiento de entidades y n-gramas"""
+#BLOCK 3
+    # ENHANCEMENT 4: Improved Semantic Preprocessing with multi-language support
+def enhanced_preprocessing(text, language='english', use_lemmatization=True):
+    """Improved preprocessing with entity and n-gram handling with language support"""
     if not isinstance(text, str) or not text.strip():
         return ""
     
     try:
-        # Usar spaCy para un análisis lingüístico más avanzado
-        if spacy_available:
+        # Use spaCy for more advanced linguistic analysis if available for the language
+        if spacy_available and language in spacy_language_models:
+            # Ensure we have the right language model loaded
+            if nlp.lang != spacy_language_models[language].split('_')[0]:
+                load_spacy_language_model(language)
+                
             doc = nlp(text.lower())
             
-            # Conservar entidades nombradas completas
+            # Preserve complete named entities
             entities = [ent.text for ent in doc.ents]
             
-            # Extraer tokens relevantes (no stopwords)
+            # Extract relevant tokens (non-stopwords)
             tokens = []
             for token in doc:
                 if not token.is_stop and token.is_alpha and len(token.text) > 1:
                     tokens.append(token.lemma_)
             
-            # Extraer bigramas relevantes
+            # Extract relevant bigrams
             bigrams = []
             for i in range(len(doc) - 1):
                 if (not doc[i].is_stop and not doc[i+1].is_stop and 
                     doc[i].is_alpha and doc[i+1].is_alpha):
                     bigrams.append(f"{doc[i].lemma_}_{doc[i+1].lemma_}")
             
-            # Combinar todo preservando las entidades
+            # Combine everything while preserving entities
             processed_parts = tokens + bigrams + entities
             return " ".join(processed_parts)
         else:
-            # Fallback al método original si spaCy no está disponible
-            return preprocess_text(text, use_lemmatization)
+            # Fallback to original method if spaCy isn't available
+            return preprocess_text(text, language, use_lemmatization)
     except Exception as e:
         return text.lower() if isinstance(text, str) else ""
 
-# Función original de preprocesamiento como fallback
-def preprocess_text(text, use_lemmatization=True):
+# Original preprocessing function as fallback with language support
+def preprocess_text(text, language='english', use_lemmatization=True):
     if not isinstance(text, str) or not text.strip():
         return ""
     
     try:
-        # Convertir a minúsculas
+        # Convert to lowercase
         text = text.lower()
         
-        # Tokenizar
+        # Tokenize
         tokens = word_tokenize(text)
         
-        # Cargar stopwords
+        # Load stopwords for the specified language
         try:
-            stop_words = set(stopwords.words('english'))
+            if language in nltk_languages:
+                stop_words = set(stopwords.words(language))
+            else:
+                # If language not available, use English as fallback
+                stop_words = set(stopwords.words('english'))
+                st.warning(f"Stopwords for '{language}' not available. Using English stopwords instead.")
         except:
-            # Fallback básico si no se pueden cargar stopwords
+            # Basic fallback if stopwords can't be loaded
             stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'because', 'as', 'what', 'in', 'on', 'to', 'for'}
         
-        # Filtrar stopwords
+        # Filter stopwords
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
-        # Lematización (opcional)
+        # Lemmatization/Stemming based on language support
         if use_lemmatization:
             try:
-                lemmatizer = WordNetLemmatizer()
-                tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                if language == 'english':
+                    # English has good lemmatization support
+                    lemmatizer = WordNetLemmatizer()
+                    tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                elif language in stemmer_languages:
+                    # For other languages, use stemming as an alternative
+                    stemmer = SnowballStemmer(language)
+                    tokens = [stemmer.stem(t) for t in tokens]
             except Exception as e:
-                pass  # Continuar sin lematización si falla
+                pass  # Continue without lemmatization/stemming if it fails
         
         return " ".join(tokens)
     except Exception as e:
-        # Manejo de errores para garantizar que siempre se devuelva algo
+        # Error handling to ensure something is always returned
         return text.lower() if isinstance(text, str) else ""
 
-# Función para preprocesar keywords
-def preprocess_keywords(keywords, use_advanced=True):
+# Function to preprocess keywords with language support
+def preprocess_keywords(keywords, language='english', use_advanced=True):
     processed_keywords = []
     
     progress_bar = st.progress(0)
     total = len(keywords)
     
     for i, keyword in enumerate(keywords):
-        if use_advanced and spacy_available:
-            processed_keywords.append(enhanced_preprocessing(keyword))
+        if use_advanced and spacy_available and language in spacy_language_models:
+            processed_keywords.append(enhanced_preprocessing(keyword, language))
         else:
-            processed_keywords.append(preprocess_text(keyword))
+            processed_keywords.append(preprocess_text(keyword, language))
         
         # Update progress bar every 100 items
         if i % 100 == 0:
@@ -287,54 +383,56 @@ def preprocess_keywords(keywords, use_advanced=True):
     
     progress_bar.progress(1.0)
     return processed_keywords
-# MEJORA 1: Embeddings mejorados con prioridad a OpenAI y límite de 5000 keywords
-def generate_embeddings(df, openai_available, openai_api_key=None):
-    st.info("Generando embeddings para las keywords...")
     
-    # Opción 1: Usar OpenAI si está disponible y se proporciona API key
+#BLOCK 4
+# ENHANCEMENT 1: Improved embeddings with priority to OpenAI and limit of 5000 keywords
+def generate_embeddings(df, openai_available, language='english', openai_api_key=None):
+    st.info("Generating embeddings for the keywords...")
+    
+    # Option 1: Use OpenAI if available and API key is provided
     if openai_available and openai_api_key:
         try:
-            st.info("Usando embeddings de OpenAI (alta precisión semántica)")
-            # Configurar OpenAI
+            st.info("Using OpenAI embeddings (high semantic precision)")
+            # Configure OpenAI
             os.environ["OPENAI_API_KEY"] = openai_api_key
             client = OpenAI()
             
-            # Procesar en batches para minimizar costos
+            # Process in batches to minimize costs
             keywords = df['keyword_processed'].fillna('').tolist()
             all_embeddings = []
             
-            # Aumentado a 5000 keywords (en lugar de 1000)
+            # Increased to 5000 keywords (instead of 1000)
             if len(keywords) > 5000:
-                st.warning(f"Limitando a 5000 keywords representativas de las {len(keywords)} totales")
-                # Seleccionar keywords estratégicamente (no solo las primeras)
+                st.warning(f"Limiting to 5000 representative keywords out of {len(keywords)} total")
+                # Select keywords strategically (not just the first ones)
                 step = max(1, len(keywords) // 5000)
                 sample_indices = list(range(0, len(keywords), step))[:5000]
                 sample_keywords = [keywords[i] for i in sample_indices]
                 
                 progress_bar = st.progress(0)
-                st.info("Procesando embeddings con OpenAI (esto puede tomar unos minutos)...")
+                st.info("Processing embeddings with OpenAI (this may take a few minutes)...")
                 
-                # Crear embeddings para muestra
+                # Create embeddings for sample
                 response = client.embeddings.create(
                     model="text-embedding-3-small",
                     input=sample_keywords
                 )
                 progress_bar.progress(0.5)
                 
-# Extraer embeddings
+                # Extract embeddings
                 sample_embeddings = np.array([item.embedding for item in response.data])
                 
-                # Propagar embeddings al resto por similitud TF-IDF
-                st.info("Propagando embeddings al resto de keywords...")
+                # Propagate embeddings to the rest by TF-IDF similarity
+                st.info("Propagating embeddings to remaining keywords...")
                 vectorizer = TfidfVectorizer()
                 tfidf_matrix = vectorizer.fit_transform(keywords)
                 
                 all_embeddings = np.zeros((len(keywords), len(sample_embeddings[0])))
-                # Asignar embeddings a la muestra
+                # Assign embeddings to the sample
                 for i, idx in enumerate(sample_indices):
                     all_embeddings[idx] = sample_embeddings[i]
                 
-                # Para el resto, encontrar el más similar en TF-IDF
+                # For the rest, find the most similar in TF-IDF
                 remaining_indices = [i for i in range(len(keywords)) if i not in sample_indices]
                 for i, idx in enumerate(remaining_indices):
                     similarities = cosine_similarity(
@@ -344,17 +442,17 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                     most_similar_idx = sample_indices[np.argmax(similarities)]
                     all_embeddings[idx] = all_embeddings[most_similar_idx]
                     
-                    # Actualizar progreso para la segunda mitad
+                    # Update progress for the second half
                     if i % 100 == 0:
                         progress_bar.progress(0.5 + min(0.5, (i / len(remaining_indices) * 0.5)))
                 
                 progress_bar.progress(1.0)
             else:
-                # Si son menos de 5000, procesar todas
+                # If less than 5000, process all
                 progress_bar = st.progress(0)
-                st.info(f"Procesando embeddings para todas las {len(keywords)} keywords con OpenAI...")
+                st.info(f"Processing embeddings for all {len(keywords)} keywords with OpenAI...")
                 
-                # Procesar en lotes de 1000 para evitar límites de API
+                # Process in batches of 1000 to avoid API limits
                 batch_size = 1000
                 for i in range(0, len(keywords), batch_size):
                     batch_end = min(i + batch_size, len(keywords))
@@ -372,24 +470,44 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                 progress_bar.progress(1.0)
                 
             embeddings = np.array(all_embeddings) if isinstance(all_embeddings, list) else all_embeddings
-            st.success(f"✅ Generados embeddings de {embeddings.shape[1]} dimensiones usando OpenAI")
+            st.success(f"✅ Generated {embeddings.shape[1]}-dimensional embeddings using OpenAI")
             return embeddings
                 
         except Exception as e:
-            st.error(f"Error generando embeddings con OpenAI: {str(e)}")
-            st.info("Intentando con Sentence Transformers como alternativa...")
-# Opción 2: Usar Sentence Transformers como fallback (sin costo)
+            st.error(f"Error generating embeddings with OpenAI: {str(e)}")
+            st.info("Trying with Sentence Transformers as an alternative...")
+    
+    # Option 2: Use Sentence Transformers as fallback (no cost)
     if sentence_transformers_available:
         try:
-            st.success("Usando SentenceTransformer como fallback (sin costo)")
+            st.success("Using SentenceTransformer as fallback (no cost)")
             
-            # Usa un modelo multilingüe si tus keywords están en varios idiomas
-            model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+            # Choose the appropriate model based on language
+            model_name = 'paraphrase-multilingual-MiniLM-L12-v2'  # Default multilingual model
+            
+            # For specific languages, we could use language-specific models if needed
+            language_specific_models = {
+                'english': 'all-MiniLM-L6-v2',  # Faster English-specific model
+                'german': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'spanish': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'french': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'italian': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'chinese': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'japanese': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'portuguese': 'paraphrase-multilingual-MiniLM-L12-v2',
+                'russian': 'paraphrase-multilingual-MiniLM-L12-v2'
+            }
+            
+            if language in language_specific_models:
+                model_name = language_specific_models[language]
+            
+            st.info(f"Using model: {model_name} for {language} language")
+            model = SentenceTransformer(model_name)
             
             progress_bar = st.progress(0)
             keywords = df['keyword_processed'].fillna('').tolist()
             
-            # Procesar en batches para evitar problemas de memoria
+            # Process in batches to avoid memory issues
             batch_size = 512
             all_embeddings = []
             
@@ -401,76 +519,78 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                 
             progress_bar.progress(1.0)
             embeddings = np.array(all_embeddings)
-            st.success(f"✅ Generados embeddings de {embeddings.shape[1]} dimensiones usando SentenceTransformer")
+            st.success(f"✅ Generated {embeddings.shape[1]}-dimensional embeddings using SentenceTransformer")
             return embeddings
         except Exception as e:
-            st.error(f"Error con SentenceTransformer: {str(e)}")
+            st.error(f"Error with SentenceTransformer: {str(e)}")
     
-    # Opción 3: Fallback a TF-IDF (menos preciso) como último recurso
-    st.warning("Usando TF-IDF como último recurso (menos preciso semánticamente)")
+    # Option 3: Fallback to TF-IDF (less accurate) as a last resort
+    st.warning("Using TF-IDF as a last resort (less semantically precise)")
     return generate_tfidf_embeddings(df['keyword_processed'].fillna(''))
 
-# Función original TF-IDF como fallback
+# Original TF-IDF function as fallback
 def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
-    st.info("Generando vectores TF-IDF para las keywords...")
+    st.info("Generating TF-IDF vectors for the keywords...")
     progress_bar = st.progress(0)
     
     try:
-        # Crear un vectorizador con parámetros configurables
+        # Create a vectorizer with configurable parameters
         vectorizer = TfidfVectorizer(
-            max_features=300,  # Limitar características para prevenir problemas de memoria
-            min_df=min_df,     # Ignorar términos que aparecen en menos de N documentos
-            max_df=max_df,     # Ignorar términos que aparecen en más del N% de los documentos
+            max_features=300,  # Limit features to prevent memory issues
+            min_df=min_df,     # Ignore terms that appear in fewer than N documents
+            max_df=max_df,     # Ignore terms that appear in more than N% of documents
             stop_words='english'
         )
         
-        # Asegurar que no hay valores nulos
+        # Ensure there are no null values
         clean_texts = [t if isinstance(t, str) and t else " " for t in texts]
         
-        # Generar matriz TF-IDF
+        # Generate TF-IDF matrix
         progress_bar.progress(0.3)
         tfidf_matrix = vectorizer.fit_transform(clean_texts)
         progress_bar.progress(0.8)
         
-        # Convertir a array denso
+        # Convert to dense array
         embeddings = tfidf_matrix.toarray()
         progress_bar.progress(1.0)
         
-        st.success(f"✅ Generados {embeddings.shape[1]} vectores TF-IDF")
+        st.success(f"✅ Generated {embeddings.shape[1]} TF-IDF vectors")
         return embeddings
     except Exception as e:
-        st.error(f"Error generando embeddings TF-IDF: {str(e)}")
-        # Último recurso: generar vectores aleatorios
-        st.warning("Generando vectores aleatorios como último recurso")
+        st.error(f"Error generating TF-IDF embeddings: {str(e)}")
+        # Last resort: generate random vectors
+        st.warning("Generating random vectors as a last resort")
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
-# MEJORA 2: Algoritmo de clustering mejorado
+
+#BLOCK 5
+# ENHANCEMENT 2: Improved clustering algorithm
 def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
-    st.info("Aplicando algoritmos de clustering avanzados...")
+    st.info("Applying advanced clustering algorithms...")
     
-    # Determinar automáticamente el número óptimo de clusters si no se especifica
+    # Automatically determine the optimal number of clusters if not specified
     if num_clusters is None:
         try:
             from sklearn.metrics import silhouette_score
             
-            st.info("Buscando número óptimo de clusters...")
+            st.info("Finding optimal number of clusters...")
             sil_scores = []
             max_clusters = min(30, len(embeddings) // 5)
             range_n_clusters = range(2, max(3, max_clusters))
             
             progress_bar = st.progress(0)
             
-            # Calcular score de silueta para diferentes números de clusters
+            # Calculate silhouette score for different numbers of clusters
             for i, n_clusters in enumerate(range_n_clusters):
-                # Usar K-Means para la prueba por ser más rápido
+                # Use K-Means for testing as it's faster
                 from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=2)
                 cluster_labels = kmeans.fit_predict(embeddings)
                 
-                # Calcular silueta (si hay suficientes muestras)
+                # Calculate silhouette (if there are enough samples)
                 if len(set(cluster_labels)) > 1:
                     try:
-                        # Usar muestra para calcular silueta si hay muchos datos
+                        # Use sample to calculate silhouette if there's lots of data
                         if len(embeddings) > 5000:
                             sample_indices = np.random.choice(len(embeddings), 5000, replace=False)
                             sample_score = silhouette_score(
@@ -487,20 +607,20 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
                     
                 progress_bar.progress((i + 1) / len(range_n_clusters))
                     
-            # Seleccionar el número de clusters con mejor score
+            # Select the number of clusters with the best score
             if sil_scores:
                 best_num_clusters = range_n_clusters[np.argmax(sil_scores)]
-                st.success(f"Número óptimo de clusters determinado: {best_num_clusters}")
+                st.success(f"Optimal number of clusters determined: {best_num_clusters}")
                 num_clusters = best_num_clusters
             else:
-                st.warning("No se pudo determinar el número óptimo de clusters. Usando valor predeterminado.")
+                st.warning("Could not determine optimal number of clusters. Using default value.")
         except Exception as e:
-            st.error(f"Error determinando número óptimo de clusters: {str(e)}")
+            st.error(f"Error determining optimal number of clusters: {str(e)}")
     
-    # Probar HDBSCAN si está disponible (mejor para clusters de forma irregular)
+    # Try HDBSCAN if available (better for irregularly shaped clusters)
     if hdbscan_available:
         try:
-            st.info("Aplicando HDBSCAN para detección de clusters de forma natural...")
+            st.info("Applying HDBSCAN for natural cluster detection...")
             
             clusterer = hdbscan.HDBSCAN(
                 min_cluster_size=min_cluster_size,
@@ -512,19 +632,19 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
             
             cluster_labels = clusterer.fit_predict(embeddings)
             
-            # Verificar si HDBSCAN encontró una estructura razonable
-            # Limitar el número máximo de clusters a un valor razonable
+            # Verify if HDBSCAN found a reasonable structure
+            # Limit the maximum number of clusters to a reasonable value
             unique_clusters = np.unique(cluster_labels)
             non_noise_clusters = [c for c in unique_clusters if c != -1]
             
             if len(non_noise_clusters) > 1 and len(non_noise_clusters) <= num_clusters * 2:
-                st.success(f"HDBSCAN identificó {len(non_noise_clusters)} clusters naturales")
+                st.success(f"HDBSCAN identified {len(non_noise_clusters)} natural clusters")
                 
-                # Reasignar cluster -1 (ruido) al cluster más cercano
+                # Reassign cluster -1 (noise) to the nearest cluster
                 if -1 in unique_clusters:
                     noise_indices = np.where(cluster_labels == -1)[0]
                     for idx in noise_indices:
-                        # Encontrar el centroide más cercano
+                        # Find the nearest centroid
                         min_dist = float('inf')
                         nearest_cluster = non_noise_clusters[0]
                         
@@ -539,21 +659,22 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
                         
                         cluster_labels[idx] = nearest_cluster
                 
-                # Reasignar IDs para que empiecen desde 1
+                # Reassign IDs to start from 1
                 old_to_new = {old_id: new_id + 1 for new_id, old_id in enumerate(np.unique(cluster_labels))}
                 cluster_labels = np.array([old_to_new[label] for label in cluster_labels])
                 
                 return cluster_labels
         except Exception as e:
-            st.warning(f"Error con HDBSCAN: {str(e)}. Usando clustering jerárquico.")
-# Fallback a clustering jerárquico
+            st.warning(f"Error with HDBSCAN: {str(e)}. Using hierarchical clustering.")
+    
+    # Fallback to hierarchical clustering
     try:
-        st.info("Aplicando clustering jerárquico aglomerativo...")
-        # Probar diferentes métodos de linkage para encontrar el mejor
+        st.info("Applying agglomerative hierarchical clustering...")
+        # Try different linkage methods to find the best one
         methods = ['ward', 'complete', 'average']
-        best_method = 'ward'  # Valor predeterminado
+        best_method = 'ward'  # Default value
         
-        # Si el dataset no es demasiado grande, probar diferentes métodos
+        # If the dataset isn't too large, try different methods
         if len(embeddings) < 5000:
             coherence_scores = []
             
@@ -562,7 +683,7 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
                     Z = linkage(embeddings, method=method)
                     labels = fcluster(Z, t=num_clusters, criterion="maxclust")
                     
-                    # Calcular coherencia promedio
+                    # Calculate average coherence
                     coherence = 0
                     for cluster_id in np.unique(labels):
                         cluster_vectors = embeddings[labels == cluster_id]
@@ -577,48 +698,49 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
             
             if coherence_scores:
                 best_method = methods[np.argmax(coherence_scores)]
-                st.success(f"Método de linkage óptimo: {best_method}")
+                st.success(f"Optimal linkage method: {best_method}")
         
-        # Aplicar clustering con el mejor método
+        # Apply clustering with the best method
         Z = linkage(embeddings, method=best_method)
         labels = fcluster(Z, t=num_clusters, criterion="maxclust")
         
         return labels
         
     except Exception as e:
-        st.error(f"Error en clustering jerárquico: {str(e)}")
+        st.error(f"Error in hierarchical clustering: {str(e)}")
         
-        # Último recurso: K-Means
-        st.warning("Usando K-Means como alternativa")
+        # Last resort: K-Means
+        st.warning("Using K-Means as an alternative")
         from sklearn.cluster import KMeans
         kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
-        return kmeans.fit_predict(embeddings) + 1  # +1 para empezar desde 1
+        return kmeans.fit_predict(embeddings) + 1  # +1 to start from 1
 
-# MEJORA 3: Refinamiento Post-Clustering
+#BLOCK 6
+# ENHANCEMENT 3: Post-Clustering Refinement
 def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
-    """Refina los clusters identificando y corrigiendo asignaciones pobres"""
-    st.info("Refinando clusters para mejorar coherencia semántica...")
+    """Refines clusters by identifying and correcting poor assignments"""
+    st.info("Refining clusters to improve semantic coherence...")
     
-    # Guardar las asignaciones originales
+    # Save original assignments
     df['original_cluster'] = df[original_cluster_column]
     
-    # 1. Identificar outliers semánticos en cada cluster
+    # 1. Identify semantic outliers in each cluster
     outliers = []
     for cluster_id in df[original_cluster_column].unique():
-        # Obtener índices de este cluster
+        # Get indices of this cluster
         cluster_indices = df[df[original_cluster_column] == cluster_id].index.tolist()
         
-        if len(cluster_indices) <= 3:  # Clusters muy pequeños, no refinar
+        if len(cluster_indices) <= 3:  # Very small clusters, don't refine
             continue
             
-        # Calcular centroide del cluster
+        # Calculate cluster centroid
         cluster_embeddings = np.array([embeddings[i] for i in cluster_indices])
         centroid = np.mean(cluster_embeddings, axis=0)
         
-        # Calcular distancias al centroide
+        # Calculate distances to centroid
         distances = [np.linalg.norm(embeddings[i] - centroid) for i in cluster_indices]
         
-        # Normalizar distancias para este cluster
+        # Normalize distances for this cluster
         mean_dist = np.mean(distances)
         std_dist = np.std(distances)
         if std_dist == 0:
@@ -626,17 +748,17 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
             
         normalized_distances = [(d - mean_dist) / std_dist for d in distances]
         
-# Identificar outliers (keywords muy lejanas al centroide)
+        # Identify outliers (keywords far from centroid)
         for i, norm_dist in enumerate(normalized_distances):
-            if norm_dist > 2.0:  # Más de 2 desviaciones estándar
+            if norm_dist > 2.0:  # More than 2 standard deviations
                 outliers.append((cluster_indices[i], cluster_id, norm_dist))
     
-    # 2. Reasignar outliers a clusters más apropiados
+    # 2. Reassign outliers to more appropriate clusters
     reassigned = 0
     for idx, original_cluster, _ in outliers:
         keyword_embedding = embeddings[idx]
         
-        # Encontrar cluster más cercano (excluyendo el original)
+        # Find closest cluster (excluding the original)
         min_distance = float('inf')
         best_cluster = original_cluster
         
@@ -644,76 +766,78 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
             if cluster_id == original_cluster:
                 continue
                 
-            # Obtener índices de este cluster
+            # Get indices of this cluster
             cluster_indices = df[df[original_cluster_column] == cluster_id].index.tolist()
             
-            # Calcular centroide
+            # Calculate centroid
             cluster_embeddings = np.array([embeddings[i] for i in cluster_indices])
             centroid = np.mean(cluster_embeddings, axis=0)
             
-            # Calcular distancia
+            # Calculate distance
             distance = np.linalg.norm(keyword_embedding - centroid)
             
             if distance < min_distance:
                 min_distance = distance
                 best_cluster = cluster_id
         
-        # Reasignar si encontramos un cluster mejor
+        # Reassign if we found a better cluster
         if best_cluster != original_cluster:
             df.loc[idx, original_cluster_column] = best_cluster
             reassigned += 1
-# 3. Combinar clusters demasiado similares
+    
+    # 3. Merge very similar clusters
     similar_pairs = []
     clusters = df[original_cluster_column].unique()
     
     for i, cluster1 in enumerate(clusters):
         for cluster2 in clusters[i+1:]:
-            # Calcular centroides
+            # Calculate centroids
             indices1 = df[df[original_cluster_column] == cluster1].index.tolist()
             indices2 = df[df[original_cluster_column] == cluster2].index.tolist()
             
             if len(indices1) < 3 or len(indices2) < 3:
-                continue  # Ignorar clusters muy pequeños
+                continue  # Ignore very small clusters
                 
             centroid1 = np.mean(np.array([embeddings[i] for i in indices1]), axis=0)
             centroid2 = np.mean(np.array([embeddings[i] for i in indices2]), axis=0)
             
-            # Calcular similitud coseno
+            # Calculate cosine similarity
             similarity = np.dot(centroid1, centroid2) / (np.linalg.norm(centroid1) * np.linalg.norm(centroid2))
             
-            if similarity > 0.8:  # Umbral alto para fusionar
+            if similarity > 0.8:  # High threshold for merging
                 similar_pairs.append((cluster1, cluster2, similarity))
     
-    # Ordenar por similitud para combinar primero los más similares
+    # Sort by similarity to merge the most similar first
     similar_pairs.sort(key=lambda x: x[2], reverse=True)
     
-    # Combinar clusters (manteniendo el ID más bajo)
+    # Merge clusters (keeping the lower ID)
     clusters_merged = 0
     processed_clusters = set()
     
     for cluster1, cluster2, _ in similar_pairs:
         if cluster1 in processed_clusters or cluster2 in processed_clusters:
-            continue  # Evitar combinar clusters ya procesados
+            continue  # Avoid merging already processed clusters
             
-        # Elegir el ID más bajo para mantener
+        # Choose the lower ID to keep
         keep_id = min(cluster1, cluster2)
         remove_id = max(cluster1, cluster2)
         
-        # Reasignar keywords del cluster a eliminar
+        # Reassign keywords from cluster to remove
         df.loc[df[original_cluster_column] == remove_id, original_cluster_column] = keep_id
         
         processed_clusters.add(remove_id)
         clusters_merged += 1
         
-        # Limitar número de fusiones
-        if clusters_merged >= len(clusters) // 4:  # Máximo 25% de fusiones
+        # Limit number of merges
+        if clusters_merged >= len(clusters) // 4:  # Maximum 25% of merges
             break
     
-    st.success(f"Refinamiento completado: {reassigned} keywords reasignadas, {clusters_merged} clusters fusionados.")
+    st.success(f"Refinement completed: {reassigned} keywords reassigned, {clusters_merged} clusters merged.")
     return df
 
-# Función para generar nombres de clusters con OpenAI
-def generate_cluster_names(clusters_with_representatives, client, model="gpt-3.5-turbo"):
+#BLOCK 7
+# Function to generate cluster names with OpenAI - enhanced for SEO focus
+def generate_cluster_names(clusters_with_representatives, client, language='english', model="gpt-3.5-turbo"):
     if not clusters_with_representatives:
         return {}
 
@@ -721,7 +845,7 @@ def generate_cluster_names(clusters_with_representatives, client, model="gpt-3.5
     
     progress_text = st.empty()
     progress_bar = st.progress(0)
-    progress_text.text("Generando nombres y descripciones para los clusters...")
+    progress_text.text("Generating SEO-optimized names and descriptions for the clusters...")
 
     # Process clusters in smaller batches to manage costs
     batch_size = 5
@@ -732,14 +856,19 @@ def generate_cluster_names(clusters_with_representatives, client, model="gpt-3.5
         batch_clusters = list(clusters_with_representatives.items())[batch_start:batch_end]
 
         try:
-            # Prompt mejorado para analizar clusters
-            analysis_prompt = """I'll provide representative keywords for several clusters. For each cluster, analyze the keywords to identify:
-1. Common themes, topics, or categories
-2. User intent or purpose behind these keywords
-3. Semantic relationships between words
-4. Any distinctive patterns that make this cluster unique
+            # Enhanced prompt for analyzing clusters with SEO focus
+            analysis_prompt = f"""I'll provide representative keywords for several clusters. The keywords are in {language.capitalize()}.
 
-Be thorough and insightful in your analysis.
+These keywords are ordered by their representativeness of the cluster (most representative first).
+Focus primarily on the first 5-7 keywords as they best define the cluster's core theme.
+
+For each cluster, analyze the keywords to identify:
+1. The main search intent behind these keywords
+2. High-value SEO opportunities within this keyword group
+3. The semantic relationships that indicate user needs
+4. Any distinctive commercial or informational patterns
+
+Be thorough and identify the SEO potential of each cluster.
 
 """
 
@@ -758,17 +887,25 @@ Be thorough and insightful in your analysis.
 
             analysis_text = analysis_response.choices[0].message.content.strip()
 
-            # Prompt mejorado para generar nombres más precisos
-            naming_prompt = f"""Based on the following analysis of keyword clusters, provide a specific name and description for each cluster.
+            # Enhanced prompt for SEO-optimized naming with language support
+            naming_prompt = f"""Based on the following SEO analysis of keyword clusters in {language.capitalize()}, provide an SEO-optimized name and description for each cluster.
 
 Analysis:
 {analysis_text}
 
 For each cluster, provide:
-1. A specific, descriptive cluster name (3-5 words) that clearly identifies the semantic theme
-2. A concise description (1-2 sentences) that accurately represents the semantic relationship between the keywords
+1. An SEO-optimized cluster name (3-5 words) in {language.capitalize()} that:
+   - Includes the highest volume or most commercially valuable keyword where appropriate
+   - Is specific enough to match search intent
+   - Would work well as a category or page title in a website structure
 
-Your names should be concrete and specific, not generic. Focus on semantic meaning, not just superficial word patterns.
+2. An SEO-optimized description (1-2 sentences) in {language.capitalize()} that:
+   - Incorporates 2-3 of the most important keywords naturally
+   - Addresses the main search intent of the cluster
+   - Would work effectively as meta description text
+   - Maintains a natural, readable flow despite including important keywords
+
+Focus on creating names and descriptions that would help content rank well for the keywords in each cluster.
 
 Format your response as a JSON array, with each element containing cluster_id, cluster_name, and description for clusters {', '.join(map(str, cluster_order))}.
 """
@@ -787,7 +924,8 @@ Format your response as a JSON array, with each element containing cluster_id, c
                 
             naming_response = client.chat.completions.create(**completion_params)
             naming_text = naming_response.choices[0].message.content.strip()
-# Procesar la respuesta JSON
+            
+            # Process the JSON response
             try:
                 # For GPT-4, we need to extract the JSON from the response text
                 # Find JSON-like content between curly braces
@@ -841,10 +979,10 @@ Format your response as a JSON array, with each element containing cluster_id, c
                                 cluster_info.get("description", "No description provided.")
                             )
             except Exception as e:
-                st.warning(f"Error analizando respuesta JSON para batch {batch_idx+1}/{total_batches}: {str(e)}")
-                # Fallback para este batch: intentar extraer manualmente la información
+                st.warning(f"Error analyzing JSON response for batch {batch_idx+1}/{total_batches}: {str(e)}")
+                # Fallback for this batch: try to manually extract the information
                 try:
-                    # Fallback more manual parsing for both models
+                    # More manual parsing fallback for both models
                     for i, cluster_id in enumerate(cluster_order):
                         # Look for "Cluster {cluster_id}" or similar pattern in the text
                         cluster_section = re.search(f"Cluster {cluster_id}[:\s]*(.*?)(?:Cluster \d|$)", 
@@ -859,39 +997,41 @@ Format your response as a JSON array, with each element containing cluster_id, c
                                                   section_text, re.DOTALL | re.IGNORECASE)
                             
                             name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
-                            desc = desc_match.group(1).strip() if desc_match else f"Grupo de keywords {cluster_id}"
+                            desc = desc_match.group(1).strip() if desc_match else f"Group of keywords {cluster_id}"
                             
                             results[cluster_id] = (name, desc)
                         else:
-                            results[cluster_id] = (f"Cluster {cluster_id}", f"Grupo de keywords {cluster_id}")
+                            results[cluster_id] = (f"Cluster {cluster_id}", f"Group of keywords {cluster_id}")
                 except Exception:
                     # Ultimate fallback if all parsing fails
                     for cluster_id in cluster_order:
-                        results[cluster_id] = (f"Cluster {cluster_id}", f"Grupo de keywords {cluster_id}")
+                        results[cluster_id] = (f"Cluster {cluster_id}", f"Group of keywords {cluster_id}")
 
             # Progress update
             progress_bar.progress((batch_idx + 1) / total_batches)
-            time.sleep(1)  # Evitar límites de rate
+            time.sleep(1)  # Avoid rate limits
 
         except Exception as e:
-            st.warning(f"Error generando nombres para batch {batch_idx+1}/{total_batches}: {str(e)}")
-            # Proporcionar nombres predeterminados
+            st.warning(f"Error generating names for batch {batch_idx+1}/{total_batches}: {str(e)}")
+            # Provide default names
             for cluster_id, _ in batch_clusters:
                 results[cluster_id] = (f"Cluster {cluster_id}", "Error generating description")
     
-    # Asegurar que todos los clusters tienen nombre
+    # Ensure all clusters have names
     for cluster_id in clusters_with_representatives.keys():
         if cluster_id not in results:
-            results[cluster_id] = (f"Cluster {cluster_id}", f"Grupo de keywords {cluster_id}")
+            results[cluster_id] = (f"Cluster {cluster_id}", f"Group of keywords {cluster_id}")
     
     progress_bar.progress(1.0)
-    progress_text.text(f"✅ Nombres y descripciones generados para {len(results)} clusters")
+    progress_text.text(f"✅ SEO-optimized names and descriptions generated for {len(results)} clusters")
     
     return results
-# MEJORA 5: Evaluación avanzada de clusters
+# END BLOCK 7
+#BLOCK 8
+# ENHANCEMENT 5: Advanced cluster quality evaluation
 def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
-    """Evalúa la calidad de los clusters usando múltiples métricas"""
-    st.subheader("Evaluación Avanzada de Calidad de Clusters")
+    """Evaluates cluster quality using multiple metrics"""
+    st.subheader("Advanced Cluster Quality Evaluation")
     
     metrics = {
         'silhouette': [],
@@ -900,29 +1040,29 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
         'coherence': []
     }
     
-    # Calcular centroides de todos los clusters
+    # Calculate centroids of all clusters
     centroids = {}
     for cluster_id in df[cluster_column].unique():
         indices = df[df[cluster_column] == cluster_id].index.tolist()
         centroids[cluster_id] = np.mean(np.array([embeddings[i] for i in indices]), axis=0)
     
-    # Evaluar cada cluster
+    # Evaluate each cluster
     cluster_progress = st.progress(0)
     for i, cluster_id in enumerate(df[cluster_column].unique()):
         indices = df[df[cluster_column] == cluster_id].index.tolist()
         cluster_vectors = np.array([embeddings[i] for i in indices])
         centroid = centroids[cluster_id]
         
-        # 1. Densidad (distancia promedio al centro)
+        # 1. Density (average distance to center)
         distances = [np.linalg.norm(vec - centroid) for vec in cluster_vectors]
         density = 1 / (1 + np.mean(distances)) if distances else 0
         metrics['density'].append((cluster_id, density))
         
-        # 2. Coherencia (similitud coseno promedio entre vectores)
+        # 2. Coherence (average cosine similarity between vectors)
         coherence = calculate_cluster_coherence(cluster_vectors)
         metrics['coherence'].append((cluster_id, coherence))
         
-        # 3. Separación (distancia mínima a otro centroide)
+        # 3. Separation (minimum distance to another centroid)
         min_separation = float('inf')
         for other_id, other_centroid in centroids.items():
             if other_id != cluster_id:
@@ -934,11 +1074,11 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
             
         cluster_progress.progress((i + 1) / len(df[cluster_column].unique()))
     
-    # Visualizar métricas
+    # Visualize metrics
     col1, col2 = st.columns(2)
     
     with col1:
-        # Gráfico de coherencia vs tamaño
+        # Coherence vs. size chart
         coherence_data = pd.DataFrame(metrics['coherence'], columns=['cluster_id', 'score'])
         coherence_data = coherence_data.merge(
             df.groupby(cluster_column)['keyword'].count().reset_index(),
@@ -955,18 +1095,18 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
             y='keyword', 
             color='score',
             size='keyword',
-hover_data=['cluster_name'],
+            hover_data=['cluster_name'],
             labels={
-                'score': 'Coherencia Semántica', 
-                'keyword': 'Tamaño del Cluster'
+                'score': 'Semantic Coherence', 
+                'keyword': 'Cluster Size'
             },
-            title='Relación entre Coherencia y Tamaño',
+            title='Relationship between Coherence and Size',
             color_continuous_scale='Blues'
         )
         st.plotly_chart(fig, use_container_width=True)
     
     with col2:
-        # Gráfico de separación vs densidad
+        # Separation vs. density chart
         if metrics['separation']:
             separation_data = pd.DataFrame(metrics['separation'], columns=['cluster_id', 'separation'])
             density_data = pd.DataFrame(metrics['density'], columns=['cluster_id', 'density'])
@@ -984,40 +1124,40 @@ hover_data=['cluster_name'],
                 color='density',
                 hover_data=['cluster_name'],
                 labels={
-                    'separation': 'Separación entre Clusters',
-                    'density': 'Densidad del Cluster'
+                    'separation': 'Separation between Clusters',
+                    'density': 'Cluster Density'
                 },
-                title='Separación vs Densidad',
+                title='Separation vs. Density',
                 color_continuous_scale='Greens'
             )
             st.plotly_chart(fig2, use_container_width=True)
     
-    # Identificar clusters problemáticos
-    st.subheader("Diagnóstico de Clusters")
+    # Identify problematic clusters
+    st.subheader("Cluster Diagnostics")
     
-    # Calcular umbrales
+    # Calculate thresholds
     coherence_threshold = np.percentile([x[1] for x in metrics['coherence']], 25)
     problematic = [x[0] for x in metrics['coherence'] if x[1] < coherence_threshold]
     
-    # Añadir coherencia al dataframe original
+    # Add coherence to original dataframe
     for cluster_id, coherence in metrics['coherence']:
         df.loc[df[cluster_column] == cluster_id, 'cluster_coherence'] = coherence
     
     if problematic:
-        st.warning(f"Clusters con baja coherencia semántica: {problematic}")
+        st.warning(f"Clusters with low semantic coherence: {problematic}")
         st.info("""
-        Recomendaciones para mejorar:
-        - Considera aumentar el número de clusters
-        - Revisa las keywords en estos clusters específicos
-        - Prueba usar embeddings de mayor calidad
-        - Considera la posibilidad de dividir estos clusters manualmente
+        Recommendations to improve:
+        - Consider increasing the number of clusters
+        - Review the keywords in these specific clusters
+        - Try using higher quality embeddings
+        - Consider dividing these clusters manually
         """)
     else:
-        st.success("Todos los clusters tienen buena coherencia semántica")
+        st.success("All clusters have good semantic coherence")
         
     return df
 
-# Función básica para calcular coherencia
+# Basic function to calculate coherence
 def calculate_cluster_coherence(cluster_embeddings):
     """Calculate semantic coherence of a cluster based on embedding similarity"""
     if len(cluster_embeddings) <= 1:
@@ -1030,7 +1170,7 @@ def calculate_cluster_coherence(cluster_embeddings):
         # Calculate average cosine similarity to centroid
         similarities = []
         for emb in cluster_embeddings:
-            # Evitar divisiones por cero
+            # Avoid division by zero
             norm_emb = np.linalg.norm(emb)
             norm_centroid = np.linalg.norm(centroid)
             if norm_emb > 0 and norm_centroid > 0:
@@ -1041,108 +1181,117 @@ def calculate_cluster_coherence(cluster_embeddings):
 
         return np.mean(similarities) if similarities else 0.0
     except Exception as e:
-        st.warning(f"Error calculando coherencia: {str(e)}")
-        return 0.5  # Valor predeterminado en caso de error
-# Función principal para ejecutar el clustering mejorado
-def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, max_pca_components, min_df, max_df, gpt_model):
-    """Ejecuta el proceso completo de clustering y devuelve los resultados"""
+        st.warning(f"Error calculating coherence: {str(e)}")
+        return 0.5  # Default value in case of error
+# END BLOCK 8
+# BLOCK 9
+# Main function to run the enhanced clustering
+def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, max_pca_components, min_df, max_df, gpt_model, language='english'):
+    """Runs the complete clustering process and returns the results"""
     if uploaded_file is None:
-        st.warning("Por favor, sube un archivo CSV con keywords.")
+        st.warning("Please upload a CSV file with keywords.")
         return False, None
     
-    st.info("Iniciando proceso de clustering semántico avanzado...")
+    st.info("Initiating advanced semantic clustering process...")
     
-    # Configurar cliente OpenAI si se proporciona la clave API
+    # Configure OpenAI client if API key is provided
     client = None
     if openai_api_key and openai_available:
         try:
-            # Verificamos que la API key no esté vacía
+            # Verify the API key is not empty
             if openai_api_key.strip() == "":
-                st.info("No se ha proporcionado una API Key de OpenAI válida. Los clusters tendrán nombres genéricos.")
+                st.info("No valid OpenAI API Key provided. Clusters will have generic names.")
             else:
-                # Establecemos la API key como variable de entorno
+                # Set the API key as an environment variable
                 os.environ["OPENAI_API_KEY"] = openai_api_key
                 
-                # Creamos el cliente sin parámetros adicionales
+                # Create the client without additional parameters
                 client = OpenAI()
                 
-                # Verificamos la conexión con una solicitud simple
+                # Verify the connection with a simple request
                 try:
                     response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[{"role": "user", "content": "Test"}],
                         max_tokens=5
                     )
-                    st.success("✅ Conexión con OpenAI establecida correctamente")
+                    st.success("✅ Connection with OpenAI established successfully")
                 except Exception as e:
-                    st.error(f"Error al verificar la conexión con OpenAI: {str(e)}")
-                    st.error("Posible causa: API Key inválida o problemas de conexión")
+                    st.error(f"Error verifying connection with OpenAI: {str(e)}")
+                    st.error("Possible cause: Invalid API Key or connection issues")
                     client = None
         except Exception as e:
-            st.error(f"Error configurando cliente OpenAI: {str(e)}")
-            st.info("Continuando sin funcionalidades de OpenAI")
+            st.error(f"Error configuring OpenAI client: {str(e)}")
+            st.info("Continuing without OpenAI functionality")
             client = None
     elif not openai_available:
-        st.warning("Biblioteca OpenAI no está disponible. Continuando sin funcionalidades de OpenAI.")
+        st.warning("OpenAI library is not available. Continuing without OpenAI functionality.")
     elif not openai_api_key or openai_api_key.strip() == "":
-        st.info("No se ha proporcionado API Key de OpenAI. Se usará SentenceTransformers como alternativa gratuita.")
+        st.info("No OpenAI API Key provided. SentenceTransformers will be used as a free alternative.")
     
     try:
-        # Cargar y procesar el CSV
+        # Load and process the CSV
         try:
             df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
             num_keywords = len(df)
-            st.success(f"✅ Cargadas {num_keywords} keywords del archivo CSV")
+            st.success(f"✅ Loaded {num_keywords} keywords from CSV file")
             
-            # Mostrar estimación de costes basada en el CSV cargado
+            # Show cost estimate based on loaded CSV
             show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
             
         except Exception as e:
-            st.error(f"Error leyendo CSV: {str(e)}")
-            st.info("Intentando formato alternativo...")
-            # Intentar otros formatos/separadores
+            st.error(f"Error reading CSV: {str(e)}")
+            st.info("Trying alternative format...")
+            # Try other formats/separators
             try:
                 content = uploaded_file.getvalue().decode('utf-8')
                 df = pd.read_csv(StringIO(content), sep=None, engine='python', header=None)
                 df.columns = ["keyword"]
                 num_keywords = len(df)
-                st.success(f"✅ Cargadas {num_keywords} keywords del archivo CSV (formato alternativo)")
+                st.success(f"✅ Loaded {num_keywords} keywords from CSV file (alternative format)")
                 
-                # Mostrar estimación de costes basada en el CSV cargado
+                # Show cost estimate based on loaded CSV
                 show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
                 
             except Exception as e2:
-                st.error(f"No se pudo leer el archivo CSV: {str(e2)}")
+                st.error(f"Could not read the CSV file: {str(e2)}")
                 return False, None
-# Preprocesar keywords
-        st.subheader("Preprocesamiento de Keywords")
-        st.info("Preprocesando keywords con análisis semántico mejorado...")
         
-        # MEJORA 4: Usar el preprocesamiento semántico mejorado
-        use_advanced = spacy_available
+        # Preprocess keywords
+        st.subheader("Keyword Preprocessing")
+        st.info(f"Preprocessing keywords with enhanced semantic analysis for {language} language...")
+        
+        # ENHANCEMENT 4: Use the enhanced semantic preprocessing
+        use_advanced = spacy_available and language in spacy_language_models
         if use_advanced:
-            st.success("Usando preprocesamiento avanzado con análisis lingüístico")
+            # Load the appropriate language model for spaCy
+            load_success = load_spacy_language_model(language)
+            if load_success:
+                st.success(f"Using advanced preprocessing with linguistic analysis for {language}")
+            else:
+                st.warning(f"Could not load spaCy model for {language}. Using standard preprocessing.")
+                use_advanced = False
         else:
-            st.info("Usando preprocesamiento estándar (SpaCy no disponible)")
+            st.info(f"Using standard preprocessing for {language} (spaCy not available for this language)")
             
-        keywords_processed = preprocess_keywords(df["keyword"].tolist(), use_advanced=use_advanced)
+        keywords_processed = preprocess_keywords(df["keyword"].tolist(), language=language, use_advanced=use_advanced)
         df['keyword_processed'] = keywords_processed
-        st.success("✅ Keywords preprocesadas correctamente")
+        st.success("✅ Keywords preprocessed successfully")
         
-        # Generar embeddings mejorados
-        st.subheader("Generación de Vectores Semánticos")
+        # Generate improved embeddings
+        st.subheader("Semantic Vector Generation")
         
-        # MEJORA 1: Usar embeddings de alta calidad
-        keyword_embeddings = generate_embeddings(df, openai_available, openai_api_key)
+        # ENHANCEMENT 1: Use high-quality embeddings
+        keyword_embeddings = generate_embeddings(df, openai_available, language, openai_api_key)
         
-        # Aplicar PCA si los embeddings son de alta dimensionalidad
+        # Apply PCA if embeddings are high-dimensional
         if keyword_embeddings.shape[1] > max_pca_components:
-            st.subheader("Reducción de Dimensionalidad (PCA)")
+            st.subheader("Dimensionality Reduction (PCA)")
             
             try:
                 pca_progress = st.progress(0)
                 pca_text = st.empty()
-                pca_text.text("Analizando varianza explicada...")
+                pca_text.text("Analyzing explained variance...")
                 
                 # Determine optimal number of components experimentally
                 pca = PCA()
@@ -1153,11 +1302,11 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 # Find the number of components that explain the desired variance
                 target_variance = pca_variance / 100.0
                 n_components = np.argmax(cumulative_variance >= target_variance) + 1
-                # Si no hay suficientes componentes para la varianza deseada, usar el máximo
+                # If there aren't enough components for the desired variance, use the maximum
                 if n_components == 1 and len(cumulative_variance) > 1:
                     n_components = min(max_pca_components, len(cumulative_variance))
                     
-                pca_text.text(f"Componentes para {pca_variance}% de varianza: {n_components}")
+                pca_text.text(f"Components for {pca_variance}% variance: {n_components}")
                 pca_progress.progress(0.6)
                 
                 # Use that number (with a reasonable cap)
@@ -1166,52 +1315,53 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 keyword_embeddings_reduced = pca.fit_transform(keyword_embeddings)
                 
                 pca_progress.progress(1.0)
-                pca_text.text(f"✅ PCA aplicado: {max_components} dimensiones ({pca_variance}% de varianza explicada)")
+                pca_text.text(f"✅ PCA applied: {max_components} dimensions ({pca_variance}% variance explained)")
             except Exception as e:
-                st.error(f"Error aplicando PCA: {str(e)}")
-                st.info("Continuando sin reducción de dimensionalidad")
-                # En caso de error, mantener los embeddings originales
+                st.error(f"Error applying PCA: {str(e)}")
+                st.info("Continuing without dimensionality reduction")
+                # In case of error, keep the original embeddings
                 keyword_embeddings_reduced = keyword_embeddings
         else:
-            # No necesita PCA si la dimensionalidad ya es adecuada
+            # No need for PCA if dimensionality is already appropriate
             keyword_embeddings_reduced = keyword_embeddings
-            st.info(f"Dimensionalidad de embeddings adecuada ({keyword_embeddings.shape[1]}). No se requiere PCA.")
-# Aplicar clustering mejorado
-        st.subheader("Clustering Semántico Avanzado")
+            st.info(f"Embedding dimensionality is appropriate ({keyword_embeddings.shape[1]}). PCA not required.")
         
-        # MEJORA 2: Usar algoritmo de clustering mejorado
+        # Apply improved clustering
+        st.subheader("Advanced Semantic Clustering")
+        
+        # ENHANCEMENT 2: Use improved clustering algorithm
         try:
             cluster_labels = improved_clustering(keyword_embeddings_reduced, num_clusters=num_clusters)
             df["cluster_id"] = cluster_labels
-            st.success(f"✅ Keywords agrupadas en {len(df['cluster_id'].unique())} clusters semánticos")
+            st.success(f"✅ Keywords grouped into {len(df['cluster_id'].unique())} semantic clusters")
         except Exception as e:
-            st.error(f"Error en clustering avanzado: {str(e)}")
-            st.info("Intentando clustering alternativo...")
+            st.error(f"Error in advanced clustering: {str(e)}")
+            st.info("Trying alternative clustering...")
             
-            # Fallback: Asignar clusters de manera más básica
+            # Fallback: Assign clusters in a more basic way
             try:
                 from sklearn.cluster import KMeans
                 kmeans = KMeans(n_clusters=num_clusters, random_state=42, n_init=10)
                 df["cluster_id"] = kmeans.fit_predict(keyword_embeddings_reduced) + 1
-                st.success("✅ Clustering completado usando K-Means como alternativa")
+                st.success("✅ Clustering completed using K-Means as an alternative")
             except Exception as e2:
-                st.error(f"Error en clustering alternativo: {str(e2)}")
-                # Último recurso: asignar clusters aleatorios
+                st.error(f"Error in alternative clustering: {str(e2)}")
+                # Last resort: assign random clusters
                 df["cluster_id"] = np.random.randint(1, num_clusters + 1, size=len(df))
-                st.warning("⚠️ Se han asignado clusters aleatorios como último recurso")
+                st.warning("⚠️ Random clusters have been assigned as a last resort")
         
-        # MEJORA 3: Refinar clusters
-        st.subheader("Refinamiento de Clusters")
+        # ENHANCEMENT 3: Refine clusters
+        st.subheader("Cluster Refinement")
         df = refine_clusters(df, keyword_embeddings_reduced)
         num_clusters_after_refinement = len(df['cluster_id'].unique())
-        st.success(f"✅ Refinamiento completado: {num_clusters_after_refinement} clusters finales")
+        st.success(f"✅ Refinement completed: {num_clusters_after_refinement} final clusters")
         
-        # Identificar keywords representativas para cada cluster
-        st.subheader("Análisis de Clusters")
+        # Identify representative keywords for each cluster
+        st.subheader("Cluster Analysis")
         
         rep_progress = st.progress(0)
         rep_text = st.empty()
-        rep_text.text("Identificando keywords representativas...")
+        rep_text.text("Identifying representative keywords...")
         
         clusters_with_representatives = {}
         try:
@@ -1240,31 +1390,33 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 rep_progress.progress((i+1) / len(df['cluster_id'].unique()))
             
             rep_progress.progress(1.0)
-            rep_text.text(f"✅ Identificadas keywords representativas para {len(clusters_with_representatives)} clusters")
+            rep_text.text(f"✅ Identified representative keywords for {len(clusters_with_representatives)} clusters")
         except Exception as e:
-            st.error(f"Error identificando keywords representativas: {str(e)}")
-            # Fallback: tomar las primeras N keywords de cada cluster
+            st.error(f"Error identifying representative keywords: {str(e)}")
+            # Fallback: take the first N keywords from each cluster
             for cluster_num in df['cluster_id'].unique():
                 cluster_keywords = df[df['cluster_id'] == cluster_num]['keyword'].tolist()
                 clusters_with_representatives[cluster_num] = cluster_keywords[:min(20, len(cluster_keywords))]
-            st.warning("Se han seleccionado keywords representativas básicas como alternativa")
-# Generar nombres para los clusters si está disponible OpenAI
+            st.warning("Basic representative keywords have been selected as an alternative")
+        
+        # Generate names for the clusters if OpenAI is available
         if client:
-            st.subheader("Generación de Nombres para Clusters")
+            st.subheader("Generating SEO-Optimized Cluster Names")
             try:
                 cluster_names = generate_cluster_names(
                     clusters_with_representatives, 
                     client,
+                    language=language,
                     model=gpt_model
                 )
             except Exception as e:
-                st.error(f"Error generando nombres de clusters: {str(e)}")
-                cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
+                st.error(f"Error generating cluster names: {str(e)}")
+                cluster_names = {k: (f"Cluster {k}", f"Group of keywords {k}") for k in df['cluster_id'].unique()}
         else:
-            st.warning("No se pueden generar nombres de clusters sin API Key de OpenAI")
-            cluster_names = {k: (f"Cluster {k}", f"Grupo de keywords {k}") for k in df['cluster_id'].unique()}
+            st.warning("Cannot generate cluster names without OpenAI API Key")
+            cluster_names = {k: (f"Cluster {k}", f"Group of keywords {k}") for k in df['cluster_id'].unique()}
         
-        # Aplicar resultados al DataFrame
+        # Apply results to the DataFrame
         df['cluster_name'] = ''
         df['cluster_description'] = ''
         df['representative'] = False
@@ -1273,33 +1425,35 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
             df.loc[df['cluster_id'] == cluster_num, 'cluster_name'] = name
             df.loc[df['cluster_id'] == cluster_num, 'cluster_description'] = description
             
-            # Marcar keywords representativas
+            # Mark representative keywords
             for keyword in clusters_with_representatives.get(cluster_num, []):
                 matching_indices = df[(df['cluster_id'] == cluster_num) & (df['keyword'] == keyword)].index
                 if not matching_indices.empty:
                     df.loc[matching_indices, 'representative'] = True
         
-        # MEJORA 5: Evaluación avanzada de calidad de clusters
+        # ENHANCEMENT 5: Advanced cluster quality evaluation
         df = evaluate_cluster_quality(df, keyword_embeddings_reduced)
         
-        # Devolver los resultados
+        # Return the results
         return True, df
         
     except Exception as e:
-        st.error(f"Error durante el proceso: {str(e)}")
+        st.error(f"Error during the process: {str(e)}")
         return False, None
+#END BLOCK 9
+#BLOCK 10
 #############################
-# APLICACIÓN PRINCIPAL
+# MAIN APPLICATION
 #############################
 
-# Configuración de la página
+# Page configuration
 st.set_page_config(
-    page_title="Clustering Semántico Avanzado de Keywords",
+    page_title="Advanced Semantic Keyword Clustering",
     page_icon="🔍",
     layout="wide"
 )
 
-# Estilos CSS para mejorar la apariencia
+# CSS styles to improve appearance
 st.markdown("""
 <style>
     .main-header {
@@ -1333,28 +1487,28 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Título y descripción
-st.markdown("<div class='main-header'>Clustering Semántico Avanzado de Keywords</div>", unsafe_allow_html=True)
+# Title and description
+st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
 st.markdown("""
-Esta aplicación te permite agrupar keywords semánticamente similares utilizando técnicas avanzadas de NLP y clustering.
-Sube tu archivo CSV con las keywords y configura los parámetros para obtener clusters de alta correlación semántica.
+This application allows you to group semantically similar keywords using advanced NLP and clustering techniques.
+Upload your CSV file with keywords and configure the parameters to get high semantic correlation clusters.
 """)
 
-# Mostrar estado de librerías avanzadas
-with st.expander("Estado de bibliotecas semánticas", expanded=False):
+# Show status of advanced libraries
+with st.expander("Advanced libraries status", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
         if openai_available:
-            st.success("✅ OpenAI disponible (con API Key)")
+            st.success("✅ OpenAI available (requires API Key)")
         else:
-            st.warning("⚠️ OpenAI no disponible")
+            st.warning("⚠️ OpenAI not available")
             
         if sentence_transformers_available:
-            st.success("✅ SentenceTransformers disponible (sin costo)")
+            st.success("✅ SentenceTransformers available (free)")
         else:
-            st.warning("⚠️ SentenceTransformers no disponible")
+            st.warning("⚠️ SentenceTransformers not available")
             st.markdown("""
-            Para instalar:
+            To install:
             ```
             pip install sentence-transformers
             ```
@@ -1362,201 +1516,243 @@ with st.expander("Estado de bibliotecas semánticas", expanded=False):
     
     with col2:
         if spacy_available:
-            st.success("✅ SpaCy disponible")
+            st.success("✅ SpaCy available")
+            st.markdown(f"Available language models: {', '.join(spacy_language_models.keys())}")
         else:
-            st.warning("⚠️ SpaCy no disponible")
+            st.warning("⚠️ SpaCy not available")
             
         if hdbscan_available:
-            st.success("✅ HDBSCAN disponible")
+            st.success("✅ HDBSCAN available")
         else:
-            st.warning("⚠️ HDBSCAN no disponible")
+            st.warning("⚠️ HDBSCAN not available")
             
     with col3:
-        # Información de instalación
+        # Installation information
         st.info("""
-        Para más funcionalidades:
+        For more functionality:
         ```
         pip install sentence-transformers spacy hdbscan
         python -m spacy download en_core_web_sm
         ```
+        For other languages, use:
+        ```
+        python -m spacy download es_core_news_sm  # Spanish
+        python -m spacy download fr_core_news_sm  # French
+        # etc.
+        ```
         """)
 
-# Inicialización de sesión
+# Session initialization
 if 'process_complete' not in st.session_state:
     st.session_state.process_complete = False
 if 'df_results' not in st.session_state:
     st.session_state.df_results = None
-# Sidebar para la configuración
-st.sidebar.markdown("<div class='sub-header'>Configuración</div>", unsafe_allow_html=True)
 
-# 1. Subir CSV
-uploaded_file = st.sidebar.file_uploader("Sube tu archivo CSV de keywords", type=['csv'])
+# Sidebar for configuration
+st.sidebar.markdown("<div class='sub-header'>Configuration</div>", unsafe_allow_html=True)
 
-# 2. API Key de OpenAI (ajustado el mensaje para indicar preferencia)
-openai_api_key = st.sidebar.text_input(
-    "API Key de OpenAI (recomendado)",
-    type="password", 
-    help="Proporciona tu API Key de OpenAI para embeddings de alta calidad (hasta 5000 keywords). Si no se proporciona, se usará SentenceTransformers como alternativa gratuita."
+# 1. Upload CSV
+uploaded_file = st.sidebar.file_uploader("Upload your keyword CSV file", type=['csv'])
+
+# 2. Language selection
+available_languages = ['english', 'spanish', 'french', 'german', 'italian', 'portuguese']
+if nltk_available:
+    available_languages = sorted(nltk_languages)
+
+selected_language = st.sidebar.selectbox(
+    "Keyword Language",
+    options=available_languages,
+    index=0,
+    help="Select the language of your keywords for better processing"
 )
 
-# Mostrar estado de procesamiento semántico
+# Display language-specific processing capabilities
+if selected_language != 'english':
+    language_capabilities = []
+    
+    if selected_language in nltk_languages:
+        language_capabilities.append("✅ NLTK stopwords")
+    else:
+        language_capabilities.append("❌ NLTK stopwords")
+        
+    if selected_language in stemmer_languages:
+        language_capabilities.append("✅ Stemming")
+    else:
+        language_capabilities.append("❌ Stemming")
+        
+    if selected_language in spacy_language_models and spacy_available:
+        language_capabilities.append("✅ SpaCy advanced processing")
+    else:
+        language_capabilities.append("❌ SpaCy advanced processing")
+        
+    st.sidebar.info(f"Language support for {selected_language}:\n" + "\n".join(language_capabilities))
+
+# 3. OpenAI API Key
+openai_api_key = st.sidebar.text_input(
+    "OpenAI API Key (recommended)",
+    type="password", 
+    help="Provide your OpenAI API Key for high-quality embeddings (up to 5000 keywords). If not provided, SentenceTransformers will be used as a free alternative."
+)
+
+# Show semantic processing status
 if openai_available:
     if openai_api_key:
-        st.sidebar.success("✅ API Key proporcionada - Se usará OpenAI para embeddings de alta precisión")
+        st.sidebar.success("✅ API Key provided - OpenAI will be used for high-precision embeddings")
     else:
         if sentence_transformers_available:
-            st.sidebar.info("ℹ️ Sin API Key - Se usará SentenceTransformers como alternativa gratuita")
+            st.sidebar.info("ℹ️ No API Key - SentenceTransformers will be used as a free alternative")
         else:
-            st.sidebar.warning("⚠️ Sin API Key ni SentenceTransformers - Se usará TF-IDF (precisión reducida)")
+            st.sidebar.warning("⚠️ No API Key or SentenceTransformers - TF-IDF will be used (reduced precision)")
 else:
     if sentence_transformers_available:
-        st.sidebar.info("ℹ️ OpenAI no disponible - Se usará SentenceTransformers como alternativa gratuita")
+        st.sidebar.info("ℹ️ OpenAI not available - SentenceTransformers will be used as a free alternative")
     else:
-        st.sidebar.error("❌ Métodos avanzados no disponibles - Se usará TF-IDF (precisión reducida)")
+        st.sidebar.error("❌ Advanced methods not available - TF-IDF will be used (reduced precision)")
 
-# 3. Parámetros de clustering
-st.sidebar.markdown("<div class='sub-header'>Parámetros</div>", unsafe_allow_html=True)
+# 4. Clustering parameters
+st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
 
-# Panel de explicación de parámetros - Colocado antes de los sliders
-with st.sidebar.expander("ℹ️ Guía de Parámetros", expanded=False):
+# Parameter explanation panel - Placed before sliders
+with st.sidebar.expander("ℹ️ Parameter Guide", expanded=False):
     st.markdown("""
-    ### Guía de Parámetros de Clustering
+    ### Clustering Parameter Guide
     
-    Aquí encontrarás explicaciones sobre cada parámetro y cómo ajustarlo para obtener mejores resultados:
+    Here you'll find explanations for each parameter and how to adjust it for better results:
     
-    #### Número de clusters
-    **¿Qué es?** El número de grupos en los que se dividirán tus keywords.
+    #### Number of clusters
+    **What is it?** The number of groups your keywords will be divided into.
     
-    **Cómo usarlo:** 
-    - **↑ Aumentar** si necesitas una división más detallada y específica por temas.
-    - **↓ Disminuir** si prefieres grupos más generales y amplios.
+    **How to use it:** 
+    - **↑ Increase** if you need a more detailed and specific division by topics.
+    - **↓ Decrease** if you prefer more general and broader groups.
     
-    **Resultado:**
-    - **Valores altos** (15-30): Muchos grupos pequeños y muy específicos.
-    - **Valores bajos** (5-10): Pocos grupos pero más amplios temáticamente.
-    - **Ideal:** Generalmente entre 8-15 para 1000 keywords. Aumenta proporcionalmente con la cantidad de keywords.
-    
-    ---
-    
-    #### Varianza explicada PCA (%)
-    **¿Qué es?** Determina cuánta información original se conserva al simplificar los datos. Piensa en esto como el "nivel de detalle" que se mantiene.
-    
-    **Cómo usarlo:**
-    - **↑ Aumentar** para mayor precisión y preservar más matices semánticos.
-    - **↓ Disminuir** para acelerar el procesamiento con conjuntos grandes.
-    
-    **Resultado:**
-    - **Valores altos** (95-99%): Mayor precisión semántica pero más lento.
-    - **Valores bajos** (80-90%): Procesamiento más rápido pero puede perderse algunos matices.
-    - **Ideal:** 90-95% ofrece un buen equilibrio entre precisión y velocidad.
+    **Result:**
+    - **High values** (15-30): Many small, very specific groups.
+    - **Low values** (5-10): Few but broader thematic groups.
+    - **Ideal:** Generally between 8-15 for 1000 keywords. Increase proportionally with the number of keywords.
     
     ---
     
-    #### Máximo de componentes PCA
-    **¿Qué es?** Limita la complejidad máxima del modelo de análisis. Similar a establecer un límite para evitar un exceso de complejidad.
+    #### PCA explained variance (%)
+    **What is it?** Determines how much original information is preserved when simplifying the data. Think of this as the "level of detail" that is maintained.
     
-    **Cómo usarlo:**
-    - **↑ Aumentar** para datasets grandes o con alta diversidad temática.
-    - **↓ Disminuir** para datasets más pequeños o centrados en un solo tema.
+    **How to use it:**
+    - **↑ Increase** for greater accuracy and preserving more semantic nuances.
+    - **↓ Decrease** to speed up processing with large sets.
     
-    **Resultado:**
-    - **Valores altos** (100-200): Captura más relaciones complejas entre palabras.
-    - **Valores bajos** (30-75): Más eficiente pero puede simplificar demasiado.
-    - **Ideal:** Entre 75-100 para la mayoría de casos.
-    
-    ---
-    
-    #### Frecuencia mínima de términos
-    **¿Qué es?** Ignora palabras que aparecen en muy pocas keywords. Ayuda a filtrar palabras raras o errores tipográficos.
-    
-    **Cómo usarlo:**
-    - **↑ Aumentar** para eliminar términos poco comunes y posible ruido.
-    - **↓ Disminuir** para incluir términos poco frecuentes que podrían ser importantes.
-    
-    **Resultado:**
-    - **Valores altos** (3-5): Elimina más términos raros, clustering más "limpio".
-    - **Valores bajos** (1-2): Conserva términos poco comunes, puede mantener más ruido.
-    - **Ideal:** 1-2 para datasets pequeños, 2-3 para datasets grandes (+5000 keywords).
+    **Result:**
+    - **High values** (95-99%): Higher semantic precision but slower.
+    - **Low values** (80-90%): Faster processing but may lose some nuances.
+    - **Ideal:** 90-95% offers a good balance between precision and speed.
     
     ---
     
-    #### Frecuencia máxima de términos (%)
-    **¿Qué es?** Ignora palabras que aparecen en un alto porcentaje de keywords. Similar a eliminar "palabras comodín" que están en todas partes.
+    #### Maximum PCA components
+    **What is it?** Limits the maximum complexity of the analysis model. Similar to setting a limit to avoid excessive complexity.
     
-    **Cómo usarlo:**
-    - **↑ Aumentar** para incluir más términos comunes.
-    - **↓ Disminuir** para filtrar palabras demasiado genéricas.
+    **How to use it:**
+    - **↑ Increase** for large datasets or with high thematic diversity.
+    - **↓ Decrease** for smaller datasets or focused on a single topic.
     
-    **Resultado:**
-    - **Valores altos** (90-100%): Incluye casi todos los términos, incluso los muy comunes.
-    - **Valores bajos** (70-85%): Enfoque en palabras más distintivas, ignorando las genéricas.
-    - **Ideal:** 85-95% funciona bien para la mayoría de datasets.
+    **Result:**
+    - **High values** (100-200): Captures more complex relationships between words.
+    - **Low values** (30-75): More efficient but may oversimplify.
+    - **Ideal:** Between 75-100 for most cases.
+    
+    ---
+    
+    #### Minimum term frequency
+    **What is it?** Ignores words that appear in very few keywords. Helps filter rare words or typos.
+    
+    **How to use it:**
+    - **↑ Increase** to eliminate uncommon terms and possible noise.
+    - **↓ Decrease** to include infrequent terms that might be important.
+    
+    **Result:**
+    - **High values** (3-5): Removes more rare terms, "cleaner" clustering.
+    - **Low values** (1-2): Preserves uncommon terms, may retain more noise.
+    - **Ideal:** 1-2 for small datasets, 2-3 for large datasets (+5000 keywords).
+    
+    ---
+    
+    #### Maximum term frequency (%)
+    **What is it?** Ignores words that appear in a high percentage of keywords. Similar to removing "wildcard words" that are everywhere.
+    
+    **How to use it:**
+    - **↑ Increase** to include more common terms.
+    - **↓ Decrease** to filter out very generic words.
+    
+    **Result:**
+    - **High values** (90-100%): Includes almost all terms, even very common ones.
+    - **Low values** (70-85%): Focus on more distinctive words, ignoring generic ones.
+    - **Ideal:** 85-95% works well for most datasets.
     """)
     
     st.info("""
-    **Consejo:** Si no estás seguro, mantén los valores predeterminados. La aplicación está optimizada para funcionar bien con estos parámetros en la mayoría de los casos.
+    **Tip:** If you're not sure, keep the default values. The application is optimized to work well with these parameters in most cases.
     
-    Para datasets grandes (+5000 keywords), considera aumentar ligeramente el número de clusters y reducir la varianza explicada PCA para mantener tiempos de procesamiento razonables.
+    For large datasets (+5000 keywords), consider slightly increasing the number of clusters and reducing the PCA explained variance to maintain reasonable processing times.
     """)
-# Sliders para los parámetros con descripciones mejoradas
+
+# Sliders for parameters with improved descriptions
 num_clusters = st.sidebar.slider(
-    "Número de clusters", 
+    "Number of clusters", 
     min_value=2, 
     max_value=50, 
     value=10, 
-    help="Número de grupos en los que se dividirán tus keywords. Más clusters = grupos más específicos."
+    help="Number of groups your keywords will be divided into. More clusters = more specific groups."
 )
 
 pca_variance = st.sidebar.slider(
-    "Varianza explicada PCA (%)", 
+    "PCA explained variance (%)", 
     min_value=50, 
     max_value=99, 
     value=95, 
-    help="Porcentaje de información que se conserva. Mayor valor = mayor precisión pero más lento."
+    help="Percentage of information preserved. Higher value = greater precision but slower."
 )
 
 max_pca_components = st.sidebar.slider(
-    "Máximo de componentes PCA", 
+    "Maximum PCA components", 
     min_value=10, 
     max_value=300, 
     value=100, 
-    help="Límite de complejidad del modelo. Mayor valor = captura más relaciones complejas."
+    help="Complexity limit of the model. Higher value = captures more complex relationships."
 )
 
-# 4. Opciones avanzadas
-st.sidebar.markdown("<div class='sub-header'>Opciones avanzadas</div>", unsafe_allow_html=True)
+# 5. Advanced options
+st.sidebar.markdown("<div class='sub-header'>Advanced options</div>", unsafe_allow_html=True)
 
 min_df = st.sidebar.slider(
-    "Frecuencia mínima de términos", 
+    "Minimum term frequency", 
     min_value=1, 
     max_value=10, 
     value=1, 
-    help="Ignora términos poco frecuentes. Mayor valor = elimina más palabras raras."
+    help="Ignores infrequent terms. Higher value = removes more rare words."
 )
 
 max_df = st.sidebar.slider(
-    "Frecuencia máxima de términos (%)", 
+    "Maximum term frequency (%)", 
     min_value=50, 
     max_value=100, 
     value=95, 
-    help="Ignora términos demasiado comunes. Menor valor = elimina más palabras genéricas."
+    help="Ignores too common terms. Lower value = removes more generic words."
 )
 
 gpt_model = st.sidebar.selectbox(
-    "Modelo para nombrar clusters", 
+    "Model for naming clusters", 
     ["gpt-3.5-turbo", "gpt-4"], 
     index=0,
-    help="GPT-4 proporciona nombres más precisos pero es más costoso y lento."
+    help="GPT-4 provides more accurate names but is more expensive and slower."
 )
 
-# Añadir calculadora de costes al sidebar (donde el usuario puede simular diferentes cantidades)
+# Add cost calculator to sidebar (where the user can simulate different quantities)
 add_cost_calculator()
 
-# Botón para ejecutar el clustering
+# Button to run clustering
 if uploaded_file is not None and not st.session_state.process_complete:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("Iniciar Clustering Semántico Avanzado", type="primary", use_container_width=True):
+        if st.button("Start Advanced Semantic Clustering", type="primary", use_container_width=True):
             success, results = run_clustering(
                 uploaded_file, 
                 openai_api_key, 
@@ -1565,22 +1761,24 @@ if uploaded_file is not None and not st.session_state.process_complete:
                 max_pca_components, 
                 min_df, 
                 max_df,
-                gpt_model
+                gpt_model,
+                selected_language
             )
             if success:
                 st.session_state.df_results = results
                 st.session_state.process_complete = True
-                st.markdown("<div class='success-box'>✅ Clustering semántico completado con éxito!</div>", unsafe_allow_html=True)
-# Mostrar resultados si el proceso está completo
+                st.markdown("<div class='success-box'>✅ Semantic clustering completed successfully!</div>", unsafe_allow_html=True)
+
+# Show results if process is complete
 if st.session_state.process_complete and st.session_state.df_results is not None:
-    st.markdown("<div class='main-header'>Resultados del Clustering</div>", unsafe_allow_html=True)
+    st.markdown("<div class='main-header'>Clustering Results</div>", unsafe_allow_html=True)
     
     df = st.session_state.df_results
     
-    # Pestaña para mostrar visualizaciones
-    with st.expander("Visualizaciones", expanded=True):
-        # Gráfico de barras con tamaño de clusters
-        st.subheader("Distribución de Clusters")
+    # Tab for visualizations
+    with st.expander("Visualizations", expanded=True):
+        # Bar chart with cluster sizes
+        st.subheader("Cluster Distribution")
         cluster_sizes = df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
         cluster_sizes['label'] = cluster_sizes.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
         
@@ -1589,14 +1787,14 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             x='label', 
             y='count',
             color='count',
-            labels={'count': 'Número de Keywords', 'label': 'Cluster'},
-            title='Tamaño de cada Cluster',
+            labels={'count': 'Number of Keywords', 'label': 'Cluster'},
+            title='Size of Each Cluster',
             color_continuous_scale=px.colors.sequential.Blues
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        # Gráfico de coherencia de clusters
-        st.subheader("Coherencia Semántica de Clusters")
+        # Cluster coherence chart
+        st.subheader("Semantic Coherence of Clusters")
         
         coherence_data = df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
         coherence_data['label'] = coherence_data.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
@@ -1606,133 +1804,137 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             x='label',
             y='cluster_coherence',
             color='cluster_coherence',
-            labels={'cluster_coherence': 'Coherencia', 'label': 'Cluster'},
-            title='Coherencia Semántica por Cluster',
+            labels={'cluster_coherence': 'Coherence', 'label': 'Cluster'},
+            title='Semantic Coherence by Cluster',
             color_continuous_scale=px.colors.sequential.Greens
         )
         st.plotly_chart(fig2, use_container_width=True)
-# Pestaña para explorar clusters
-    with st.expander("Explorar Clusters", expanded=True):
-        # Selector de cluster
+
+    # Tab for exploring clusters
+    with st.expander("Explore Clusters", expanded=True):
+        # Cluster selector
         cluster_options = [f"{row['cluster_name']} (ID: {row['cluster_id']})" for _, row in 
                           df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].iterrows()]
-        selected_cluster = st.selectbox("Selecciona un cluster para explorar:", cluster_options)
+        selected_cluster = st.selectbox("Select a cluster to explore:", cluster_options)
         
         if selected_cluster:
-            # Obtener ID del cluster seleccionado
+            # Get cluster ID from selected option
             cluster_id = int(selected_cluster.split("ID: ")[1].split(")")[0])
             
-            # Filtrar datos del cluster seleccionado
+            # Filter data for selected cluster
             cluster_df = df[df['cluster_id'] == cluster_id].copy()
             
-            # Mostrar información del cluster
+            # Show cluster information
             col1, col2 = st.columns(2)
             
             with col1:
                 st.markdown(f"### {cluster_df['cluster_name'].iloc[0]}")
-                st.markdown(f"**Descripción:** {cluster_df['cluster_description'].iloc[0]}")
+                st.markdown(f"**Description:** {cluster_df['cluster_description'].iloc[0]}")
                 st.markdown(f"**Total keywords:** {len(cluster_df)}")
             
             with col2:
-                st.markdown(f"**Coherencia semántica:** {cluster_df['cluster_coherence'].iloc[0]:.3f}")
-                st.markdown("**Keywords representativas:**")
+                st.markdown(f"**Semantic coherence:** {cluster_df['cluster_coherence'].iloc[0]:.3f}")
+                st.markdown("**Representative keywords:**")
                 rep_keywords = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
                 if rep_keywords:
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in rep_keywords[:10]]) + "</ul>", unsafe_allow_html=True)
             
-            # Mostrar todas las keywords del cluster
-            st.markdown("### Todas las keywords")
+            # Show all keywords in the cluster
+            st.markdown("### All keywords")
             st.dataframe(cluster_df[['keyword']], use_container_width=True)
 
-    # Pestaña para descargar resultados
-    with st.expander("Descargar Resultados"):
-        # Opción de descarga de CSV completo
+    # Tab for downloading results
+    with st.expander("Download Results"):
+        # Option to download complete CSV
         csv = df.to_csv(index=False)
         st.download_button(
-            label="Descargar CSV con todos los resultados",
+            label="Download CSV with all results",
             data=csv,
             file_name="semantic_clustered_keywords.csv",
             mime="text/csv",
             use_container_width=True
         )
         
-        # Opción de descarga de resumen
-        st.subheader("Resumen de Clusters")
+        # Option to download summary
+        st.subheader("Cluster Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
-        summary_df.columns = ['ID', 'Nombre', 'Descripción', 'Número de Keywords']
+        summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
         
-        # Añadir coherencia
+        # Add coherence
         coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
-        summary_df.rename(columns={'cluster_coherence': 'Coherencia'}, inplace=True)
+        summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
         
-        # Añadir keywords representativas
+        # Add representative keywords
         def get_rep_keywords(cluster_id):
             reps = df[(df['cluster_id'] == cluster_id) & (df['representative'] == True)]['keyword'].tolist()
             return ', '.join(reps[:5])
         
-        summary_df['Keywords Representativas'] = summary_df['ID'].apply(get_rep_keywords)
+        summary_df['Representative Keywords'] = summary_df['ID'].apply(get_rep_keywords)
         
         st.dataframe(summary_df, use_container_width=True)
         
-        # Descargar resumen
+        # Download summary
         csv_summary = summary_df.to_csv(index=False)
         st.download_button(
-            label="Descargar resumen de clusters",
+            label="Download cluster summary",
             data=csv_summary,
             file_name="semantic_clusters_summary.csv",
             mime="text/csv",
             use_container_width=True
         )
-# Botón para reiniciar
+
+# Reset button
 if st.session_state.process_complete:
-    if st.button("Reiniciar", type="secondary", use_container_width=True):
+    if st.button("Reset", type="secondary", use_container_width=True):
         st.session_state.process_complete = False
         st.session_state.df_results = None
         st.rerun()
 
-# Información adicional
-with st.expander("Información sobre el Clustering Semántico Avanzado"):
+# Additional information
+with st.expander("About Advanced Semantic Clustering"):
     st.markdown("""
-    ### ¿Cómo funciona este clustering semántico avanzado?
+    ### How does this advanced semantic clustering work?
     
-    1. **Preprocesamiento Lingüístico**: Las keywords se analizan usando NLP avanzado para extraer entidades nombradas, bigramas relevantes y tokens significativos.
+    1. **Linguistic Preprocessing**: Keywords are analyzed using advanced NLP to extract named entities, relevant bigrams, and significant tokens.
     
-    2. **Embeddings de Alta Calidad**: Se utilizan modelos de embeddings de última generación:
-       - OpenAI Embeddings (hasta 5000 keywords) si se proporciona API key
-       - Sentence Transformers (sin costo) como alternativa o fallback
-       - TF-IDF como último recurso
+    2. **High-Quality Embeddings**: State-of-the-art embedding models are used:
+       - OpenAI Embeddings (up to 5000 keywords) if API key is provided
+       - Sentence Transformers (free) as an alternative or fallback
+       - TF-IDF as a last resort
     
-    3. **Reducción Inteligente de Dimensionalidad**: PCA optimizado para preservar las relaciones semánticas más importantes.
+    3. **Intelligent Dimensionality Reduction**: PCA optimized to preserve the most important semantic relationships.
     
-    4. **Clustering Avanzado**: Algoritmos que descubren automáticamente la estructura óptima:
-       - HDBSCAN para detectar clusters de forma natural
-       - Clustering jerárquico aglomerativo optimizado
-       - Determinación automática del número de clusters
+    4. **Advanced Clustering**: Algorithms that automatically discover the optimal structure:
+       - HDBSCAN for detecting natural clusters
+       - Optimized agglomerative hierarchical clustering
+       - Automatic determination of the optimal number of clusters
     
-    5. **Refinamiento Post-Clustering**: Identifica y corrige asignaciones problemáticas:
-       - Detección de outliers semánticos
-       - Fusión de clusters muy similares
-       - Reasignación de keywords mal clasificadas
+    5. **Post-Clustering Refinement**: Identifies and corrects problematic assignments:
+       - Detection of semantic outliers
+       - Merging of very similar clusters
+       - Reassignment of misclassified keywords
     
-    6. **Evaluación Multi-Métrica**: Análisis riguroso de la calidad de los clusters:
-       - Coherencia semántica interna
-       - Densidad y compacidad
-       - Separación entre clusters
-       - Diagnóstico de clusters problemáticos
+    6. **Multi-Metric Evaluation**: Rigorous analysis of cluster quality:
+       - Internal semantic coherence
+       - Density and compactness
+       - Separation between clusters
+       - Diagnosis of problematic clusters
     
-    ### Consejos para obtener mejores resultados
+    ### Tips for better results
     
-    - **Calidad de keywords**: El clustering funciona mejor cuando las keywords están relacionadas con un mismo dominio o industria.
+    - **Keyword quality**: Clustering works best when keywords are related to the same domain or industry.
     
-    - **Preprocesamiento**: Asegúrate de que tus keywords no contengan errores ortográficos o caracteres extraños.
+    - **Preprocessing**: Make sure your keywords don't contain spelling errors or strange characters.
     
-    - **API Key de OpenAI**: Proporciona una API Key para embeddings de mayor calidad, aunque SentenceTransformers ofrece buenos resultados sin costo.
+    - **OpenAI API Key**: Provide an API Key for higher quality embeddings, although SentenceTransformers offers good results at no cost.
     
-    - **Número de clusters**: Considera usar la determinación automática del número óptimo de clusters.
+    - **Number of clusters**: Consider using automatic determination of the optimal number of clusters.
     
-    - **Evaluación iterativa**: Examina los clusters con baja coherencia y considera ajustar parámetros o dividirlos.
+    - **Iterative evaluation**: Examine clusters with low coherence and consider adjusting parameters or dividing them.
+    
+    - **Language selection**: Always select the correct language of your keywords for optimal results.
     """)
 
 # Footer
@@ -1740,8 +1942,9 @@ st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: #888;">
-        Desarrollado para clustering semántico avanzado de keywords | Versión 2.1 con OpenAI/SentenceTransformers híbrido
+        Developed for advanced semantic keyword clustering | Version 2.1 with OpenAI/SentenceTransformers hybrid and multilingual support
     </div>
     """, 
     unsafe_allow_html=True
 )
+#END BLOCK 10
