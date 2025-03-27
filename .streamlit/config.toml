@@ -1,6 +1,0 @@
-[server]
-enableStaticServing = true
-
-[runner]
-# Ejecutar setup.py antes de lanzar la app
-postScript = "setup.py"
