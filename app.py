@@ -975,6 +975,16 @@ try:
             clean_text = re.sub(r',\s*}', '}', clean_text)
             clean_text = re.sub(r',\s*\]', ']', clean_text)
             
+            try:
+                data = json.loads(clean_text)
+            except json.JSONDecodeError:
+                # Last resort: handle parsing failure
+                data = {}  # or some default value
+except Exception as e:
+    # Handle any other unexpected errors
+    st.error(f"Unexpected error during JSON parsing: {str(e)}")
+    data = {}  # or some default value
+            
     try:
         data = json.loads(clean_text)
     except json.JSONDecodeError:
