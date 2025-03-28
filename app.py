@@ -935,51 +935,47 @@ Format your response as a JSON array with cluster_id, cluster_name, and descript
 
 # Process the JSON response
 try:
-    import re
-    import json
-    
-    # First try direct parsing
+    # === Main attempt to parse the JSON ===
     try:
+        # First direct parsing attempt
         data = json.loads(naming_text)
     except json.JSONDecodeError:
         # Advanced text cleaning before attempting to extract JSON
-        # Remove any text before the first '{' and after the last '}'
         json_start = naming_text.find('{')
         json_end = naming_text.rfind('}')
         array_start = naming_text.find('[')
         array_end = naming_text.rfind(']')
-        
-        # Determine if it's more likely to be an object or an array
+
+        # Determine whether it looks more like an object or an array
         if (json_start != -1 and json_end != -1) and (array_start == -1 or json_start < array_start):
-            clean_text = naming_text[json_start:json_end+1]
+            clean_text = naming_text[json_start : json_end + 1]
         elif array_start != -1 and array_end != -1:
-            clean_text = naming_text[array_start:array_end+1]
+            clean_text = naming_text[array_start : array_end + 1]
         else:
             clean_text = naming_text
-        
+
         # Replace single quotes with double quotes
         clean_text = clean_text.replace("'", '"')
-        
-        # Try to fix keys without quotes (a common error)
+
+        # Attempt to fix unquoted keys (common in malformed JSON)
         clean_text = re.sub(r'([{,])\s*(\w+):', r'\1 "\2":', clean_text)
-        
+
         # Remove invalid characters between strings
         clean_text = re.sub(r'"\s*:\s*"', '":"', clean_text)
         clean_text = re.sub(r'"\s*,\s*"', '","', clean_text)
-        
+
         try:
             data = json.loads(clean_text)
         except json.JSONDecodeError:
-            # If it still fails, try to detect and fix more common errors
-            # Remove commas after the last element of objects or arrays
+            # If parsing still fails, attempt to fix common errors
+            # Remove trailing commas in objects or arrays
             clean_text = re.sub(r',\s*}', '}', clean_text)
             clean_text = re.sub(r',\s*\]', ']', clean_text)
-            
+
             try:
                 data = json.loads(clean_text)
             except json.JSONDecodeError:
-                # If it's still failing, look for any JSON-like structure
-                # First try with JSON objects
+                # If it still fails, look for any JSON-like structure
                 json_match = re.search(r'({.*})', naming_text, re.DOTALL)
                 if json_match:
                     try:
@@ -992,38 +988,34 @@ try:
                                 array_data = json.loads(array_match.group(1))
                                 data = {"clusters": array_data}
                             except json.JSONDecodeError:
-                                # Last resort: manual parsing of the structure
                                 st.warning("JSON parsing failed. Performing manual extraction...")
-                                # Instead of raising an error, create a default structure
                                 data = {"clusters": []}
                         else:
-                            # Instead of raising an error, create a default structure
                             data = {"clusters": []}
                 else:
-                    # Last resort: manual parsing of the structure
                     st.warning("JSON parsing failed. Performing manual extraction...")
                     data = {"clusters": []}
 
-except Exception as e:
-    # Handle any other unexpected errors
-    st.error(f"Unexpected error during JSON parsing: {str(e)}")
-    data = {"clusters": []}  # Default structure in case of complete failure
+    except Exception as e:
+        # Handle any other unexpected parsing errors
+        st.error(f"Unexpected error during JSON parsing: {str(e)}")
+        data = {"clusters": []}  # Default structure in case of complete failure
 
-    # Handle different JSON structures that might be returned
+    # === Handle different possible JSON structures ===
     clusters_data = None
     if "clusters" in data:
         clusters_data = data["clusters"]
     elif isinstance(data, list):
         clusters_data = data
     else:
-        # Try to find any list in the response
+        # Try to find the first list available if "clusters" is not found
         for key, value in data.items():
             if isinstance(value, list) and len(value) > 0:
                 clusters_data = value
                 break
 
     if clusters_data:
-        # Match clusters by position if IDs don't match
+        # Match clusters by position if IDs do not match
         if len(clusters_data) == len(cluster_order):
             for i, cluster_info in enumerate(clusters_data):
                 actual_id = cluster_order[i]
@@ -1031,41 +1023,50 @@ except Exception as e:
                     cluster_info.get("cluster_name", f"Cluster {actual_id}"),
                     cluster_info.get("description", "No description provided.")
                 )
+
 except Exception as e:
+    # If there is an error analyzing the JSON response
     st.warning(f"Error analyzing JSON response for batch {batch_idx+1}/{total_batches}: {str(e)}")
-    # Fallback for this batch: try to manually extract the information
+
+    # Fallback: try manual parsing for this batch
     try:
-        # Fallback more manual parsing for both models
         for i, cluster_id in enumerate(cluster_order):
-            # Look for "Cluster {cluster_id}" or similar pattern in the text
-            cluster_section = re.search(f"Cluster {cluster_id}[:\s]*(.*?)(?:Cluster \d|$)", 
-                                       naming_text, re.DOTALL | re.IGNORECASE)
-            
+            # Look for sections like "Cluster X"
+            cluster_section = re.search(
+                f"Cluster {cluster_id}[:\\s]*(.*?)(?:Cluster \\d|$)",
+                naming_text, re.DOTALL | re.IGNORECASE
+            )
             if cluster_section:
                 section_text = cluster_section.group(1).strip()
+
                 # Try to extract name and description
-                name_match = re.search(r"name[:\s]*(.*?)(?:description|\n|$)", 
-                                     section_text, re.DOTALL | re.IGNORECASE)
-                desc_match = re.search(r"description[:\s]*(.*?)(?:\n\n|$)", 
-                                      section_text, re.DOTALL | re.IGNORECASE)
-                
+                name_match = re.search(
+                    r"name[:\s]*(.*?)(?:description|\n|$)",
+                    section_text, re.DOTALL | re.IGNORECASE
+                )
+                desc_match = re.search(
+                    r"description[:\s]*(.*?)(?:\n\n|$)",
+                    section_text, re.DOTALL | re.IGNORECASE
+                )
+
                 name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
                 desc = desc_match.group(1).strip() if desc_match else f"Keywords group {cluster_id}"
-                
                 results[cluster_id] = (name, desc)
             else:
+                # If the pattern is not found, use generic fallback
                 results[cluster_id] = (f"Cluster {cluster_id}", f"Keywords group {cluster_id}")
     except Exception:
-        # Ultimate fallback if all parsing fails
+        # Final fallback if all parsing attempts fail
         for cluster_id in cluster_order:
             results[cluster_id] = (f"Cluster {cluster_id}", f"Keywords group {cluster_id}")
 
-    # Progress update inside the batch loop
+    # Update progress bar
     progress_bar.progress((batch_idx + 1) / total_batches)
-    time.sleep(1)  # Avoid rate limits
+    time.sleep(1)  # Small pause to avoid rate limits
+
 except Exception as e:
     st.warning(f"Error generating names for batch {batch_idx+1}/{total_batches}: {str(e)}")
-    # Provide default names
+    # Provide default names if everything else fails
     for cluster_id, _ in batch_clusters:
         results[cluster_id] = (f"Cluster {cluster_id}", "Error generating description")
 
