@@ -921,17 +921,17 @@ Format your response as a JSON array with cluster_id, cluster_name, and descript
                 # Fallback for older models
                 completion_params["response_format"] = {"type": "json_object"}
 
-# Make the API call
-naming_response = client.chat.completions.create(**completion_params)
-
-# Extract the response based on whether it was a function call or direct response
-if hasattr(naming_response.choices[0].message, 'tool_calls') and naming_response.choices[0].message.tool_calls:
-    # Extract from function call
-    function_call = naming_response.choices[0].message.tool_calls[0]
-    naming_text = function_call.function.arguments
-else:
-    # Extract from direct message content
-    naming_text = naming_response.choices[0].message.content.strip()
+            # Make the API call
+            naming_response = client.chat.completions.create(**completion_params)
+            
+            # Extract the response based on whether it was a function call or direct response
+            if hasattr(naming_response.choices[0].message, 'tool_calls') and naming_response.choices[0].message.tool_calls:
+                # Extract from function call
+                function_call = naming_response.choices[0].message.tool_calls[0]
+                naming_text = function_call.function.arguments
+            else:
+                # Extract from direct message content
+                naming_text = naming_response.choices[0].message.content.strip()
 
 # Process the JSON response
 try:
@@ -975,32 +975,32 @@ try:
             clean_text = re.sub(r',\s*}', '}', clean_text)
             clean_text = re.sub(r',\s*\]', ']', clean_text)
             
+    try:
+        data = json.loads(clean_text)
+    except json.JSONDecodeError:
+        # If it's still failing, look for any JSON-like structure
+        # First try with JSON objects
+        json_match = re.search(r'({.*})', naming_text, re.DOTALL)
+        if json_match:
             try:
-                data = json.loads(clean_text)
+                data = json.loads(json_match.group(1))
             except json.JSONDecodeError:
-                # If it's still failing, look for any JSON-like structure
-                # First try with JSON objects
-                json_match = re.search(r'({.*})', naming_text, re.DOTALL)
-                if json_match:
+                # Then try with JSON arrays
+                array_match = re.search(r'(\[.*\])', naming_text, re.DOTALL)
+                if array_match:
                     try:
-                        data = json.loads(json_match.group(1))
+                        array_data = json.loads(array_match.group(1))
+                        data = {"clusters": array_data}
                     except json.JSONDecodeError:
-                        # Then try with JSON arrays
-                        array_match = re.search(r'(\[.*\])', naming_text, re.DOTALL)
-                        if array_match:
-                            try:
-                                array_data = json.loads(array_match.group(1))
-                                data = {"clusters": array_data}
-                            except json.JSONDecodeError:
-                                # Last resort: manual parsing of the structure
-                                st.warning("JSON parsing failed. Performing manual extraction...")
-                                # Instead of raising an error, create a default structure
-                                data = {"clusters": []}
-                        else:
-                            # Instead of raising an error, create a default structure
-                            data = {"clusters": []}
+                        # Last resort: manual parsing of the structure
+                        st.warning("JSON parsing failed. Performing manual extraction...")
+                        # Instead of raising an error, create a default structure
+                        data = {"clusters": []}
                 else:
-                    raise ValueError("Could not extract valid JSON from response")
+                    # Instead of raising an error, create a default structure
+                    data = {"clusters": []}
+        else:
+            raise ValueError("Could not extract valid JSON from response")
 
     # Handle different JSON structures that might be returned
     clusters_data = None
@@ -1053,10 +1053,9 @@ except Exception as e:
         for cluster_id in cluster_order:
             results[cluster_id] = (f"Cluster {cluster_id}", f"Keywords group {cluster_id}")
 
-# Progress update
-progress_bar.progress((batch_idx + 1) / total_batches)
-time.sleep(1)  # Avoid rate limits
-
+    # Progress update inside the batch loop
+    progress_bar.progress((batch_idx + 1) / total_batches)
+    time.sleep(1)  # Avoid rate limits
 except Exception as e:
     st.warning(f"Error generating names for batch {batch_idx+1}/{total_batches}: {str(e)}")
     # Provide default names
@@ -1373,10 +1372,10 @@ Provide your analysis in a structured JSON format with the following fields:
         except Exception as e:
             st.error(f"Error evaluating cluster {cluster_id}: {str(e)}")
         
-        # Update progress
-        eval_progress.progress((i + 1) / len(sample_clusters))
+    # Update progress
+    eval_progress.progress((i + 1) / len(sample_clusters))
     
-# Final recommendations based on overall evaluation
+    # Final recommendations based on overall evaluation
     if eval_results:
         st.subheader("Overall Cluster Quality Assessment")
         
@@ -1589,7 +1588,7 @@ def run_clustering(uploaded_file, openai_api_key, num_clusters, pca_variance, ma
                 indices = df[df['cluster_id'] == cluster_num].index.tolist()
                 
                 # Calculate centroid of the cluster
-                cluster_embeddings = np.array([keyword_embeddings_reduced[i] for i in indices])
+                cluster_embeddings = np.array([keyword_embeddings_reduced[idx] for idx in indices])
                 centroid = np.mean(cluster_embeddings, axis=0)
                 
                 # Calculate distance to centroid for each keyword
