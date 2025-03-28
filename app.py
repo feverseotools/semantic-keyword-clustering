@@ -526,7 +526,7 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
             non_noise_clusters = [c for c in unique_clusters if c != -1]
             
             if (len(non_noise_clusters) > 1 
-                and len(non_noise_clusters) <= num_clusters * 2):
+                and len(non_noise_clusters) <= (num_clusters or 10) * 2):
                 st.success(f"HDBSCAN found {len(non_noise_clusters)} natural clusters")
                 
                 # Reassign noise points to nearest cluster
@@ -680,8 +680,7 @@ def generate_cluster_names(
     custom_prompt=None
 ):
     """
-    Generates SEO-oriented cluster names & descriptions using an English prompt.
-    The user can provide a custom prompt; if not, a default English prompt is used.
+    Generates SEO-oriented cluster names & descriptions using a custom English prompt.
     Returns a dict {cluster_id: (cluster_name, cluster_description)}.
     """
     if not clusters_with_representatives:
@@ -969,9 +968,6 @@ Example:
                 "evaluation": evaluation_data
             }
             
-            with st.expander(f"Cluster {cid}: {cluster_name}", expanded=False):
-                st.write(evaluation_data)
-            
         except Exception as e:
             st.error(f"Error evaluating cluster {cid}: {str(e)}")
         
@@ -1189,7 +1185,7 @@ def run_clustering(
                     clusters_with_representatives, 
                     client, 
                     model=gpt_model,
-                    custom_prompt=user_prompt  # <--- we pass the user-defined prompt here
+                    custom_prompt=user_prompt
                 )
             except Exception as e:
                 st.error(f"Error generating cluster names: {str(e)}")
@@ -1215,6 +1211,7 @@ def run_clustering(
         df = evaluate_cluster_quality(df, keyword_embeddings_reduced)
         
         # AI-powered cluster evaluation (optional)
+        eval_results = {}
         if client:
             try:
                 eval_results = evaluate_and_refine_clusters(df, client, model=gpt_model)
@@ -1223,7 +1220,6 @@ def run_clustering(
                 st.error(f"Error during AI-driven evaluation: {str(e)}")
         
         return True, df
-    
     except Exception as e:
         st.error(f"Error in the clustering pipeline: {str(e)}")
         return False, None
@@ -1436,7 +1432,18 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         )
         st.plotly_chart(fig2, use_container_width=True)
 
+    # ---------------------
+    # Explore Clusters
+    # ---------------------
     with st.expander("Explore Clusters", expanded=True):
+        st.markdown("""
+        Below you can see each cluster in detail.  
+        If you ran the **AI-Powered Cluster Quality Evaluation**, you may also see 
+        coherence scores, possible outliers, or suggestions for splits/improvements 
+        for that particular cluster.
+        """)
+        
+        # Build a selectbox from the unique cluster IDs
         cluster_options = [
             f"{row['cluster_name']} (ID: {row['cluster_id']})"
             for _, row in df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].iterrows()
@@ -1444,6 +1451,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         selected_cluster = st.selectbox("Select a cluster to explore:", cluster_options)
         
         if selected_cluster:
+            # Extract the cluster ID from the option string
             cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             cluster_df = df[df['cluster_id'] == cid].copy()
             
@@ -1459,6 +1467,34 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 if reps:
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in reps[:10]]) + "</ul>", unsafe_allow_html=True)
             
+            # If we have AI-based evaluation data, show it here
+            if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
+                evaluation_dict = st.session_state.cluster_evaluation
+                if cid in evaluation_dict:
+                    eval_info = evaluation_dict[cid]['evaluation']
+                    
+                    st.markdown("### AI Evaluation & Possible Suggestions")
+                    # For coherence score, outliers, etc.
+                    coherence_score = eval_info.get("coherence_score", "N/A")
+                    outliers = eval_info.get("outlier_keywords", [])
+                    splitting = eval_info.get("needs_splitting", False)
+                    suggestions = eval_info.get("improvement_suggestions", [])
+                    
+                    st.write(f"**AI Coherence Score (1-10):** {coherence_score}")
+                    st.write(f"**Needs Splitting?:** {'Yes' if splitting else 'No'}")
+                    
+                    if outliers:
+                        st.write("**Possible Outlier Keywords:**")
+                        st.write(", ".join(outliers))
+                    
+                    if suggestions:
+                        st.write("**Improvement Suggestions:**")
+                        for s in suggestions:
+                            st.write(f"- {s}")
+                    else:
+                        st.write("_No suggestions were provided by the AI._")
+            
+            # Show all keywords in the cluster
             st.markdown("### All keywords in this cluster")
             st.dataframe(cluster_df[['keyword']], use_container_width=True)
 
@@ -1517,14 +1553,14 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     - For best quality, use an OpenAI API Key for embeddings (limited to 5,000 direct embeddings).
     - For more than 5,000 keywords, the rest are assigned via similarity propagation.
     - Increase the number of clusters for more granularity.
-    - Pay attention to clusters with low coherence—try splitting or refining them.
+    - Check clusters with low coherence—try splitting or refining them.
     """)
 
 st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: #888;">
-        Developed for advanced semantic keyword clustering | Version 2.2 with custom prompts
+        Developed for advanced semantic keyword clustering | Version with extended cluster exploration
     </div>
     """, 
     unsafe_allow_html=True
