@@ -870,6 +870,7 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
     coherence_threshold = np.percentile([x[1] for x in metrics['coherence']], 25)
     problematic = [x[0] for x in metrics['coherence'] if x[1] < coherence_threshold]
     
+    # Assign final coherence
     for cid, cval in metrics['coherence']:
         df.loc[df[cluster_column] == cid, 'cluster_coherence'] = cval
     
@@ -884,6 +885,10 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
         """)
     else:
         st.success("All clusters have good semantic coherence.")
+    
+    # 4. Show overall average semantic coherence
+    overall_avg_coherence = df['cluster_coherence'].mean()
+    st.metric("Overall Average Semantic Coherence (All Clusters)", f"{overall_avg_coherence:.3f}")
     
     return df
 
@@ -975,7 +980,7 @@ Example:
     
     # Overall summary
     if eval_results:
-        st.subheader("Overall Cluster Quality Assessment")
+        st.subheader("Overall Cluster Quality Assessment (AI-based)")
         coherence_scores = []
         for data in eval_results.values():
             score = data["evaluation"].get("coherence_score", 0)
@@ -987,16 +992,16 @@ Example:
         
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Average Coherence", f"{avg_coherence:.1f}/10")
+            st.metric("Average Coherence (AI)", f"{avg_coherence:.1f}/10")
         with col2:
-            st.metric("Clusters Needing Split", f"{needs_splitting}/{len(eval_results)}")
+            st.metric("Clusters Needing Split (AI)", f"{needs_splitting}/{len(eval_results)}")
         
         if avg_coherence < 6:
-            st.warning("⚠️ Overall coherence is low. Consider increasing the number of clusters.")
+            st.warning("⚠️ Overall AI-based coherence is low. Consider increasing the number of clusters.")
         elif avg_coherence > 8:
-            st.success("✅ Overall coherence is quite good.")
+            st.success("✅ Overall AI-based coherence is quite good.")
         else:
-            st.info("ℹ️ Moderate coherence. Consider refining based on individual suggestions.")
+            st.info("ℹ️ Moderate AI-based coherence. Consider refining based on individual suggestions.")
     
     return eval_results
 
@@ -1334,13 +1339,28 @@ st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_htm
 with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
     st.markdown("""
     ### Clustering Parameters
-    **Number of clusters**: how many groups to form.
-    **PCA explained variance**: how much information to keep (in %) during dimensionality reduction.
-    **Max PCA components**: upper bound on PCA dimensions.
-    **Minimum term frequency**: ignore extremely rare words.
-    **Maximum term frequency (%)**: ignore extremely common words.
+
+    **Number of clusters**  
+    - High number of clusters leads to more fine-grained grouping (smaller clusters with higher internal similarity, but sometimes over-split).  
+    - Low number of clusters lumps more keywords together (less fine detail, but sometimes too broad).
+
+    **PCA explained variance (%)**  
+    - Determines how much variance in the data you want to keep when reducing dimensionality.  
+    - A higher percentage keeps more dimensions (more nuance) but might be slower or more prone to noise; a lower percentage might lose too much info.
+
+    **Max PCA components**  
+    - The upper limit on how many PCA dimensions we keep. If you set this too low, you may lose important signals; if it's too high, you might not reduce enough.
+
+    **Minimum term frequency (min_df)**  
+    - Keywords or tokens that appear less frequently than this might be ignored in TF-IDF.  
+    - Setting a higher min_df can help remove very obscure or one-off tokens.
+
+    **Maximum term frequency (%) (max_df)**  
+    - Tokens that appear in more than this percentage of documents are ignored.  
+    - Setting a lower max_df excludes extremely common words that may not be meaningful, but if it's too low you might lose relevant terms.
+
+    Overall, if unsure, keep defaults. For large datasets, consider more clusters or a slightly lower PCA variance to keep the runtime reasonable.
     """)
-    st.info("If unsure, keep defaults. For large datasets, consider more clusters or lower PCA variance.")
 
 num_clusters = st.sidebar.slider("Number of clusters", 2, 50, 10)
 pca_variance = st.sidebar.slider("PCA explained variance (%)", 50, 99, 95)
@@ -1522,6 +1542,14 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             return ', '.join(reps[:5])
         
         summary_df['Representative Keywords'] = summary_df['ID'].apply(get_rep_keywords)
+        
+        # Mark which clusters have AI-based arguments
+        if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
+            evaluated_ids = list(st.session_state.cluster_evaluation.keys())
+            summary_df['AI Evaluation?'] = summary_df['ID'].apply(lambda x: "Yes" if x in evaluated_ids else "No")
+        else:
+            summary_df['AI Evaluation?'] = "No"
+        
         st.dataframe(summary_df, use_container_width=True)
         
         csv_summary = summary_df.to_csv(index=False)
@@ -1560,7 +1588,7 @@ st.markdown("---")
 st.markdown(
     """
     <div style="text-align: center; color: #888;">
-        Developed for advanced semantic keyword clustering | Version with extended cluster exploration
+        Developed for advanced semantic keyword clustering | Version with average semantic metric & AI evaluation indicator
     </div>
     """, 
     unsafe_allow_html=True
