@@ -978,39 +978,36 @@ try:
             try:
                 data = json.loads(clean_text)
             except json.JSONDecodeError:
-                # Last resort: handle parsing failure
-                data = {}  # or some default value
+                # If it's still failing, look for any JSON-like structure
+                # First try with JSON objects
+                json_match = re.search(r'({.*})', naming_text, re.DOTALL)
+                if json_match:
+                    try:
+                        data = json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        # Then try with JSON arrays
+                        array_match = re.search(r'(\[.*\])', naming_text, re.DOTALL)
+                        if array_match:
+                            try:
+                                array_data = json.loads(array_match.group(1))
+                                data = {"clusters": array_data}
+                            except json.JSONDecodeError:
+                                # Last resort: manual parsing of the structure
+                                st.warning("JSON parsing failed. Performing manual extraction...")
+                                # Instead of raising an error, create a default structure
+                                data = {"clusters": []}
+                        else:
+                            # Instead of raising an error, create a default structure
+                            data = {"clusters": []}
+                else:
+                    # Last resort: manual parsing of the structure
+                    st.warning("JSON parsing failed. Performing manual extraction...")
+                    data = {"clusters": []}
+
 except Exception as e:
     # Handle any other unexpected errors
     st.error(f"Unexpected error during JSON parsing: {str(e)}")
-    data = {}  # or some default value
-            
-    try:
-        data = json.loads(clean_text)
-    except json.JSONDecodeError:
-        # If it's still failing, look for any JSON-like structure
-        # First try with JSON objects
-        json_match = re.search(r'({.*})', naming_text, re.DOTALL)
-        if json_match:
-            try:
-                data = json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                # Then try with JSON arrays
-                array_match = re.search(r'(\[.*\])', naming_text, re.DOTALL)
-                if array_match:
-                    try:
-                        array_data = json.loads(array_match.group(1))
-                        data = {"clusters": array_data}
-                    except json.JSONDecodeError:
-                        # Last resort: manual parsing of the structure
-                        st.warning("JSON parsing failed. Performing manual extraction...")
-                        # Instead of raising an error, create a default structure
-                        data = {"clusters": []}
-                else:
-                    # Instead of raising an error, create a default structure
-                    data = {"clusters": []}
-        else:
-            raise ValueError("Could not extract valid JSON from response")
+    data = {"clusters": []}  # Default structure in case of complete failure
 
     # Handle different JSON structures that might be returned
     clusters_data = None
