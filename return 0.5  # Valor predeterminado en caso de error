@@ -368,7 +368,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
             
             # Increased to 5000 keywords (instead of 1000)
             if len(keywords) > 5000:
-                st.warning(f"Limiting to 5000 representative keywords out of {len(keywords) total"} totales")
+                st.warning(f"Limiting to 5000 representative keywords out of {len(keywords)} total")
                 # Select keywords strategically (not just the first ones)
                 step = max(1, len(keywords) // 5000)
                 sample_indices = list(range(0, len(keywords), step))[:5000]
