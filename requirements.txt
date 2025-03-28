@@ -9,3 +9,4 @@ plotly>=5.10.0
 sentence-transformers>=2.2.0
 spacy>=3.0.0
 hdbscan>=0.8.29
+textblob>=0.15.3
