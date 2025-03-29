@@ -16,7 +16,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
 from io import StringIO
 
-# For OpenAI, import with error handling
+# Attempt to import OpenAI
 try:
     from openai import OpenAI
     openai_available = True
@@ -30,16 +30,12 @@ try:
 except ImportError:
     sentence_transformers_available = False
 
+# We will load spaCy models dynamically based on language
 try:
     import spacy
-    try:
-        # Load English model if your keywords are in English
-        nlp = spacy.load("en_core_web_sm")
-        spacy_available = True
-    except:
-        spacy_available = False
+    spacy_base_available = True
 except ImportError:
-    spacy_available = False
+    spacy_base_available = False
 
 try:
     from textblob import TextBlob
@@ -60,6 +56,50 @@ try:
     nltk.download('wordnet', quiet=True)
 except Exception:
     pass  # Continue even if downloads fail
+
+################################################################
+#          LANGUAGE MODEL MANAGEMENT
+################################################################
+
+# Mapping for some known spaCy language models (if installed).
+# If these models are not installed, spaCy loading will fail and we'll fallback.
+SPACY_LANGUAGE_MODELS = {
+    "English": "en_core_web_sm",
+    "Spanish": "es_core_news_sm",
+    "French": "fr_core_news_sm",
+    "German": "de_core_news_sm",
+    "Dutch": "nl_core_news_sm",
+    "Italian": "it_core_news_sm",
+    "Portuguese": "pt_core_news_sm",
+    "Brazilian Portuguese": "pt_core_news_sm",  # same as Portuguese in spaCy
+    "Swedish": "sv_core_news_sm",
+    "Norwegian": "nb_core_news_sm",
+    "Danish": "da_core_news_sm",
+    "Greek": "el_core_news_sm",
+    "Romanian": "ro_core_news_sm",
+    # The following languages often have partial or community models, which might not be installed by default
+    # For now, we will rely on fallback if not installed.
+    "Korean": None,
+    "Japanese": None,
+    "Icelandic": None,
+    "Lithuanian": None
+}
+
+def load_spacy_model_by_language(selected_language):
+    """
+    Try to load a spaCy model for the given language. If it fails or doesn't exist, returns None.
+    """
+    if not spacy_base_available:
+        return None
+
+    model_name = SPACY_LANGUAGE_MODELS.get(selected_language, None)
+    if model_name is None:
+        return None
+
+    try:
+        return spacy.load(model_name)
+    except:
+        return None
 
 ################################################################
 #          COST CALCULATION AND SUPPORT FUNCTIONS
@@ -120,60 +160,60 @@ def add_cost_calculator():
         st.markdown("""
         ### API Cost Calculator
         
-        Calcula un costo aproximado de OpenAI para la cantidad de palabras clave que procesarás.
+        Estimate OpenAI usage costs for a given number of keywords.
         """)
         
         calc_num_keywords = st.number_input(
-            "Número de palabras clave",
+            "Number of keywords",
             min_value=100, 
             max_value=100000, 
             value=1000,
             step=500
         )
         calc_num_clusters = st.number_input(
-            "Número aproximado de clústeres",
+            "Approx. number of clusters",
             min_value=2,
             max_value=50,
             value=10,
             step=1
         )
         calc_model = st.radio(
-            "Modelo para nombrar clústeres",
+            "Model for naming clusters",
             options=["gpt-3.5-turbo", "gpt-4"],
             index=0,
             horizontal=True
         )
         
-        if st.button("Calcular costo estimado", use_container_width=True):
+        if st.button("Calculate Estimated Cost", use_container_width=True):
             cost_results = calculate_api_cost(calc_num_keywords, calc_model, calc_num_clusters)
             
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(
-                    "Palabras clave procesadas (OpenAI)", 
+                    "Keywords processed with OpenAI", 
                     f"{cost_results['processed_keywords']:,}",
-                    help="OpenAI procesa hasta 5,000 palabras clave; las demás se manejan con propagación de similitud."
+                    help="OpenAI processes up to 5,000 keywords; any beyond that are handled via similarity propagation."
                 )
                 st.metric(
-                    "Costo de Embeddings", 
+                    "Embeddings cost", 
                     f"${cost_results['embedding_cost']:.4f}",
-                    help="Costo con modelo text-embedding-3-small"
+                    help="Cost using text-embedding-3-small"
                 )
             with col2:
                 st.metric(
-                    "Costo de nombrado de Clústeres", 
+                    "Cluster naming cost", 
                     f"${cost_results['naming_cost']:.4f}",
-                    help=f"Nombrar/describir con {calc_model}"
+                    help=f"Cost using {calc_model} to name and describe clusters"
                 )
                 st.metric(
-                    "COSTO TOTAL", 
+                    "TOTAL COST", 
                     f"${cost_results['total_cost']:.4f}",
-                    help="Costo aproximado total"
+                    help="Approximate total cost"
                 )
             
             st.info("""
-            **Nota:** Esta cifra es solo un estimado. El costo real puede variar según la longitud de las palabras clave y la complejidad de los clústeres.
-            Si utilizas SentenceTransformers en vez de OpenAI embeddings, el costo es $0.
+            **Note:** This is an estimate only. Actual costs may vary based on keyword length and clustering complexity.
+            Using SentenceTransformers instead of OpenAI embeddings is $0.
             """)
 
 def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
@@ -181,28 +221,29 @@ def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clu
         cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
         
         with st.sidebar.expander("💰 Estimated Cost (Current CSV)", expanded=True):
-            st.markdown(f"### Costo estimado para {num_keywords:,} palabras clave")
+            st.markdown(f"### Estimated Cost for {num_keywords:,} Keywords")
             
             st.markdown(f"""
-            - **Palabras clave procesadas con OpenAI**: {cost_results['processed_keywords']:,}
-            - **Costo de Embeddings**: ${cost_results['embedding_cost']:.4f}
-            - **Costo de nombrado de clústeres**: ${cost_results['naming_cost']:.4f}
-            - **COSTO TOTAL**: ${cost_results['total_cost']:.4f}
+            - **Keywords processed with OpenAI**: {cost_results['processed_keywords']:,}
+            - **Embeddings cost**: ${cost_results['embedding_cost']:.4f}
+            - **Cluster naming cost**: ${cost_results['naming_cost']:.4f}
+            - **TOTAL COST**: ${cost_results['total_cost']:.4f}
             """)
             
             if cost_results['processed_keywords'] < num_keywords:
                 st.info(f"""
-                {cost_results['processed_keywords']:,} palabras clave serán procesadas directamente con OpenAI.
-                El resto ({num_keywords - cost_results['processed_keywords']:,}) usará
-                propagación de similitud.
+                {cost_results['processed_keywords']:,} keywords will be processed by OpenAI directly.
+                The remaining {num_keywords - cost_results['processed_keywords']:,} will use
+                similarity propagation.
                 """)
             
             st.markdown("""
-            **Ahorro de costos**: Si no deseas usar OpenAI, puedes usar SentenceTransformers sin costo y obtener resultados decentes.
+            **Cost Savings**: If you prefer not to use OpenAI, you can 
+            use SentenceTransformers at no cost with decent results.
             """)
 
 ################################################################
-#  SAMPLE CSV GENERATION (NEW)
+#  SAMPLE CSV GENERATION
 ################################################################
 
 def generate_sample_csv():
@@ -219,14 +260,16 @@ def generate_sample_csv():
 #          SEMANTIC PREPROCESSING
 ################################################################
 
-def enhanced_preprocessing(text, use_lemmatization=True):
+def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
+    """
+    Enhanced preprocessing using spaCy or fallback with TextBlob.
+    """
     if not isinstance(text, str) or not text.strip():
         return ""
     
     try:
-        # Option 1: spaCy
-        if spacy_available:
-            doc = nlp(text.lower())
+        if spacy_nlp is not None:  # We have a loaded spaCy model
+            doc = spacy_nlp(text.lower())
             entities = [ent.text for ent in doc.ents]
             tokens = []
             for token in doc:
@@ -236,14 +279,13 @@ def enhanced_preprocessing(text, use_lemmatization=True):
             # Bigrams
             bigrams = []
             for i in range(len(doc) - 1):
-                if (not doc[i].is_stop and not doc[i+1].is_stop 
+                if (not doc[i].is_stop and not doc[i+1].is_stop
                     and doc[i].is_alpha and doc[i+1].is_alpha):
                     bigrams.append(f"{doc[i].lemma_}_{doc[i+1].lemma_}")
             
             processed_parts = tokens + bigrams + entities
             return " ".join(processed_parts)
         
-        # Option 2: TextBlob
         elif textblob_available:
             from textblob import TextBlob
             blob = TextBlob(text.lower())
@@ -264,14 +306,17 @@ def enhanced_preprocessing(text, use_lemmatization=True):
             
             return " ".join(processed_parts)
         
-        # Fallback: standard NLTK
         else:
+            # fallback to standard nltk
             return preprocess_text(text, use_lemmatization)
     
     except Exception:
         return text.lower() if isinstance(text, str) else ""
 
 def preprocess_text(text, use_lemmatization=True):
+    """
+    Basic NLTK-based text preprocessing as a fallback.
+    """
     if not isinstance(text, str) or not text.strip():
         return ""
     try:
@@ -295,26 +340,29 @@ def preprocess_text(text, use_lemmatization=True):
     except Exception:
         return text.lower() if isinstance(text, str) else ""
 
-def preprocess_keywords(keywords, use_advanced=True):
+def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
+    """
+    Main keyword preprocessing loop.
+    """
     processed_keywords = []
     progress_bar = st.progress(0)
     total = len(keywords)
     
     if use_advanced:
-        if spacy_available:
-            st.success("Using advanced preprocessing with spaCy")
+        if spacy_nlp is not None:
+            st.success("Using advanced preprocessing with spaCy for the selected language.")
         elif textblob_available:
-            st.success("Using alternative preprocessing with TextBlob")
+            st.success("Using fallback preprocessing with TextBlob.")
         else:
-            st.info("Using standard preprocessing with NLTK")
+            st.info("Using standard preprocessing with NLTK.")
     else:
-        st.info("Using standard preprocessing with NLTK (advanced preprocessing disabled)")
+        st.info("Using standard preprocessing with NLTK (advanced preprocessing disabled).")
     
     for i, keyword in enumerate(keywords):
-        if use_advanced and (spacy_available or textblob_available):
-            processed_keywords.append(enhanced_preprocessing(keyword))
+        if use_advanced and (spacy_nlp is not None or textblob_available):
+            processed_keywords.append(enhanced_preprocessing(keyword, True, spacy_nlp))
         else:
-            processed_keywords.append(preprocess_text(keyword))
+            processed_keywords.append(preprocess_text(keyword, True))
         
         if i % 100 == 0:
             progress_bar.progress(min(i / total, 1.0))
@@ -332,13 +380,13 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
     # Attempt OpenAI embeddings
     if openai_available and openai_api_key:
         try:
-            st.info("Using OpenAI embeddings (high semantic precision)")
+            st.info("Using OpenAI embeddings (high semantic precision).")
             os.environ["OPENAI_API_KEY"] = openai_api_key
             client = OpenAI()
             keywords = df['keyword_processed'].fillna('').tolist()
             all_embeddings = []
             
-            # If more than 5000 keywords, do partial approach
+            # If more than 5000 keywords, partial approach
             if len(keywords) > 5000:
                 st.warning(f"Limiting to 5000 representative keywords out of {len(keywords)} total.")
                 step = max(1, len(keywords) // 5000)
@@ -388,7 +436,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                 
                 progress_bar.progress(1.0)
             else:
-                # If under 5000, go direct
+                # If under 5000, direct approach
                 progress_bar = st.progress(0)
                 st.info(f"Requesting embeddings for all {len(keywords)} keywords from OpenAI...")
                 batch_size = 1000
@@ -408,17 +456,17 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
                 progress_bar.progress(1.0)
             
             embeddings = np.array(all_embeddings) if isinstance(all_embeddings, list) else all_embeddings
-            st.success(f"✅ Generated embeddings with {embeddings.shape[1]} dimensions (OpenAI)")
+            st.success(f"✅ Generated embeddings with {embeddings.shape[1]} dimensions (OpenAI).")
             return embeddings
                 
         except Exception as e:
             st.error(f"Error generating embeddings with OpenAI: {str(e)}")
-            st.info("Falling back to SentenceTransformers...")
+            st.info("Falling back to SentenceTransformers.")
 
+    # Attempt SentenceTransformers if available
     if sentence_transformers_available:
-        # Attempt SentenceTransformers
         try:
-            st.success("Using SentenceTransformer (free fallback)")
+            st.success("Using SentenceTransformer (free fallback).")
             model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
             
             progress_bar = st.progress(0)
@@ -434,11 +482,12 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
             
             progress_bar.progress(1.0)
             embeddings = np.array(all_embeddings)
-            st.success(f"✅ Generated embeddings with {embeddings.shape[1]} dimensions (SentenceTransformers)")
+            st.success(f"✅ Generated embeddings with {embeddings.shape[1]} dimensions (SentenceTransformers).")
             return embeddings
         except Exception as e:
             st.error(f"Error with SentenceTransformer: {str(e)}")
     
+    # Fallback to TF-IDF
     st.warning("Using TF-IDF as a last resort (less semantic precision).")
     return generate_tfidf_embeddings(df['keyword_processed'].fillna(''))
 
@@ -461,7 +510,7 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         embeddings = tfidf_matrix.toarray()
         progress_bar.progress(1.0)
         
-        st.success(f"✅ Generated {embeddings.shape[1]} TF-IDF vectors")
+        st.success(f"✅ Generated {embeddings.shape[1]} TF-IDF vectors.")
         return embeddings
     except Exception as e:
         st.error(f"Error generating TF-IDF embeddings: {str(e)}")
@@ -488,8 +537,7 @@ def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
 
 def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
     st.info("Refining clusters to improve coherence...")
-    # If you want your existing outlier logic, place it here
-    # We'll keep it as is for demonstration
+    # If outlier or merging logic is needed, place it here
     return df
 
 ################################################################
@@ -563,7 +611,6 @@ def generate_cluster_names(
         if not json_data or "clusters" not in json_data:
             st.warning("Could not parse JSON from GPT response. Showing raw text:")
             st.text_area("GPT Raw Response", content, height=300)
-            # fallback
             for c_id in clusters_with_representatives.keys():
                 results[c_id] = (f"Cluster {c_id}", f"Generic description for cluster {c_id}")
             return results
@@ -585,7 +632,7 @@ def generate_cluster_names(
     return results
 
 ################################################################
-#          CLUSTER SEMANTIC ANALYSIS (NEW)
+#          CLUSTER SEMANTIC ANALYSIS
 ################################################################
 
 def generate_semantic_analysis(
@@ -594,8 +641,10 @@ def generate_semantic_analysis(
     model="gpt-3.5-turbo"
 ):
     """
-    Llama a OpenAI para cada grupo de clústeres y devuelve datos sobre
-    search intent, sugerencia de división y cualquier info adicional.
+    Calls OpenAI to analyze each cluster for:
+      1) Main search intent
+      2) Suggestion of internal splitting
+      3) Additional info or insights
     """
     results = {}
     if not clusters_with_representatives:
@@ -603,31 +652,30 @@ def generate_semantic_analysis(
 
     progress_text = st.empty()
     progress_bar = st.progress(0)
-    progress_text.text("Analizando semánticamente los clústeres...")
+    progress_text.text("Performing semantic analysis on clusters...")
 
-    # Construimos prompt similar a naming
     analysis_prompt = (
-        "Eres un experto en SEO y análisis de clústeres. Se presentan varios clústeres con sus palabras clave representativas. "
-        "Para cada clúster, analiza:\n\n"
-        "1) Search intent principal.\n"
-        "2) Si consideras necesario dividir internamente el clúster.\n"
-        "3) Información o insight adicional relevante sobre estos keywords.\n\n"
-        "Responde en un JSON llamado 'clusters', donde cada elemento sea:\n"
+        "You are an expert in SEO and clustering analysis. Below are several clusters with representative keywords. "
+        "For each cluster, analyze:\n"
+        "1) The main search intent.\n"
+        "2) If you think it should be split further.\n"
+        "3) Any additional insights regarding these keywords.\n\n"
+        "Respond ONLY as a JSON object named 'clusters', where each element is:\n"
         "{\n"
-        "  \"cluster_id\": <número>,\n"
+        "  \"cluster_id\": <number>,\n"
         "  \"search_intent\": \"...\",\n"
         "  \"split_suggestion\": \"...\",\n"
         "  \"additional_info\": \"...\",\n"
-        "  \"coherence_score\": <número entre 0 y 10>\n"
+        "  \"coherence_score\": <number between 0 and 10>\n"
         "}\n\n"
-        "Aquí están los clústeres:\n"
+        "Here are the clusters:\n"
     )
 
     for cluster_id, keywords in clusters_with_representatives.items():
         sample_kws = keywords[:15]
         analysis_prompt += f"- Cluster {cluster_id}: {', '.join(sample_kws)}\n"
 
-    analysis_prompt += "\nResponde ÚNICAMENTE con el objeto JSON llamado 'clusters'."
+    analysis_prompt += "\nPlease respond ONLY with the JSON object named 'clusters'."
 
     try:
         response = client.chat.completions.create(
@@ -638,7 +686,7 @@ def generate_semantic_analysis(
         )
         content = response.choices[0].message.content.strip()
 
-        # Intentamos parsear JSON
+        # Attempt to parse JSON
         json_data = None
         try:
             json_data = json.loads(content)
@@ -655,8 +703,8 @@ def generate_semantic_analysis(
                     pass
 
         if not json_data or "clusters" not in json_data:
-            st.warning("No se pudo parsear el JSON de la respuesta. Se muestra texto bruto:")
-            st.text_area("Respuesta GPT (Raw)", content, height=300)
+            st.warning("Could not parse JSON from GPT response. Showing raw text:")
+            st.text_area("GPT Raw Response", content, height=300)
             return results
 
         cluster_array = json_data["clusters"]
@@ -676,10 +724,10 @@ def generate_semantic_analysis(
                 }
 
     except Exception as e:
-        st.error(f"Error en análisis semántico: {str(e)}")
+        st.error(f"Error in semantic analysis: {str(e)}")
 
     progress_bar.progress(1.0)
-    progress_text.text("✅ Análisis semántico finalizado.")
+    progress_text.text("✅ Semantic analysis completed.")
     return results
 
 ################################################################
@@ -687,17 +735,18 @@ def generate_semantic_analysis(
 ################################################################
 
 def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
-    st.subheader("Advanced Cluster Quality Evaluation")
-    
-    # Aquí se podría calcular un "placeholder" de coherence.
-    # Lo dejamos como ejemplo sencillo:
-    # Por defecto, asignamos 1.0 a cada fila para mostrar.
-    df['cluster_coherence'] = 1.0
+    """
+    Simple placeholder approach to assign a 'cluster_coherence' score for demonstration purposes.
+    """
+    st.subheader("Cluster Quality Evaluation")
+    df['cluster_coherence'] = 1.0  # Placeholder
     st.success("Placeholder coherence assigned = 1.0")
     return df
 
 def calculate_cluster_coherence(cluster_embeddings):
-    # Si desea lógica específica, inclúyala aquí
+    """
+    If more complex logic is needed, implement here.
+    """
     return 1.0
 
 def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
@@ -707,17 +756,16 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
         st.info("No OpenAI client available. Skipping AI-based cluster analysis.")
         return {}
 
-    # Obtener la lista de clústeres y sus representantes para el análisis
+    # Build a dict of cluster -> representative keywords
     clusters_with_representatives = {}
     for c_id in df['cluster_id'].unique():
         reps = df[(df['cluster_id'] == c_id) & (df['representative'] == True)]['keyword'].tolist()
-        # Si no hay representativos marcados (por algún fallo), tomamos los primeros 20
         if not reps:
             cluster_kws = df[df['cluster_id'] == c_id]['keyword'].tolist()
             reps = cluster_kws[:20]
         clusters_with_representatives[c_id] = reps
 
-    # Llamamos a la función que hace la consulta a GPT
+    # Call GPT-based analysis
     semantic_analysis = generate_semantic_analysis(
         clusters_with_representatives=clusters_with_representatives,
         client=client,
@@ -740,12 +788,14 @@ def run_clustering(
     max_df, 
     gpt_model,
     user_prompt,
-    csv_format
+    csv_format,
+    selected_language
 ):
     """
     Executes the full clustering pipeline, depending on CSV format:
       - csv_format = "no_header" => read with header=None, names=["keyword"]
       - csv_format = "with_header" => read with header=0
+      - selected_language => used to load spaCy model if available
     """
     if uploaded_file is None:
         st.warning("Please upload a CSV file with keywords.")
@@ -778,22 +828,23 @@ def run_clustering(
     else:
         st.info("No OpenAI API Key provided. Will use free alternatives.")
     
+    # Attempt to load spaCy model for selected language
+    spacy_nlp = load_spacy_model_by_language(selected_language)
+
     try:
-        # Load CSV according to the user's choice
+        # Load CSV according to user's choice
         if csv_format == "no_header":
-            # No header, one column for keywords
+            # No header, one column
             df = pd.read_csv(uploaded_file, header=None, names=["keyword"])
             st.success(f"✅ Loaded {len(df)} keywords (no header).")
         else:
-            # with_header
             df = pd.read_csv(uploaded_file, header=0)
-            # We assume there's a "Keyword" column, rename it to "keyword"
             if "Keyword" in df.columns:
                 df.rename(columns={"Keyword": "keyword"}, inplace=True)
             if "keyword" not in df.columns:
-                st.error("No 'Keyword' column found in CSV. Please check your file.")
+                st.error("No 'Keyword' column found in the CSV. Please check your file.")
                 return False, None
-            st.success(f"✅ Loaded {len(df)} rows with potential advanced columns (header).")
+            st.success(f"✅ Loaded {len(df)} rows (with header).")
         
         num_keywords = len(df)
         show_csv_cost_estimate(num_keywords, gpt_model, num_clusters)
@@ -801,13 +852,17 @@ def run_clustering(
         # Preprocessing
         st.subheader("Keyword Preprocessing")
         st.info("Preprocessing keywords with advanced NLP or fallback.")
-        use_advanced = spacy_available
-        
+        use_advanced = True  # We'll try advanced approach if possible
+
         if "keyword" not in df.columns:
-            st.error("No column named 'keyword' found after loading. Check CSV.")
+            st.error("No column named 'keyword' found. Check CSV.")
             return False, None
         
-        keywords_processed = preprocess_keywords(df["keyword"].tolist(), use_advanced=use_advanced)
+        keywords_processed = preprocess_keywords(
+            df["keyword"].tolist(),
+            use_advanced=use_advanced,
+            spacy_nlp=spacy_nlp
+        )
         df['keyword_processed'] = keywords_processed
         st.success("✅ Preprocessing complete.")
         
@@ -874,7 +929,6 @@ def run_clustering(
                 csize = len(df[df['cluster_id'] == cnum])
                 n_rep = min(20, csize)
                 indices = df[df['cluster_id'] == cnum].index.tolist()
-                # We'll do a simple centroid approach
                 c_embs = np.array([keyword_embeddings_reduced[idx] for idx in indices])
                 centroid = np.mean(c_embs, axis=0)
                 distances = [np.linalg.norm(keyword_embeddings_reduced[idx] - centroid) for idx in indices]
@@ -925,7 +979,7 @@ def run_clustering(
         # Evaluate cluster quality
         df = evaluate_cluster_quality(df, keyword_embeddings_reduced)
         
-        # AI-based cluster evaluation/semantic analysis
+        # AI-based semantic analysis
         if client:
             try:
                 eval_results = evaluate_and_refine_clusters(df, client, model=gpt_model)
@@ -993,7 +1047,7 @@ You can upload:
 """)
 
 # -----------------------------------------------------------
-# Expander describing CSV usage (popup)
+# Expander describing CSV usage
 # -----------------------------------------------------------
 with st.expander("CSV Format Info", expanded=False):
     st.markdown("""
@@ -1015,12 +1069,9 @@ with st.expander("CSV Format Info", expanded=False):
    - Additional columns can be used later for numeric analysis or weighting
 
 If you pick the wrong format, the first row might be interpreted incorrectly.
-Choose the correct option below.
-    """)
+""")
 
-# -----------------------------------------------------------
-# Provide a button to download the sample CSV template
-# -----------------------------------------------------------
+# Button to download sample CSV template
 sample_csv_button = st.sidebar.button("Download Sample CSV Template")
 if sample_csv_button:
     csv_header = generate_sample_csv()
@@ -1048,54 +1099,56 @@ openai_api_key = st.sidebar.text_input(
     help="Enter your OpenAI API Key for high-quality embeddings. If omitted, free SentenceTransformers or TF-IDF will be used."
 )
 
+# Language selector
+language_options = [
+    "English", "Spanish", "French", "German", "Dutch", 
+    "Korean", "Japanese", "Italian", "Portuguese", 
+    "Brazilian Portuguese", "Swedish", "Norwegian", 
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian"
+]
+selected_language = st.sidebar.selectbox(
+    "Select language of the CSV",
+    options=language_options,
+    index=0
+)
+
 if openai_available:
     if openai_api_key:
-        st.sidebar.success("✅ OpenAI key provided - will use OpenAI for embeddings")
+        st.sidebar.success("✅ OpenAI key provided - will use OpenAI for embeddings.")
     else:
         if sentence_transformers_available:
-            st.sidebar.info("No OpenAI key - fallback to SentenceTransformers")
+            st.sidebar.info("No OpenAI key - fallback to SentenceTransformers.")
         else:
-            st.sidebar.warning("No OpenAI key, no SentenceTransformers - fallback to TF-IDF")
+            st.sidebar.warning("No OpenAI key, no SentenceTransformers - fallback to TF-IDF.")
 else:
     if sentence_transformers_available:
-        st.sidebar.info("OpenAI not installed - using SentenceTransformers")
+        st.sidebar.info("OpenAI not installed - using SentenceTransformers.")
     else:
-        st.sidebar.error("No advanced embedding method - fallback TF-IDF only")
+        st.sidebar.error("No advanced embedding method - fallback TF-IDF only.")
 
 st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# *** Enhanced Explanation in Parameters Guide ***
-# -----------------------------------------------------------------------------
 with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
     st.markdown("""
-### Guía de Parámetros
-
-A continuación, una explicación detallada de cada parámetro para ajustar el proceso de clustering:
+### Parameters Guide
 
 1. **Number of clusters**  
-   - Controla cuántos grupos (clústeres) se formarán.
-   - Un valor más alto = clústeres más específicos y numerosos.
-   - Un valor más bajo = clústeres más amplios y menos detallados.
+   - Controls how many clusters (groups) will be formed.
+   - Higher = more and smaller clusters. Lower = fewer, larger clusters.
 
 2. **PCA explained variance (%)**  
-   - La Reducción de Dimensionalidad (PCA) ayuda a reducir el ruido y acelerar el clustering.
-   - Este valor define el porcentaje de varianza que deseamos retener en los datos.
-   - Por ejemplo, 95% retiene la mayor parte de la información con menos dimensiones.
+   - How much variance to keep when doing PCA dimensionality reduction.
+   - For instance, 95% tries to keep most of the data's variance but reduces dimensions.
 
 3. **Max PCA components**  
-   - Límite superior de componentes de PCA.
-   - Aunque quieras retener 95% de varianza, puedes fijar un tope (p. ej. 100 componentes) para no exceder.
+   - Hard cap on the number of PCA components.
 
-4. **Minimum term frequency (min_df)** y **Maximum term frequency (max_df)**  
-   - Cuando se usan modelos TF-IDF, estos valores definen la frecuencia mínima y máxima de inclusión de términos.
-   - Sirven para filtrar palabras muy raras o demasiado frecuentes que no aportan valor semántico.
+4. **Minimum/Maximum term frequency (min_df, max_df)**  
+   - Used when TF-IDF is employed. Filters out extremely rare or overly common terms.
 
 5. **Model for naming clusters**  
-   - Elige entre gpt-3.5-turbo o gpt-4 para generar nombres y descripciones de tus clústeres (si proporcionas tu API Key).
-   - GPT-4 suele ser más preciso pero más costoso.
-
-Si no estás seguro, puedes dejar los parámetros en sus valores predeterminados.
+   - Either gpt-3.5-turbo or gpt-4 if you have an API key.
+   - GPT-4 is generally more advanced (and more expensive).
     """)
 
 num_clusters = st.sidebar.slider("Number of clusters", 2, 50, 10)
@@ -1105,7 +1158,7 @@ min_df = st.sidebar.slider("Minimum term frequency", 1, 10, 1)
 max_df = st.sidebar.slider("Maximum term frequency (%)", 50, 100, 95)
 gpt_model = st.sidebar.selectbox("Model for naming clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
 
-st.sidebar.markdown("### Language & Custom Prompt for SEO Naming")
+st.sidebar.markdown("### Custom Prompt for SEO Naming")
 default_prompt = (
     "You are an expert in SEO and content marketing. Below you'll see several clusters "
     "with a list of representative keywords. Your task is to assign each cluster a short, "
@@ -1113,14 +1166,14 @@ default_prompt = (
     "briefly explaining the topic and likely search intent. Respond only in JSON."
 )
 user_prompt = st.sidebar.text_area(
-    "Custom Prompt for Cluster Naming",
+    "Custom Prompt",
     value=default_prompt,
     height=200
 )
 
 add_cost_calculator()
 
-# Session state
+# Session states
 if 'process_complete' not in st.session_state:
     st.session_state.process_complete = False
 if 'df_results' not in st.session_state:
@@ -1141,14 +1194,15 @@ if uploaded_file is not None and not st.session_state.process_complete:
                 max_df=max_df,
                 gpt_model=gpt_model,
                 user_prompt=user_prompt,
-                csv_format=csv_format
+                csv_format=csv_format,
+                selected_language=selected_language
             )
             if success and results is not None:
                 st.session_state.df_results = results
                 st.session_state.process_complete = True
                 st.markdown("<div class='success-box'>✅ Semantic clustering completed successfully!</div>", unsafe_allow_html=True)
 
-# If done
+# If done, show results
 if st.session_state.process_complete and st.session_state.df_results is not None:
     st.markdown("<div class='main-header'>Clustering Results</div>", unsafe_allow_html=True)
     df = st.session_state.df_results
@@ -1187,7 +1241,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         st.subheader("Explore Each Cluster")
         st.markdown("""
         Select a cluster to see details. If AI-based evaluation was done, 
-        you may see extra suggestions or outlier info.
+        you may see extra suggestions or outlier info below.
         """)
         
         cluster_options = [
@@ -1212,7 +1266,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     st.markdown("**Representative Keywords:**")
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in reps[:10]]) + "</ul>", unsafe_allow_html=True)
             
-            # AI suggestions / semantic analysis
+            # If AI-based suggestions / semantic analysis is available
             if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                 ai_eval = st.session_state.cluster_evaluation
                 if cid in ai_eval:
@@ -1239,13 +1293,13 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
         summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
         
-        # Add coherence
+        # Merge coherence
         coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
         summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
         
-        # Rep Keywords
+        # Representative keywords
         def get_rep_keywords(cid):
             reps = df[(df['cluster_id'] == cid) & (df['representative'] == True)]['keyword'].tolist()
             return ', '.join(reps[:5])
@@ -1287,7 +1341,7 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     
     ### CSV Formats
     - **No Header**: one keyword per line
-    - **With Header**: columns e.g. `Keyword,search_volume,competition,cpc,month1..month12`
+    - **With Header**: columns like `Keyword,search_volume,competition,cpc,month1..month12`
     """)
 
 st.markdown("---")
