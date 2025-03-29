@@ -120,61 +120,60 @@ def add_cost_calculator():
         st.markdown("""
         ### API Cost Calculator
         
-        Calculate approximate OpenAI costs for your keywords.
+        Calcula un costo aproximado de OpenAI para la cantidad de palabras clave que procesarás.
         """)
         
         calc_num_keywords = st.number_input(
-            "Number of keywords to process", 
+            "Número de palabras clave",
             min_value=100, 
             max_value=100000, 
             value=1000,
             step=500
         )
         calc_num_clusters = st.number_input(
-            "Approximate number of clusters",
+            "Número aproximado de clústeres",
             min_value=2,
             max_value=50,
             value=10,
             step=1
         )
         calc_model = st.radio(
-            "Model for naming clusters",
+            "Modelo para nombrar clústeres",
             options=["gpt-3.5-turbo", "gpt-4"],
             index=0,
             horizontal=True
         )
         
-        if st.button("Calculate Estimated Cost", use_container_width=True):
+        if st.button("Calcular costo estimado", use_container_width=True):
             cost_results = calculate_api_cost(calc_num_keywords, calc_model, calc_num_clusters)
             
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(
-                    "Keywords processed with OpenAI", 
+                    "Palabras clave procesadas (OpenAI)", 
                     f"{cost_results['processed_keywords']:,}",
-                    help="OpenAI processes up to 5,000 keywords; the rest are handled via similarity propagation."
+                    help="OpenAI procesa hasta 5,000 palabras clave; las demás se manejan con propagación de similitud."
                 )
                 st.metric(
-                    "Embeddings cost", 
+                    "Costo de Embeddings", 
                     f"${cost_results['embedding_cost']:.4f}",
-                    help="Cost for text-embedding-3-small"
+                    help="Costo con modelo text-embedding-3-small"
                 )
             with col2:
                 st.metric(
-                    "Cluster naming cost", 
+                    "Costo de nombrado de Clústeres", 
                     f"${cost_results['naming_cost']:.4f}",
-                    help=f"Cost using {calc_model} for naming/describing clusters"
+                    help=f"Nombrar/describir con {calc_model}"
                 )
                 st.metric(
-                    "TOTAL COST", 
+                    "COSTO TOTAL", 
                     f"${cost_results['total_cost']:.4f}",
-                    help="Approximate total cost"
+                    help="Costo aproximado total"
                 )
             
             st.info("""
-            **Note:** This is only an estimate. Actual costs may vary 
-            based on the length of keywords and complexity of the clusters.
-            Using SentenceTransformers instead of OpenAI embeddings is $0.
+            **Nota:** Esta cifra es solo un estimado. El costo real puede variar según la longitud de las palabras clave y la complejidad de los clústeres.
+            Si utilizas SentenceTransformers en vez de OpenAI embeddings, el costo es $0.
             """)
 
 def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
@@ -182,25 +181,24 @@ def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clu
         cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
         
         with st.sidebar.expander("💰 Estimated Cost (Current CSV)", expanded=True):
-            st.markdown(f"### Estimated Cost for {num_keywords:,} Keywords")
+            st.markdown(f"### Costo estimado para {num_keywords:,} palabras clave")
             
             st.markdown(f"""
-            - **Keywords processed with OpenAI**: {cost_results['processed_keywords']:,}
-            - **Embeddings cost**: ${cost_results['embedding_cost']:.4f}
-            - **Cluster naming cost**: ${cost_results['naming_cost']:.4f}
-            - **TOTAL COST**: ${cost_results['total_cost']:.4f}
+            - **Palabras clave procesadas con OpenAI**: {cost_results['processed_keywords']:,}
+            - **Costo de Embeddings**: ${cost_results['embedding_cost']:.4f}
+            - **Costo de nombrado de clústeres**: ${cost_results['naming_cost']:.4f}
+            - **COSTO TOTAL**: ${cost_results['total_cost']:.4f}
             """)
             
             if cost_results['processed_keywords'] < num_keywords:
                 st.info(f"""
-                {cost_results['processed_keywords']:,} keywords will be processed directly with OpenAI.
-                The remaining {num_keywords - cost_results['processed_keywords']:,} will use
-                similarity propagation.
+                {cost_results['processed_keywords']:,} palabras clave serán procesadas directamente con OpenAI.
+                El resto ({num_keywords - cost_results['processed_keywords']:,}) usará
+                propagación de similitud.
                 """)
             
             st.markdown("""
-            **Cost Savings**: If you prefer not to use OpenAI, you can 
-            use SentenceTransformers at no cost with decent results.
+            **Ahorro de costos**: Si no deseas usar OpenAI, puedes usar SentenceTransformers sin costo y obtener resultados decentes.
             """)
 
 ################################################################
@@ -215,7 +213,6 @@ def generate_sample_csv():
     header = ["Keyword", "search_volume", "competition", "cpc"]
     months = [f"month{i}" for i in range(1, 13)]
     header += months
-    # Return just the header row, no data
     return ",".join(header) + "\n"
 
 ################################################################
@@ -478,11 +475,6 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
 
 def improved_clustering(embeddings, num_clusters=None, min_cluster_size=5):
     st.info("Applying advanced clustering algorithms...")
-
-    # (Same logic as your original code)
-    # ...
-    # For brevity, let’s do a simplified approach:
-    # We'll do K-Means or fallback:
     try:
         from sklearn.cluster import KMeans
         if num_clusters is None:
@@ -593,26 +585,146 @@ def generate_cluster_names(
     return results
 
 ################################################################
+#          CLUSTER SEMANTIC ANALYSIS (NEW)
+################################################################
+
+def generate_semantic_analysis(
+    clusters_with_representatives,
+    client,
+    model="gpt-3.5-turbo"
+):
+    """
+    Llama a OpenAI para cada grupo de clústeres y devuelve datos sobre
+    search intent, sugerencia de división y cualquier info adicional.
+    """
+    results = {}
+    if not clusters_with_representatives:
+        return results
+
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
+    progress_text.text("Analizando semánticamente los clústeres...")
+
+    # Construimos prompt similar a naming
+    analysis_prompt = (
+        "Eres un experto en SEO y análisis de clústeres. Se presentan varios clústeres con sus palabras clave representativas. "
+        "Para cada clúster, analiza:\n\n"
+        "1) Search intent principal.\n"
+        "2) Si consideras necesario dividir internamente el clúster.\n"
+        "3) Información o insight adicional relevante sobre estos keywords.\n\n"
+        "Responde en un JSON llamado 'clusters', donde cada elemento sea:\n"
+        "{\n"
+        "  \"cluster_id\": <número>,\n"
+        "  \"search_intent\": \"...\",\n"
+        "  \"split_suggestion\": \"...\",\n"
+        "  \"additional_info\": \"...\",\n"
+        "  \"coherence_score\": <número entre 0 y 10>\n"
+        "}\n\n"
+        "Aquí están los clústeres:\n"
+    )
+
+    for cluster_id, keywords in clusters_with_representatives.items():
+        sample_kws = keywords[:15]
+        analysis_prompt += f"- Cluster {cluster_id}: {', '.join(sample_kws)}\n"
+
+    analysis_prompt += "\nResponde ÚNICAMENTE con el objeto JSON llamado 'clusters'."
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": analysis_prompt}],
+            temperature=0.3,
+            max_tokens=1200
+        )
+        content = response.choices[0].message.content.strip()
+
+        # Intentamos parsear JSON
+        json_data = None
+        try:
+            json_data = json.loads(content)
+        except json.JSONDecodeError:
+            match = re.search(r'(\{.*\"clusters\".*\})', content, re.DOTALL)
+            if match:
+                possible_json = match.group(1)
+                possible_json = possible_json.replace("'", '"')
+                possible_json = re.sub(r',\s*}', '}', possible_json)
+                possible_json = re.sub(r',\s*\]', ']', possible_json)
+                try:
+                    json_data = json.loads(possible_json)
+                except:
+                    pass
+
+        if not json_data or "clusters" not in json_data:
+            st.warning("No se pudo parsear el JSON de la respuesta. Se muestra texto bruto:")
+            st.text_area("Respuesta GPT (Raw)", content, height=300)
+            return results
+
+        cluster_array = json_data["clusters"]
+        for item in cluster_array:
+            c_id = item.get("cluster_id")
+            search_intent = item.get("search_intent", "")
+            split_suggestion = item.get("split_suggestion", "")
+            additional_info = item.get("additional_info", "")
+            coherence_score = item.get("coherence_score", 0)
+
+            if c_id is not None:
+                results[c_id] = {
+                    "search_intent": search_intent,
+                    "split_suggestion": split_suggestion,
+                    "additional_info": additional_info,
+                    "coherence_score": coherence_score
+                }
+
+    except Exception as e:
+        st.error(f"Error en análisis semántico: {str(e)}")
+
+    progress_bar.progress(1.0)
+    progress_text.text("✅ Análisis semántico finalizado.")
+    return results
+
+################################################################
 #          EVALUATION FUNCTIONS
 ################################################################
 
 def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
     st.subheader("Advanced Cluster Quality Evaluation")
     
-    # For demonstration, let's do a placeholder approach
+    # Aquí se podría calcular un "placeholder" de coherence.
+    # Lo dejamos como ejemplo sencillo:
+    # Por defecto, asignamos 1.0 a cada fila para mostrar.
     df['cluster_coherence'] = 1.0
     st.success("Placeholder coherence assigned = 1.0")
     return df
 
 def calculate_cluster_coherence(cluster_embeddings):
-    # If your logic is needed, place it here
+    # Si desea lógica específica, inclúyala aquí
     return 1.0
 
 def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     st.subheader("AI-Powered Cluster Quality Evaluation")
-    # For demonstration
-    st.info("Placeholder AI-based evaluation; no logic here.")
-    return {}
+
+    if not client:
+        st.info("No OpenAI client available. Skipping AI-based cluster analysis.")
+        return {}
+
+    # Obtener la lista de clústeres y sus representantes para el análisis
+    clusters_with_representatives = {}
+    for c_id in df['cluster_id'].unique():
+        reps = df[(df['cluster_id'] == c_id) & (df['representative'] == True)]['keyword'].tolist()
+        # Si no hay representativos marcados (por algún fallo), tomamos los primeros 20
+        if not reps:
+            cluster_kws = df[df['cluster_id'] == c_id]['keyword'].tolist()
+            reps = cluster_kws[:20]
+        clusters_with_representatives[c_id] = reps
+
+    # Llamamos a la función que hace la consulta a GPT
+    semantic_analysis = generate_semantic_analysis(
+        clusters_with_representatives=clusters_with_representatives,
+        client=client,
+        model=model
+    )
+
+    return semantic_analysis
 
 ################################################################
 #          MAIN CLUSTERING PIPELINE
@@ -691,7 +803,6 @@ def run_clustering(
         st.info("Preprocessing keywords with advanced NLP or fallback.")
         use_advanced = spacy_available
         
-        # Ensure "keyword" column
         if "keyword" not in df.columns:
             st.error("No column named 'keyword' found after loading. Check CSV.")
             return False, None
@@ -814,7 +925,7 @@ def run_clustering(
         # Evaluate cluster quality
         df = evaluate_cluster_quality(df, keyword_embeddings_reduced)
         
-        # AI-based cluster evaluation (optional)
+        # AI-based cluster evaluation/semantic analysis
         if client:
             try:
                 eval_results = evaluate_and_refine_clusters(df, client, model=gpt_model)
@@ -953,23 +1064,38 @@ else:
 
 st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
 
+# -----------------------------------------------------------------------------
+# *** Enhanced Explanation in Parameters Guide ***
+# -----------------------------------------------------------------------------
 with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
     st.markdown("""
-    ### Clustering Parameters
-    **Number of clusters**: 
-      - Larger = more finely split  
-      - Smaller = fewer, bigger clusters
+### Guía de Parámetros
 
-    **PCA explained variance (%)**: 
-      - How much variance to keep in dimensionality reduction
+A continuación, una explicación detallada de cada parámetro para ajustar el proceso de clustering:
 
-    **Max PCA components**: 
-      - Upper limit on PCA dimension
+1. **Number of clusters**  
+   - Controla cuántos grupos (clústeres) se formarán.
+   - Un valor más alto = clústeres más específicos y numerosos.
+   - Un valor más bajo = clústeres más amplios y menos detallados.
 
-    **Minimum term frequency (min_df)** / **Maximum term frequency (max_df)**: 
-      - TF-IDF filtering thresholds
+2. **PCA explained variance (%)**  
+   - La Reducción de Dimensionalidad (PCA) ayuda a reducir el ruido y acelerar el clustering.
+   - Este valor define el porcentaje de varianza que deseamos retener en los datos.
+   - Por ejemplo, 95% retiene la mayor parte de la información con menos dimensiones.
 
-    If uncertain, keep the defaults.
+3. **Max PCA components**  
+   - Límite superior de componentes de PCA.
+   - Aunque quieras retener 95% de varianza, puedes fijar un tope (p. ej. 100 componentes) para no exceder.
+
+4. **Minimum term frequency (min_df)** y **Maximum term frequency (max_df)**  
+   - Cuando se usan modelos TF-IDF, estos valores definen la frecuencia mínima y máxima de inclusión de términos.
+   - Sirven para filtrar palabras muy raras o demasiado frecuentes que no aportan valor semántico.
+
+5. **Model for naming clusters**  
+   - Elige entre gpt-3.5-turbo o gpt-4 para generar nombres y descripciones de tus clústeres (si proporcionas tu API Key).
+   - GPT-4 suele ser más preciso pero más costoso.
+
+Si no estás seguro, puedes dejar los parámetros en sus valores predeterminados.
     """)
 
 num_clusters = st.sidebar.slider("Number of clusters", 2, 50, 10)
@@ -1086,30 +1212,15 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     st.markdown("**Representative Keywords:**")
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in reps[:10]]) + "</ul>", unsafe_allow_html=True)
             
-            # AI suggestions
+            # AI suggestions / semantic analysis
             if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                 ai_eval = st.session_state.cluster_evaluation
                 if cid in ai_eval:
-                    eval_info = ai_eval[cid]['evaluation']
-                    st.subheader("AI Evaluation & Suggestions")
-                    coherence_score = eval_info.get("coherence_score", "N/A")
-                    outliers = eval_info.get("outlier_keywords", [])
-                    needs_split = eval_info.get("needs_splitting", False)
-                    suggestions = eval_info.get("improvement_suggestions", [])
-                    
-                    st.write(f"**AI Coherence Score:** {coherence_score}/10")
-                    st.write(f"**Needs Splitting?:** {'Yes' if needs_split else 'No'}")
-                    
-                    if outliers:
-                        st.write("**Possible Outlier Keywords:**")
-                        st.write(", ".join(outliers))
-                    
-                    if suggestions:
-                        st.write("**Improvement Suggestions:**")
-                        for s in suggestions:
-                            st.write(f"- {s}")
-                    else:
-                        st.write("_No suggestions provided by AI._")
+                    st.subheader("AI Semantic Analysis")
+                    st.write(f"**Search Intent:** {ai_eval[cid].get('search_intent', 'N/A')}")
+                    st.write(f"**Split Suggestion:** {ai_eval[cid].get('split_suggestion', 'N/A')}")
+                    st.write(f"**Additional Info:** {ai_eval[cid].get('additional_info', 'N/A')}")
+                    st.write(f"**Coherence Score (0-10):** {ai_eval[cid].get('coherence_score', 'N/A')}")
             
             st.markdown("### All Keywords in this Cluster")
             st.dataframe(cluster_df[['keyword']], use_container_width=True)
