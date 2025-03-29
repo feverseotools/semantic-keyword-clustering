@@ -2306,21 +2306,19 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             node_colors.append('#9e9e9e')  # Default gray
                     
                     # Create Sankey diagram
-                    if source and target and value:  # Only if we have data
-                        fig_sankey = go.Figure(data=[go.Sankey(
-                            node=dict(
-                                pad=15,
-                                thickness=20,
-                                line=dict(color="black", width=0.5),
-                                label=node_labels,
-                                color=node_colors
-                            ),
-                            link=dict(
-                                source=source,
-                                target=target,
-                                value=value,
-                                color=[f"rgba({','.join(str(int(c[1:3], 16)) + ',' + str(int(c[3:5], 16)) + ',' + str(int(c[5:7], 16)))},0.4)" 
-                                       for c in [node_colors[s] for s in source]]
+                        if source and target and value:  # Only if we have data
+                            fig_sankey = go.Figure(data=[go.Sankey(
+                                node=dict(
+                                    pad=15,
+                                    thickness=20,
+                                    line=dict(color="black", width=0.5),
+                                    label=node_labels,
+                                    color=node_colors
+                                ),
+                                link=dict(
+                                    source=source,
+                                    target=target,
+                                    value=value
                             )
                         )])
                         
