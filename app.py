@@ -1907,8 +1907,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                         """, unsafe_allow_html=True)
                     
                     # Show full split suggestion text
-                    with st.expander("View full split analysis", expanded=False):
-                        st.write(split_suggestion)
+                    st.markdown("**Full Split Analysis:**")
+                    st.markdown(f"{split_suggestion}")
                     
                     # SEO Insights
                     st.markdown("### SEO Insights")
