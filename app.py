@@ -1231,8 +1231,29 @@ def generate_semantic_analysis(
                             for item in json_data["clusters"]:
                                 c_id = item.get("cluster_id")
                                 if c_id is not None:
+                                    # Limpieza y conversión robusta de cluster_id
                                     try:
-                                        c_id = int(c_id)
+                                        # Si es una cadena, intentamos limpiarla y convertirla
+                                        if isinstance(c_id, str):
+                                            # Eliminar espacios y caracteres no numéricos
+                                            c_id_clean = ''.join(filter(str.isdigit, c_id.strip()))
+                                            if c_id_clean:
+                                                c_id = int(c_id_clean)
+                                            else:
+                                                st.warning(f"Cluster ID no válido: '{c_id}' - no contiene dígitos")
+                                                continue
+                                        # Si ya es un número, usarlo directamente
+                                        elif isinstance(c_id, (int, float)):
+                                            c_id = int(c_id)
+                                        else:
+                                            st.warning(f"Tipo de cluster_id no soportado: {type(c_id)}")
+                                            continue
+                                        
+                                        # Verificar que sea un ID de cluster válido y existente
+                                        if c_id not in clusters_with_representatives:
+                                            st.warning(f"ID de cluster {c_id} no existe en los datos")
+                                            continue
+                                        
                                         search_intent = item.get("search_intent", "")
                                         split_suggestion = item.get("split_suggestion", "")
                                         additional_info = item.get("additional_info", "")
@@ -1255,7 +1276,8 @@ def generate_semantic_analysis(
                                             "subclusters": subclusters,
                                             "intent_classification": intent_classification
                                         }
-                                    except (ValueError, TypeError):
+                                    except Exception as e:
+                                        st.warning(f"Error al procesar cluster_id: {str(e)}")
                                         continue
                             
                             # If we got good results, break the retry loop
