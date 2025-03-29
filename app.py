@@ -675,139 +675,131 @@ def generate_cluster_names(
             "briefly explaining the topic and likely search intent."
         )
 
-    # Simplified prompt structure to reduce JSON parsing errors
-    naming_prompt = custom_prompt.strip() + "\n\n"
-    naming_prompt += (
-        "FOR EACH CLUSTER, you must provide:\n"
-        "1. A clear, concise name (3-6 words)\n"
-        "2. A brief description (1-2 sentences)\n\n"
-        "FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS - this is crucial:\n\n"
-        "```json\n"
-        "{\n"
-        '  "clusters": [\n'
-        "    {\n"
-        '      "cluster_id": 1,\n'
-        '      "cluster_name": "Example Cluster Name",\n'
-        '      "cluster_description": "Example description of what this cluster represents."\n'
-        "    },\n"
-        "    {\n"
-        '      "cluster_id": 2,\n'
-        '      "cluster_name": "Another Cluster Name",\n'
-        '      "cluster_description": "Another description example."\n'
-        "    }\n"
-        "  ]\n"
-        "}\n"
-        "```\n\n"
-        "DO NOT INCLUDE ANY OTHER TEXT OR EXPLANATION besides this JSON object.\n\n"
-        "Here are the clusters:\n"
-    )
+    # Process clusters in smaller batches
+    cluster_ids = list(clusters_with_representatives.keys())
+    batch_size = 5  # Process 5 clusters at a time
     
-    for cluster_id, keywords in clusters_with_representatives.items():
-        sample_kws = keywords[:15]
-        naming_prompt += f"- Cluster {cluster_id}: {', '.join(sample_kws)}\n"
-    
-    naming_prompt += "\nRemember to follow the exact JSON format shown above and include ALL clusters in your response."
-    
-    num_retries = 3
-    for attempt in range(num_retries):
-        try:
-            progress_text.text(f"Generating cluster names (attempt {attempt+1}/{num_retries})...")
-            
-            # First try with JSON response format - works with newer models
-            try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": naming_prompt}],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}  # This is the key parameter
-                )
-                
-                content = response.choices[0].message.content.strip()
-                
-                # Debug the response directly in the app (can be removed in production)
-                if attempt == 0:  # Only show debug on first attempt
-                    st.write("Debug - Raw API Response:")
-                    st.code(content[:500] + ("..." if len(content) > 500 else ""), language="json")
-                
-                json_data = json.loads(content)
-                
-                if "clusters" in json_data and isinstance(json_data["clusters"], list):
-                    for item in json_data["clusters"]:
-                        c_id = item.get("cluster_id")
-                        if c_id is not None:
-                            try:
-                                c_id = int(c_id)  # Ensure it's an integer
-                                c_name = item.get("cluster_name", f"Cluster {c_id}")
-                                c_desc = item.get("cluster_description", "No description provided")
-                                results[c_id] = (c_name, c_desc)
-                            except (ValueError, TypeError):
-                                st.warning(f"Invalid cluster_id format: {c_id}")
-                    
-                    # If we got results, break the retry loop
-                    if results:
-                        break
-                
-            except Exception as json_format_error:
-                # If response_format parameter fails, fall back to standard completion
-                st.warning(f"JSON response format failed: {json_format_error}. Trying standard completion...")
-                
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": naming_prompt}],
-                    temperature=0.3,
-                    max_tokens=1000
-                )
-                
-                content = response.choices[0].message.content.strip()
-                
-                # Extract JSON from markdown code blocks if present
-                json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
-                json_matches = re.findall(json_pattern, content)
-                
-                if json_matches:
-                    content = json_matches[0]  # Take the first JSON code block
-                
-                # Try to parse JSON
-                try:
-                    json_data = json.loads(content)
-                    
-                    if "clusters" in json_data and isinstance(json_data["clusters"], list):
-                        for item in json_data["clusters"]:
-                            c_id = item.get("cluster_id")
-                            if c_id is not None:
-                                try:
-                                    c_id = int(c_id)
-                                    c_name = item.get("cluster_name", f"Cluster {c_id}")
-                                    c_desc = item.get("cluster_description", "No description provided")
-                                    results[c_id] = (c_name, c_desc)
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        if results:
-                            break
-                except json.JSONDecodeError:
-                    # If JSON parsing fails, try regex extraction
-                    try:
-                        cluster_pattern = r'cluster_id["\s:]+(\d+)["\s,}]+\s*cluster_name["\s:]+([^"]+)["\s,}]+\s*cluster_description["\s:]+([^"]+)'
-                        matches = re.findall(cluster_pattern, content)
-                        
-                        for match in matches:
-                            try:
-                                c_id = int(match[0])
-                                c_name = match[1].strip()
-                                c_desc = match[2].strip()
-                                results[c_id] = (c_name, c_desc)
-                            except (ValueError, IndexError):
-                                pass
-                        
-                        if results:
-                            break
-                    except Exception as regex_err:
-                        st.warning(f"Regex extraction failed: {regex_err}")
+    for batch_start in range(0, len(cluster_ids), batch_size):
+        batch_end = min(batch_start + batch_size, len(cluster_ids))
+        batch_cluster_ids = cluster_ids[batch_start:batch_end]
         
-        except Exception as e:
-            st.error(f"Error in API call (attempt {attempt+1}): {str(e)}")
-            time.sleep(1)  # Wait briefly before retrying
+        # Create a simplified prompt for just this batch
+        batch_prompt = custom_prompt.strip() + "\n\n"
+        batch_prompt += (
+            "FOR EACH CLUSTER, provide:\n"
+            "1. A clear, concise name (3-6 words)\n"
+            "2. A brief description (1-2 sentences)\n\n"
+            "FORMAT YOUR RESPONSE AS FOLLOWS:\n\n"
+            "```json\n"
+            "{\n"
+            '  "clusters": [\n'
+            "    {\n"
+            '      "cluster_id": 1,\n'
+            '      "cluster_name": "Example Cluster Name",\n'
+            '      "cluster_description": "Example description of what this cluster represents."\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "```\n\n"
+            "Here are the clusters:\n"
+        )
+        
+        for cluster_id in batch_cluster_ids:
+            sample_kws = clusters_with_representatives[cluster_id][:10]  # Limit to 10 keywords
+            batch_prompt += f"- Cluster {cluster_id}: {', '.join(sample_kws)}\n"
+        
+        num_retries = 3
+        batch_results = {}
+        
+        for attempt in range(num_retries):
+            try:
+                progress_text.text(f"Generating names for clusters {batch_start+1}-{batch_end} (attempt {attempt+1}/{num_retries})...")
+                
+                # Try API call with error handling
+                try:
+                    # Try with response_format first
+                    try:
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt}],
+                            temperature=0.3,
+                            response_format={"type": "json_object"},
+                            max_tokens=1000
+                        )
+                    except:
+                        # Fallback without response_format
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt + "\nRespond only with the JSON."}],
+                            temperature=0.3,
+                            max_tokens=1000
+                        )
+                    
+                    content = response.choices[0].message.content.strip()
+                    
+                    # Extract JSON from markdown code blocks if present
+                    json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+                    json_matches = re.findall(json_pattern, content)
+                    
+                    if json_matches:
+                        content = json_matches[0]  # Take the first JSON code block
+                    
+                    # Try to parse JSON
+                    try:
+                        json_data = json.loads(content)
+                        
+                        if "clusters" in json_data and isinstance(json_data["clusters"], list):
+                            for item in json_data["clusters"]:
+                                c_id = item.get("cluster_id")
+                                if c_id is not None:
+                                    try:
+                                        c_id = int(c_id)
+                                        c_name = item.get("cluster_name", f"Cluster {c_id}")
+                                        c_desc = item.get("cluster_description", "No description provided")
+                                        batch_results[c_id] = (c_name, c_desc)
+                                    except (ValueError, TypeError):
+                                        continue
+                            
+                            # If we got good results, break the retry loop
+                            if batch_results:
+                                break
+                    except json.JSONDecodeError:
+                        # Try regex extraction as fallback
+                        for cluster_id in batch_cluster_ids:
+                            # Look for cluster ID patterns
+                            name_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+\s*cluster_name["\s:]+([^"]+)["\s,}}]+'
+                            desc_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+.*?cluster_description["\s:]+([^"]+)["\s,}}]+'
+                            
+                            name_matches = re.findall(name_pattern, content)
+                            desc_matches = re.findall(desc_pattern, content, re.DOTALL)
+                            
+                            if name_matches:
+                                c_name = name_matches[0].strip()
+                                c_desc = desc_matches[0].strip() if desc_matches else f"Group of related keywords (cluster {cluster_id})"
+                                batch_results[cluster_id] = (c_name, c_desc)
+                
+                except Exception as api_error:
+                    progress_text.text(f"API error: {str(api_error)[:100]}...")
+                    
+                    # Final fallback on last attempt
+                    if attempt == num_retries - 1:
+                        for cluster_id in batch_cluster_ids:
+                            if cluster_id not in batch_results:
+                                # Generate a generic name
+                                kws = clusters_with_representatives[cluster_id][:3]
+                                c_name = f"{kws[0]} {kws[1] if len(kws) > 1 else ''}"
+                                c_desc = f"A collection of keywords related to {', '.join(kws[:3])}"
+                                batch_results[cluster_id] = (c_name, c_desc)
+            
+            except Exception as e:
+                progress_text.text(f"Error in naming attempt {attempt+1}: {str(e)[:100]}...")
+                time.sleep(1)  # Wait before retrying
+        
+        # Add batch results to overall results
+        results.update(batch_results)
+        
+        # Update progress
+        progress_bar.progress(min(1.0, (batch_end) / len(cluster_ids)))
     
     # If we still have no results, use generic names
     if not results:
@@ -818,7 +810,7 @@ def generate_cluster_names(
     progress_bar.progress(1.0)
     progress_text.text("✅ Cluster naming completed.")
     return results
-
+    
 ################################################################
 #          SEARCH INTENT CLASSIFICATION
 ################################################################
@@ -1147,226 +1139,212 @@ def generate_semantic_analysis(
     if not clusters_with_representatives:
         return results
 
+    # Validate client first
+    if not client:
+        st.warning("No valid OpenAI client provided. Using default values.")
+        return results
+
     progress_text = st.empty()
     progress_bar = st.progress(0)
     progress_text.text("Performing semantic analysis on clusters...")
-
-    # Enhanced prompt for more SEO-focused analysis
-    analysis_prompt = (
-        "You are an expert in SEO and clustering analysis. Below are several clusters with representative keywords. "
-        "For each cluster, provide a detailed analysis including:\n"
-        "1) The main search intent - describe why users would search for these terms and what they're looking for.\n"
-        "2) If you think it should be split further, suggest 2-3 specific subclusters with names and a few keywords for each.\n"
-        "3) SEO insights and opportunities - discuss keyword difficulty, search volume potential, content ideas, SERP features to target, etc.\n"
-        "4) Assign a coherence score from 0-10 where 10 means perfectly coherent semantically related keywords.\n\n"
-        "FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS - this is crucial:\n\n"
-        "```json\n"
-        "{\n"
-        '  "clusters": [\n'
-        "    {\n"
-        '      "cluster_id": 1,\n'
-        '      "search_intent": "Detailed description of user intent",\n'
-        '      "split_suggestion": "Yes/No and if yes, provide specific subclusters with names and sample keywords",\n'
-        '      "additional_info": "SEO-focused analysis with content suggestions and opportunities",\n'
-        '      "coherence_score": 8,\n'
-        '      "subclusters": [\n'
-        '        {"name": "Subcluster 1 name", "keywords": ["keyword1", "keyword2", "keyword3"]},\n'
-        '        {"name": "Subcluster 2 name", "keywords": ["keyword4", "keyword5", "keyword6"]}\n'
-        '      ]\n'
-        "    },\n"
-        "    {\n"
-        '      "cluster_id": 2,\n'
-        '      "search_intent": "Another detailed intent description",\n'
-        '      "split_suggestion": "No",\n'
-        '      "additional_info": "SEO insights for this cluster",\n'
-        '      "coherence_score": 6,\n'
-        '      "subclusters": []\n'
-        "    }\n"
-        "  ]\n"
-        "}\n"
-        "```\n\n"
-        "DO NOT INCLUDE ANY OTHER TEXT OR EXPLANATION besides this JSON object.\n\n"
-        "For each cluster where splitting is not recommended, use an empty array [] for subclusters.\n\n"
-        "Here are the clusters:\n"
-    )
-
-    for cluster_id, keywords in clusters_with_representatives.items():
-        sample_kws = keywords[:15]
-        analysis_prompt += f"- Cluster {cluster_id}: {', '.join(sample_kws)}\n"
-
-    analysis_prompt += "\nRemember to follow the exact JSON format shown above and include ALL clusters in your response."
-
-    num_retries = 3
-    for attempt in range(num_retries):
-        try:
-            progress_text.text(f"Analyzing clusters (attempt {attempt+1}/{num_retries})...")
-            
-            # First try with JSON response format
+    
+    # Process clusters in smaller batches to avoid context limitations
+    cluster_ids = list(clusters_with_representatives.keys())
+    batch_size = 5  # Process 5 clusters at a time
+    
+    for batch_start in range(0, len(cluster_ids), batch_size):
+        batch_end = min(batch_start + batch_size, len(cluster_ids))
+        batch_cluster_ids = cluster_ids[batch_start:batch_end]
+        
+        # Create a simplified prompt for just this batch
+        batch_prompt = (
+            "You are an expert in SEO and clustering analysis. Analyze each keyword cluster below by providing:\n"
+            "1) Search intent: Describe why users would search these terms\n"
+            "2) Split suggestion: Yes/No and if yes, suggest 2-3 subclusters\n"
+            "3) SEO insights: Keyword difficulty, content ideas, etc.\n"
+            "4) Coherence score: 0-10 where 10 means perfectly coherent\n\n"
+            "Format your response as a valid JSON object with this structure for EACH cluster:\n"
+            "{\n"
+            '  "clusters": [\n'
+            "    {\n"
+            '      "cluster_id": 1,\n'
+            '      "search_intent": "Intent description",\n'
+            '      "split_suggestion": "Yes or No with explanation",\n'
+            '      "additional_info": "SEO insights",\n'
+            '      "coherence_score": 7,\n'
+            '      "subclusters": [{"name": "Name 1", "keywords": ["kw1", "kw2"]}]\n'
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "Here are the clusters to analyze:\n"
+        )
+        
+        for cluster_id in batch_cluster_ids:
+            sample_kws = clusters_with_representatives[cluster_id][:10]  # Limit to 10 keywords
+            batch_prompt += f"Cluster {cluster_id}: {', '.join(sample_kws)}\n"
+        
+        num_retries = 3
+        batch_results = {}
+        
+        for attempt in range(num_retries):
             try:
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": analysis_prompt}],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
-                )
+                progress_text.text(f"Analyzing clusters {batch_start+1}-{batch_end} (attempt {attempt+1}/{num_retries})...")
                 
-                content = response.choices[0].message.content.strip()
-                
-                # Debug the response (can be removed in production)
-                if attempt == 0:  # Only show debug on first attempt
-                    st.write("Debug - Raw API Response for Semantic Analysis:")
-                    st.code(content[:500] + ("..." if len(content) > 500 else ""), language="json")
-                
-                json_data = json.loads(content)
-                
-                if "clusters" in json_data and isinstance(json_data["clusters"], list):
-                    for item in json_data["clusters"]:
-                        c_id = item.get("cluster_id")
-                        if c_id is not None:
-                            try:
-                                c_id = int(c_id)
-                                search_intent = item.get("search_intent", "")
-                                split_suggestion = item.get("split_suggestion", "")
-                                additional_info = item.get("additional_info", "")
-                                coherence_score = item.get("coherence_score", 5)
-                                subclusters = item.get("subclusters", [])
-                                
-                                # Use our enhanced ML-based classifier for intent
-                                cluster_name = f"Cluster {c_id}"  # Default name
-                                intent_classification = classify_search_intent_ml(
-                                    clusters_with_representatives.get(c_id, []),
-                                    search_intent,
-                                    cluster_name
-                                )
-                                
-                                # Analyze intent flow (customer journey)
-                                # Note: We'll calculate this later when we have the full DataFrame
-                                
-                                results[c_id] = {
-                                    "search_intent": search_intent,
-                                    "split_suggestion": split_suggestion,
-                                    "additional_info": additional_info,
-                                    "coherence_score": coherence_score,
-                                    "subclusters": subclusters,
-                                    "intent_classification": intent_classification
-                                }
-                            except (ValueError, TypeError):
-                                st.warning(f"Invalid cluster_id format in analysis: {c_id}")
-                    
-                    # If we got results, break the retry loop
-                    if results:
-                        break
-            
-            except Exception as json_format_error:
-                # If response_format parameter fails, try standard completion
-                st.warning(f"JSON response format failed: {json_format_error}. Trying standard completion...")
-                
-                response = client.chat.completions.create(
-                    model=model,
-                    messages=[{"role": "user", "content": analysis_prompt}],
-                    temperature=0.3,
-                    max_tokens=1500
-                )
-                
-                content = response.choices[0].message.content.strip()
-                
-                # Extract JSON from markdown code blocks if present
-                json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
-                json_matches = re.findall(json_pattern, content)
-                
-                if json_matches:
-                    content = json_matches[0]  # Take the first JSON code block
-                
-                # Try to parse JSON
+                # Try API call with error handling
                 try:
-                    json_data = json.loads(content)
+                    # Try to use response_format parameter if model supports it
+                    try:
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt}],
+                            temperature=0.3,
+                            response_format={"type": "json_object"},
+                            max_tokens=2000
+                        )
+                    except:
+                        # Fallback if response_format isn't supported
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt + "\nPlease respond with valid JSON only."}],
+                            temperature=0.3,
+                            max_tokens=2000
+                        )
                     
-                    if "clusters" in json_data and isinstance(json_data["clusters"], list):
-                        for item in json_data["clusters"]:
-                            c_id = item.get("cluster_id")
-                            if c_id is not None:
-                                try:
-                                    c_id = int(c_id)
-                                    search_intent = item.get("search_intent", "")
-                                    split_suggestion = item.get("split_suggestion", "")
-                                    additional_info = item.get("additional_info", "")
-                                    coherence_score = item.get("coherence_score", 5)
-                                    subclusters = item.get("subclusters", [])
+                    content = response.choices[0].message.content.strip()
+                    
+                    # Debug the response (only on first attempt)
+                    if attempt == 0:
+                        progress_text.text(f"Processing API response...")
+                    
+                    # Extract JSON from markdown code blocks if present
+                    json_pattern = r'```(?:json)?\s*([\s\S]*?)\s*```'
+                    json_matches = re.findall(json_pattern, content)
+                    
+                    if json_matches:
+                        content = json_matches[0]  # Take the first JSON code block
+                    
+                    # Try to parse JSON
+                    try:
+                        json_data = json.loads(content)
+                        
+                        if "clusters" in json_data and isinstance(json_data["clusters"], list):
+                            for item in json_data["clusters"]:
+                                c_id = item.get("cluster_id")
+                                if c_id is not None:
+                                    try:
+                                        c_id = int(c_id)
+                                        search_intent = item.get("search_intent", "")
+                                        split_suggestion = item.get("split_suggestion", "")
+                                        additional_info = item.get("additional_info", "")
+                                        coherence_score = item.get("coherence_score", 5)
+                                        subclusters = item.get("subclusters", [])
+                                        
+                                        # Use our enhanced ML-based classifier
+                                        cluster_name = f"Cluster {c_id}"  # Default name
+                                        intent_classification = classify_search_intent_ml(
+                                            clusters_with_representatives.get(c_id, []),
+                                            search_intent,
+                                            cluster_name
+                                        )
+                                        
+                                        batch_results[c_id] = {
+                                            "search_intent": search_intent,
+                                            "split_suggestion": split_suggestion,
+                                            "additional_info": additional_info,
+                                            "coherence_score": coherence_score,
+                                            "subclusters": subclusters,
+                                            "intent_classification": intent_classification
+                                        }
+                                    except (ValueError, TypeError):
+                                        continue
+                            
+                            # If we got good results, break the retry loop
+                            if batch_results:
+                                break
+                    except json.JSONDecodeError:
+                        # JSON parsing failed, try regex extraction
+                        if attempt == num_retries - 1:  # Only on last attempt
+                            for cluster_id in batch_cluster_ids:
+                                cluster_pattern = rf"(?:cluster|cluster_id)[^0-9]*{cluster_id}[^0-9]"
+                                if re.search(cluster_pattern, content, re.IGNORECASE):
+                                    # Extract basic data with regex
+                                    search_intent = "Extracted from partial response"
+                                    coherence_score = 5  # Default
                                     
-                                    # Use our enhanced ML-based classifier for intent
-                                    cluster_name = f"Cluster {c_id}"  # Default name
+                                    # Try to extract coherence score with regex
+                                    score_match = re.search(r'coherence_score["\s:]+(\d+)', content)
+                                    if score_match:
+                                        try:
+                                            coherence_score = int(score_match.group(1))
+                                        except:
+                                            pass
+                                    
+                                    # Use our ML classifier regardless
                                     intent_classification = classify_search_intent_ml(
-                                        clusters_with_representatives.get(c_id, []),
+                                        clusters_with_representatives.get(cluster_id, []),
                                         search_intent,
-                                        cluster_name
+                                        f"Cluster {cluster_id}"
                                     )
                                     
-                                    results[c_id] = {
+                                    batch_results[cluster_id] = {
                                         "search_intent": search_intent,
-                                        "split_suggestion": split_suggestion,
-                                        "additional_info": additional_info,
+                                        "split_suggestion": "Unable to determine from API response",
+                                        "additional_info": "Unable to extract from API response",
                                         "coherence_score": coherence_score,
-                                        "subclusters": subclusters,
+                                        "subclusters": [],
                                         "intent_classification": intent_classification
                                     }
-                                except (ValueError, TypeError):
-                                    pass
-                        
-                        if results:
-                            break
-                except json.JSONDecodeError:
-                    # Last resort: Try regex for basic fields
-                    try:
-                        cluster_pattern = r'cluster_id["\s:]+(\d+)["\s,}]+'
-                        search_pattern = r'search_intent["\s:]+([^"]+)["\s,}]+'
-                        split_pattern = r'split_suggestion["\s:]+([^"]+)["\s,}]+'
-                        info_pattern = r'additional_info["\s:]+([^"]+)["\s,}]+'
-                        score_pattern = r'coherence_score["\s:]+(\d+)'
-                        
-                        cluster_ids = re.findall(cluster_pattern, content)
-                        search_intents = re.findall(search_pattern, content)
-                        split_sugs = re.findall(split_pattern, content)
-                        add_infos = re.findall(info_pattern, content)
-                        scores = re.findall(score_pattern, content)
-                        
-                        # If we found some cluster_ids
-                        for i, c_id_str in enumerate(cluster_ids):
-                            try:
-                                c_id = int(c_id_str)
-                                search_intent = search_intents[i] if i < len(search_intents) else ""
-                                split_sug = split_sugs[i] if i < len(split_sugs) else ""
-                                add_info = add_infos[i] if i < len(add_infos) else ""
-                                score = int(scores[i]) if i < len(scores) else 5
+                
+                except Exception as api_error:
+                    progress_text.text(f"API error: {str(api_error)[:100]}... Retrying with simpler prompt.")
+                    
+                    # Simplified fallback on last attempt
+                    if attempt == num_retries - 1:
+                        # Try with an extremely simple prompt as last resort
+                        try:
+                            for cluster_id in batch_cluster_ids:
+                                # Get just a few keywords
+                                kws = clusters_with_representatives[cluster_id][:5]
+                                simple_prompt = f"Analyze these keywords: {', '.join(kws)}. Give a one sentence description of search intent."
                                 
-                                # Use our enhanced ML-based classifier for intent
-                                cluster_name = f"Cluster {c_id}"  # Default name
-                                intent_classification = classify_search_intent_ml(
-                                    clusters_with_representatives.get(c_id, []),
-                                    search_intent,
-                                    cluster_name
+                                simple_response = client.chat.completions.create(
+                                    model=model,
+                                    messages=[{"role": "user", "content": simple_prompt}],
+                                    temperature=0.3,
+                                    max_tokens=200
                                 )
                                 
-                                results[c_id] = {
-                                    "search_intent": search_intent,
-                                    "split_suggestion": split_sug,
-                                    "additional_info": add_info,
-                                    "coherence_score": score,
-                                    "subclusters": [],  # Default empty as regex extraction of nested objects is complex
+                                simple_content = simple_response.choices[0].message.content.strip()
+                                
+                                # Just use this as search intent and our ML classifier for the rest
+                                intent_classification = classify_search_intent_ml(
+                                    clusters_with_representatives.get(cluster_id, []),
+                                    simple_content,
+                                    f"Cluster {cluster_id}"
+                                )
+                                
+                                batch_results[cluster_id] = {
+                                    "search_intent": simple_content,
+                                    "split_suggestion": "No split suggestion available",
+                                    "additional_info": "No SEO information available",
+                                    "coherence_score": 5,
+                                    "subclusters": [],
                                     "intent_classification": intent_classification
                                 }
-                            except (ValueError, IndexError):
-                                pass
-                        
-                        if results:
-                            break
-                    except Exception as regex_err:
-                        st.warning(f"Regex extraction failed: {regex_err}")
+                        except Exception as e:
+                            progress_text.text(f"Final fallback also failed: {str(e)[:100]}")
+            
+            except Exception as outer_error:
+                progress_text.text(f"Outer error: {str(outer_error)[:100]}...")
+                time.sleep(1)  # Wait briefly before retrying
         
-        except Exception as e:
-            st.error(f"Error in API call (attempt {attempt+1}): {str(e)}")
-            time.sleep(1)
+        # Add batch results to overall results
+        results.update(batch_results)
+        
+        # Update progress
+        progress_bar.progress(min(1.0, (batch_end) / len(cluster_ids)))
     
-    # If we still have no results after all retries, create default results
+    # If we still have no results, create default ones
     if not results:
         st.warning("Could not generate semantic analysis via API. Using default values.")
         for c_id in clusters_with_representatives.keys():
