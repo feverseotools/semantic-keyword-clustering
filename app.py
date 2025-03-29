@@ -14,6 +14,7 @@ from sklearn.decomposition import PCA
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
+import plotly.graph_objects as go
 from io import StringIO
 
 # Attempt to import OpenAI
@@ -254,7 +255,15 @@ def generate_sample_csv():
     header = ["Keyword", "search_volume", "competition", "cpc"]
     months = [f"month{i}" for i in range(1, 13)]
     header += months
-    return ",".join(header) + "\n"
+    
+    # Sample data for download
+    data = "running shoes,5400,0.75,1.25,450,460,470,480,490,500,510,520,530,540,550,560\n"
+    data += "nike shoes,8900,0.82,1.78,700,720,740,760,780,800,820,840,860,880,900,920\n"
+    data += "adidas sneakers,3200,0.65,1.12,260,270,280,290,300,310,320,330,340,350,360,370\n"
+    data += "hiking boots,2800,0.45,0.89,230,240,250,260,270,280,290,300,310,320,330,340\n"
+    data += "women's running shoes,4100,0.68,1.35,340,350,360,370,380,390,400,410,420,430,440,450\n"
+    
+    return ",".join(header) + "\n" + data
 
 ################################################################
 #          SEMANTIC PREPROCESSING
@@ -382,7 +391,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         try:
             st.info("Using OpenAI embeddings (high semantic precision).")
             os.environ["OPENAI_API_KEY"] = openai_api_key
-            client = OpenAI()
+            client = OpenAI(api_key=openai_api_key)
             keywords = df['keyword_processed'].fillna('').tolist()
             all_embeddings = []
             
@@ -715,6 +724,95 @@ def generate_cluster_names(
     return results
 
 ################################################################
+#          SEARCH INTENT CLASSIFICATION
+################################################################
+
+def classify_search_intent(keywords, search_intent_description):
+    """
+    Classifies search intent into one of the four main categories based on the AI's
+    search intent description and a sample of keywords.
+    
+    Categories:
+    - Informational
+    - Navigational
+    - Transactional
+    - Commercial
+    
+    Returns both the primary intent and confidence scores.
+    """
+    # Create patterns to match keywords and descriptions indicative of each intent
+    informational_patterns = [
+        r'\bhow\b', r'\bwhat\b', r'\bwhy\b', r'\bwhen\b', r'\bwhere\b', r'\bwho\b',
+        r'\bguide\b', r'\btutorial\b', r'\blearn\b', r'\bexplain\b', r'\bmeaning\b',
+        r'information', r'knowledge', r'understanding', r'definition', r'examples'
+    ]
+    
+    navigational_patterns = [
+        r'\blogin\b', r'\bsign in\b', r'\bwebsite\b', r'\bofficial\b', r'\bportal\b',
+        r'\bhomepage\b', r'\bdownload\b', r'\baccount\b', r'\blog in\b', r'\bsite\b',
+        r'contact', r'address', r'location', r'directions', r'map'
+    ]
+    
+    transactional_patterns = [
+        r'\bbuy\b', r'\bpurchase\b', r'\bshop\b', r'\bsale\b', r'\bdiscount\b',
+        r'\bprice\b', r'\bcheap\b', r'\bfree\b', r'\bdeals\b', r'\borderb',
+        r'coupon', r'shipping', r'payment', r'checkout', r'subscribe'
+    ]
+    
+    commercial_patterns = [
+        r'\bbest\b', r'\btop\b', r'\breview\b', r'\bcomparison\b', r'\bcompare\b',
+        r'\brating\b', r'\branking\b', r'\bversus\b', r'\bvs\b', r'\balternative\b',
+        r'recommended', r'suggestion', r'opinion', r'evaluation', r'pros and cons'
+    ]
+    
+    # Combine keywords and description for analysis
+    text_to_analyze = " ".join(keywords[:10]).lower() + " " + search_intent_description.lower()
+    
+    # Check matches for each intent
+    info_matches = sum(1 for pattern in informational_patterns if re.search(pattern, text_to_analyze))
+    nav_matches = sum(1 for pattern in navigational_patterns if re.search(pattern, text_to_analyze))
+    trans_matches = sum(1 for pattern in transactional_patterns if re.search(pattern, text_to_analyze))
+    comm_matches = sum(1 for pattern in commercial_patterns if re.search(pattern, text_to_analyze))
+    
+    # Calculate total matches and convert to percentages
+    total_matches = max(1, info_matches + nav_matches + trans_matches + comm_matches)
+    info_score = (info_matches / total_matches) * 100
+    nav_score = (nav_matches / total_matches) * 100
+    trans_score = (trans_matches / total_matches) * 100
+    comm_score = (comm_matches / total_matches) * 100
+    
+    # Find primary intent
+    scores = {
+        "Informational": info_score,
+        "Navigational": nav_score,
+        "Transactional": trans_score,
+        "Commercial": comm_score
+    }
+    
+    primary_intent = max(scores, key=scores.get)
+    
+    # Also check the description directly for mention of intent
+    intent_mentions = {
+        "Informational": any(re.search(r'\binformational\b|\binformation\b|\blearn\b', search_intent_description, re.IGNORECASE)),
+        "Navigational": any(re.search(r'\bnavigational\b|\bnavigate\b|\bfind\b', search_intent_description, re.IGNORECASE)),
+        "Transactional": any(re.search(r'\btransactional\b|\bbuy\b|\bpurchase\b', search_intent_description, re.IGNORECASE)),
+        "Commercial": any(re.search(r'\bcommercial\b|\bresearch\b|\bcompare\b', search_intent_description, re.IGNORECASE))
+    }
+    
+    # Boost score if explicitly mentioned
+    for intent, mentioned in intent_mentions.items():
+        if mentioned:
+            scores[intent] += 20  # Give significant boost for explicit mention
+    
+    # Recalculate primary intent after boosts
+    primary_intent = max(scores, key=scores.get)
+    
+    return {
+        "primary_intent": primary_intent,
+        "scores": scores
+    }
+
+################################################################
 #          CLUSTER SEMANTIC ANALYSIS
 ################################################################
 
@@ -726,10 +824,9 @@ def generate_semantic_analysis(
     """
     Calls OpenAI to analyze each cluster for:
       1) Main search intent
-      2) Suggestion of internal splitting
-      3) Additional info or insights
-    
-    Fixed to better handle JSON parsing issues.
+      2) Suggestion of internal splitting with specific subclusters
+      3) Additional SEO-focused insights
+      4) Coherence score
     """
     results = {}
     if not clusters_with_representatives:
@@ -739,36 +836,42 @@ def generate_semantic_analysis(
     progress_bar = st.progress(0)
     progress_text.text("Performing semantic analysis on clusters...")
 
-    # Simplified prompt for more reliable JSON responses
+    # Enhanced prompt for more SEO-focused analysis
     analysis_prompt = (
         "You are an expert in SEO and clustering analysis. Below are several clusters with representative keywords. "
-        "For each cluster, analyze:\n"
-        "1) The main search intent.\n"
-        "2) If you think it should be split further.\n"
-        "3) Any additional insights regarding these keywords.\n\n"
+        "For each cluster, provide a detailed analysis including:\n"
+        "1) The main search intent - describe why users would search for these terms and what they're looking for.\n"
+        "2) If you think it should be split further, suggest 2-3 specific subclusters with names and a few keywords for each.\n"
+        "3) SEO insights and opportunities - discuss keyword difficulty, search volume potential, content ideas, etc.\n"
+        "4) Assign a coherence score from 0-10 where 10 means perfectly coherent semantically related keywords.\n\n"
         "FORMAT YOUR RESPONSE EXACTLY AS FOLLOWS - this is crucial:\n\n"
         "```json\n"
         "{\n"
         '  "clusters": [\n'
         "    {\n"
         '      "cluster_id": 1,\n'
-        '      "search_intent": "Brief description of intent",\n'
-        '      "split_suggestion": "Yes/No and why",\n'
-        '      "additional_info": "Any other insights",\n'
-        '      "coherence_score": 8\n'
+        '      "search_intent": "Detailed description of user intent",\n'
+        '      "split_suggestion": "Yes/No and if yes, provide specific subclusters with names and sample keywords",\n'
+        '      "additional_info": "SEO-focused analysis with content suggestions and opportunities",\n'
+        '      "coherence_score": 8,\n'
+        '      "subclusters": [\n'
+        '        {"name": "Subcluster 1 name", "keywords": ["keyword1", "keyword2", "keyword3"]},\n'
+        '        {"name": "Subcluster 2 name", "keywords": ["keyword4", "keyword5", "keyword6"]}\n'
+        '      ]\n'
         "    },\n"
         "    {\n"
         '      "cluster_id": 2,\n'
-        '      "search_intent": "Another intent",\n'
-        '      "split_suggestion": "Yes/No and why",\n'
-        '      "additional_info": "More insights",\n'
-        '      "coherence_score": 6\n'
+        '      "search_intent": "Another detailed intent description",\n'
+        '      "split_suggestion": "No",\n'
+        '      "additional_info": "SEO insights for this cluster",\n'
+        '      "coherence_score": 6,\n'
+        '      "subclusters": []\n'
         "    }\n"
         "  ]\n"
         "}\n"
         "```\n\n"
         "DO NOT INCLUDE ANY OTHER TEXT OR EXPLANATION besides this JSON object.\n\n"
-        "The coherence_score should be a number from 0 to 10, where 10 means perfectly coherent.\n\n"
+        "For each cluster where splitting is not recommended, use an empty array [] for subclusters.\n\n"
         "Here are the clusters:\n"
     )
 
@@ -807,11 +910,25 @@ def generate_semantic_analysis(
                         if c_id is not None:
                             try:
                                 c_id = int(c_id)
+                                search_intent = item.get("search_intent", "")
+                                split_suggestion = item.get("split_suggestion", "")
+                                additional_info = item.get("additional_info", "")
+                                coherence_score = item.get("coherence_score", 5)
+                                subclusters = item.get("subclusters", [])
+                                
+                                # Classify the search intent
+                                intent_classification = classify_search_intent(
+                                    clusters_with_representatives.get(c_id, []),
+                                    search_intent
+                                )
+                                
                                 results[c_id] = {
-                                    "search_intent": item.get("search_intent", ""),
-                                    "split_suggestion": item.get("split_suggestion", ""),
-                                    "additional_info": item.get("additional_info", ""),
-                                    "coherence_score": item.get("coherence_score", 5)
+                                    "search_intent": search_intent,
+                                    "split_suggestion": split_suggestion,
+                                    "additional_info": additional_info,
+                                    "coherence_score": coherence_score,
+                                    "subclusters": subclusters,
+                                    "intent_classification": intent_classification
                                 }
                             except (ValueError, TypeError):
                                 st.warning(f"Invalid cluster_id format in analysis: {c_id}")
@@ -828,7 +945,7 @@ def generate_semantic_analysis(
                     model=model,
                     messages=[{"role": "user", "content": analysis_prompt}],
                     temperature=0.3,
-                    max_tokens=1200
+                    max_tokens=1500
                 )
                 
                 content = response.choices[0].message.content.strip()
@@ -850,11 +967,25 @@ def generate_semantic_analysis(
                             if c_id is not None:
                                 try:
                                     c_id = int(c_id)
+                                    search_intent = item.get("search_intent", "")
+                                    split_suggestion = item.get("split_suggestion", "")
+                                    additional_info = item.get("additional_info", "")
+                                    coherence_score = item.get("coherence_score", 5)
+                                    subclusters = item.get("subclusters", [])
+                                    
+                                    # Classify the search intent
+                                    intent_classification = classify_search_intent(
+                                        clusters_with_representatives.get(c_id, []),
+                                        search_intent
+                                    )
+                                    
                                     results[c_id] = {
-                                        "search_intent": item.get("search_intent", ""),
-                                        "split_suggestion": item.get("split_suggestion", ""),
-                                        "additional_info": item.get("additional_info", ""),
-                                        "coherence_score": item.get("coherence_score", 5)
+                                        "search_intent": search_intent,
+                                        "split_suggestion": split_suggestion,
+                                        "additional_info": additional_info,
+                                        "coherence_score": coherence_score,
+                                        "subclusters": subclusters,
+                                        "intent_classification": intent_classification
                                     }
                                 except (ValueError, TypeError):
                                     pass
@@ -862,7 +993,7 @@ def generate_semantic_analysis(
                         if results:
                             break
                 except json.JSONDecodeError:
-                    # Last resort: Try regex
+                    # Last resort: Try regex for basic fields
                     try:
                         cluster_pattern = r'cluster_id["\s:]+(\d+)["\s,}]+'
                         search_pattern = r'search_intent["\s:]+([^"]+)["\s,}]+'
@@ -885,11 +1016,19 @@ def generate_semantic_analysis(
                                 add_info = add_infos[i] if i < len(add_infos) else ""
                                 score = int(scores[i]) if i < len(scores) else 5
                                 
+                                # Classify the search intent
+                                intent_classification = classify_search_intent(
+                                    clusters_with_representatives.get(c_id, []),
+                                    search_intent
+                                )
+                                
                                 results[c_id] = {
                                     "search_intent": search_intent,
                                     "split_suggestion": split_sug,
                                     "additional_info": add_info,
-                                    "coherence_score": score
+                                    "coherence_score": score,
+                                    "subclusters": [],  # Default empty as regex extraction of nested objects is complex
+                                    "intent_classification": intent_classification
                                 }
                             except (ValueError, IndexError):
                                 pass
@@ -907,11 +1046,23 @@ def generate_semantic_analysis(
     if not results:
         st.warning("Could not generate semantic analysis via API. Using default values.")
         for c_id in clusters_with_representatives.keys():
+            intent_classification = {
+                "primary_intent": "Unknown",
+                "scores": {
+                    "Informational": 25,
+                    "Navigational": 25,
+                    "Transactional": 25,
+                    "Commercial": 25
+                }
+            }
+            
             results[c_id] = {
                 "search_intent": "No search intent data available",
                 "split_suggestion": "No split suggestion available",
-                "additional_info": "No additional information available",
-                "coherence_score": 5  # Neutral middle score
+                "additional_info": "No SEO information available",
+                "coherence_score": 5,  # Neutral middle score
+                "subclusters": [],
+                "intent_classification": intent_classification
             }
 
     progress_bar.progress(1.0)
@@ -1331,6 +1482,34 @@ st.markdown("""
         padding: 0.2rem 0.5rem;
         border-radius: 0.2rem;
     }
+    .intent-box {
+        padding: 8px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    .intent-info {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+    }
+    .intent-nav {
+        background-color: #e8f5e9;
+        border-left: 5px solid #4caf50;
+    }
+    .intent-trans {
+        background-color: #fff3e0;
+        border-left: 5px solid #ff9800;
+    }
+    .intent-comm {
+        background-color: #f3e5f5;
+        border-left: 5px solid #9c27b0;
+    }
+    .subcluster-box {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1372,7 +1551,7 @@ sample_csv_button = st.sidebar.button("Download Sample CSV Template")
 if sample_csv_button:
     csv_header = generate_sample_csv()
     st.sidebar.download_button(
-        label="Click to Download CSV Header",
+        label="Click to Download CSV Template",
         data=csv_header,
         file_name="sample_keyword_planner_template.csv",
         mime="text/csv",
@@ -1519,6 +1698,12 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         st.plotly_chart(fig, use_container_width=True)
         
         st.subheader("Semantic Coherence of Clusters")
+        st.markdown("""
+        This graph shows how semantically related the keywords within each cluster are. 
+        Higher coherence scores (closer to 1.0) indicate clusters with more closely related keywords. 
+        Clusters with lower coherence might contain more diverse topics and could be candidates for further splitting.
+        """)
+        
         coherence_data = df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
         coherence_data['label'] = coherence_data.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
         
@@ -1532,12 +1717,81 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             color_continuous_scale=px.colors.sequential.Greens
         )
         st.plotly_chart(fig2, use_container_width=True)
+        
+        # Visualization based on AI Coherence Scores
+        if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
+            eval_data = st.session_state.cluster_evaluation
+            ai_coherence_data = []
+            
+            for c_id, data in eval_data.items():
+                coherence_score = data.get('coherence_score', 5)
+                cluster_name = df[df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not df[df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                count = len(df[df['cluster_id'] == c_id])
+                
+                primary_intent = data.get('intent_classification', {}).get('primary_intent', 'Unknown')
+                
+                ai_coherence_data.append({
+                    'cluster_id': c_id,
+                    'cluster_name': cluster_name,
+                    'coherence_score': coherence_score,
+                    'count': count,
+                    'primary_intent': primary_intent
+                })
+            
+            if ai_coherence_data:
+                ai_df = pd.DataFrame(ai_coherence_data)
+                ai_df['label'] = ai_df.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
+                
+                # Color map for intent types
+                intent_colors = {
+                    'Informational': '#2196f3',
+                    'Navigational': '#4caf50',
+                    'Transactional': '#ff9800',
+                    'Commercial': '#9c27b0',
+                    'Unknown': '#9e9e9e'
+                }
+                
+                st.subheader("AI-Evaluated Cluster Coherence")
+                
+                fig3 = px.scatter(
+                    ai_df,
+                    x='coherence_score',
+                    y='count',
+                    color='primary_intent',
+                    size='count',
+                    hover_name='label',
+                    labels={
+                        'coherence_score': 'AI Coherence Score (0-10)',
+                        'count': 'Number of Keywords',
+                        'primary_intent': 'Search Intent'
+                    },
+                    title='Clusters by Coherence, Size, and Search Intent',
+                    color_discrete_map=intent_colors
+                )
+                
+                fig3.update_layout(
+                    xaxis=dict(range=[0, 10]),
+                    height=600
+                )
+                
+                st.plotly_chart(fig3, use_container_width=True)
+                
+                # Add explanation of the visualization
+                st.markdown("""
+                **About this chart:**
+                - **X-Axis**: AI-evaluated semantic coherence score (0-10)
+                - **Y-Axis**: Number of keywords in the cluster 
+                - **Bubble Size**: Proportional to number of keywords
+                - **Color**: Represents the primary search intent of the cluster
+                
+                The most valuable clusters are typically those with high coherence scores (right side) and substantial keyword volume (upper area).
+                Clusters with low coherence might benefit from being split into more focused sub-clusters.
+                """)
     
     with st.expander("Explore Clusters", expanded=True):
         st.subheader("Explore Each Cluster")
         st.markdown("""
-        Select a cluster to see details. If AI-based evaluation was done, 
-        you may see extra suggestions or outlier info below.
+        Select a cluster to see details, search intent analysis, and potential sub-cluster suggestions.
         """)
         
         cluster_options = [
@@ -1555,6 +1809,11 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 st.markdown(f"### {cluster_df['cluster_name'].iloc[0]}")
                 st.markdown(f"**Description:** {cluster_df['cluster_description'].iloc[0]}")
                 st.markdown(f"**Total Keywords:** {len(cluster_df)}")
+                
+                # Show total search volume if available
+                if 'search_volume' in cluster_df.columns:
+                    total_search_volume = cluster_df['search_volume'].sum()
+                    st.markdown(f"**Total Search Volume:** {total_search_volume:,}")
             with colB:
                 st.markdown(f"**Semantic Coherence:** {cluster_df['cluster_coherence'].iloc[0]:.3f}")
                 reps = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
@@ -1566,14 +1825,105 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                 ai_eval = st.session_state.cluster_evaluation
                 if cid in ai_eval:
+                    st.markdown("---")
                     st.subheader("AI Semantic Analysis")
-                    st.write(f"**Search Intent:** {ai_eval[cid].get('search_intent', 'N/A')}")
-                    st.write(f"**Split Suggestion:** {ai_eval[cid].get('split_suggestion', 'N/A')}")
-                    st.write(f"**Additional Info:** {ai_eval[cid].get('additional_info', 'N/A')}")
-                    st.write(f"**Coherence Score (0-10):** {ai_eval[cid].get('coherence_score', 'N/A')}")
+                    
+                    # Search intent classification
+                    intent_classification = ai_eval[cid].get('intent_classification', {})
+                    primary_intent = intent_classification.get('primary_intent', 'Unknown')
+                    scores = intent_classification.get('scores', {})
+                    
+                    # Format CSS class based on intent
+                    intent_class = ""
+                    if primary_intent == "Informational":
+                        intent_class = "intent-info"
+                    elif primary_intent == "Navigational":
+                        intent_class = "intent-nav"
+                    elif primary_intent == "Transactional":
+                        intent_class = "intent-trans"
+                    elif primary_intent == "Commercial":
+                        intent_class = "intent-comm"
+                    
+                    # Display search intent with formatting
+                    st.markdown(f"""
+                    <div class="intent-box {intent_class}">
+                        <strong>Primary Search Intent:</strong> {primary_intent}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Show all scores as a visualization
+                    if scores:
+                        intents = list(scores.keys())
+                        values = list(scores.values())
+                        
+                        fig_intent = px.bar(
+                            x=intents, 
+                            y=values,
+                            labels={'x': 'Intent Type', 'y': 'Confidence Score (%)'},
+                            title='Search Intent Distribution',
+                            color=intents,
+                            color_discrete_map={
+                                'Informational': '#2196f3',
+                                'Navigational': '#4caf50',
+                                'Transactional': '#ff9800',
+                                'Commercial': '#9c27b0'
+                            }
+                        )
+                        fig_intent.update_layout(yaxis_range=[0, 100])
+                        st.plotly_chart(fig_intent)
+                    
+                    # Search intent description
+                    st.write(f"**Search Intent Details:** {ai_eval[cid].get('search_intent', 'N/A')}")
+                    
+                    # Split suggestion
+                    split_suggestion = ai_eval[cid].get('split_suggestion', '')
+                    if split_suggestion.lower().startswith('yes'):
+                        st.markdown("""
+                        <div style="background-color: #fff3cd; padding: 10px; border-left: 5px solid #ffc107; margin-bottom: 10px;">
+                        <strong>Split Recommendation:</strong> This cluster could be divided into more focused sub-clusters.
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Show suggested subclusters
+                        subclusters = ai_eval[cid].get('subclusters', [])
+                        if subclusters:
+                            st.markdown("### Suggested Sub-clusters")
+                            
+                            for i, subcluster in enumerate(subclusters):
+                                subcluster_name = subcluster.get('name', f"Subcluster {i+1}")
+                                subcluster_keywords = subcluster.get('keywords', [])
+                                
+                                st.markdown(f"""
+                                <div class="subcluster-box">
+                                    <h4>{subcluster_name}</h4>
+                                    <p><strong>Sample Keywords:</strong> {', '.join(subcluster_keywords)}</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                    else:
+                        st.markdown("""
+                        <div style="background-color: #d1e7dd; padding: 10px; border-left: 5px solid #198754; margin-bottom: 10px;">
+                        <strong>Split Recommendation:</strong> This cluster appears to be coherent and focused.
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Show full split suggestion text
+                    with st.expander("View full split analysis", expanded=False):
+                        st.write(split_suggestion)
+                    
+                    # SEO Insights
+                    st.markdown("### SEO Insights")
+                    st.write(ai_eval[cid].get('additional_info', 'No additional information available'))
+                    
+                    # Coherence Score
+                    coherence_score = ai_eval[cid].get('coherence_score', 'N/A')
+                    st.metric(label="AI Coherence Score (0-10)", value=coherence_score)
             
             st.markdown("### All Keywords in this Cluster")
-            st.dataframe(cluster_df[['keyword']], use_container_width=True)
+            if 'search_volume' in cluster_df.columns:
+                # If search volume exists, show it
+                st.dataframe(cluster_df[['keyword', 'search_volume']].sort_values(by='search_volume', ascending=False), use_container_width=True)
+            else:
+                st.dataframe(cluster_df[['keyword']], use_container_width=True)
     
     with st.expander("Download Results"):
         csv_data = df.to_csv(index=False)
@@ -1588,6 +1938,13 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
         summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
+        
+        # Add search volume if it exists
+        if 'search_volume' in df.columns:
+            volume_df = df.groupby('cluster_id')['search_volume'].sum().reset_index()
+            summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
+            summary_df.drop('cluster_id', axis=1, inplace=True)
+            summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
         
         # Merge coherence
         coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
@@ -1605,8 +1962,18 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
             evaluated_ids = st.session_state.cluster_evaluation.keys()
             summary_df['AI Evaluation?'] = summary_df['ID'].apply(lambda x: "Yes" if x in evaluated_ids else "No")
+            
+            # Add primary search intent
+            def get_search_intent(cid):
+                if cid in st.session_state.cluster_evaluation:
+                    intent_data = st.session_state.cluster_evaluation[cid].get('intent_classification', {})
+                    return intent_data.get('primary_intent', 'Unknown')
+                return 'Unknown'
+            
+            summary_df['Primary Intent'] = summary_df['ID'].apply(get_search_intent)
         else:
             summary_df['AI Evaluation?'] = "No"
+            summary_df['Primary Intent'] = "Unknown"
         
         st.dataframe(summary_df, use_container_width=True)
         
@@ -1631,13 +1998,19 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     1. **Linguistic Preprocessing** (spaCy/TextBlob/NLTK).
     2. **Embeddings** (OpenAI if key, else SentenceTransformers, else TF-IDF).
     3. **Dimensionality Reduction** (PCA).
-    4. **Clustering** (HDBSCAN/hierarchical/K-Means).
+    4. **Clustering** (K-Means).
     5. **Refinement** (outlier detection, merging).
     6. **Evaluation** (coherence, density, separation).
     
     ### CSV Formats
     - **No Header**: one keyword per line
     - **With Header**: columns like `Keyword,search_volume,competition,cpc,month1..month12`
+    
+    ### Search Intent Categories
+    - **Informational search intent:** Users looking for information or answers ("how to", "what is", etc.)
+    - **Navigational search intent:** Users trying to locate a specific website or page (brand names, specific sites)
+    - **Transactional search intent:** Users ready to make a purchase or engage in activities leading to transactions ("buy", "discount", etc.)
+    - **Commercial search intent:** Users researching options before making a purchase ("best", "reviews", "vs", etc.)
     """)
 
 st.markdown("---")
