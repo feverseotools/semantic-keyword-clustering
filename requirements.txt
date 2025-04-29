@@ -1,12 +1,33 @@
-streamlit>=1.24.0
-openai>=0.28.0        
-numpy>=1.20.0
-pandas>=1.3.0
-nltk>=3.6.0
-scikit-learn>=1.0.0
-scipy>=1.7.0
-plotly>=5.10.0
-sentence-transformers>=2.2.0
-spacy>=3.0.0
-hdbscan>=0.8.29
-textblob>=0.15.3
+# requirements.txt for Advanced Semantic Keyword Clustering Streamlit App
+
+# Core libraries for Streamlit application and basic data handling/analysis
+streamlit
+pandas
+numpy
+scikit-learn  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
+scipy         # Dependency often included with scikit-learn, potentially used for hierarchical clustering components (though not currently implemented)
+plotly        # For generating visualizations
+
+# NLP libraries used for preprocessing (can be used as fallback)
+nltk          # For tokenization, stopwords, lemmatization (requires data download)
+textblob      # Alternative/enhanced preprocessing fallback
+
+# Libraries for generating semantic embeddings
+sentence-transformers # For open-source embedding models fallback
+
+# Libraries for advanced preprocessing (spaCy) and AI features (OpenAI, HDBSCAN)
+# Note: Using OpenAI features requires an API key and incurs costs.
+openai        # For OpenAI embeddings, cluster naming, and AI analysis
+spacy         # For advanced language-specific preprocessing (requires model download)
+# hdbscan     # Imported in the code, but not actively used in the provided clustering function (uncomment if you implement HDBSCAN)
+
+# --- Post-installation Steps ---
+# After installing libraries via 'pip install -r requirements.txt',
+# you will likely need to download data for NLTK and models for spaCy:
+
+# For NLTK data (stopwords, punkt, wordnet, omw-1.4):
+# python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet'); nltk.download('omw-1.4')"
+
+# For spaCy English model (if using English preprocessing):
+# python -m spacy download en_core_web_sm
+# Download other models if using different languages specified in SPACY_LANGUAGE_MODELS dict.
