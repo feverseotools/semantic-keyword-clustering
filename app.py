@@ -492,7 +492,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         try:
             st.info("Using OpenAI embeddings (high semantic precision).")
             os.environ["OPENAI_API_KEY"] = openai_api_key
-            client = OpenAI(api_key=openai_api_key)
+            client = OpenAI(api_key=openai_api_key)  # Explicitly set API key
             keywords = df['keyword_processed'].fillna('').tolist()
             all_embeddings = []
             
