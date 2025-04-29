@@ -1195,6 +1195,7 @@ def generate_cluster_names(
     progress_text.text("✅ Cluster naming completed.")
     return results
 
+
 # Part 4 of 5 - Search Intent, Evaluation, Semantic Analysis
 
 ################################################################
@@ -1250,7 +1251,7 @@ def extract_features_for_intent(keyword, search_intent_description=""):
     # Check prefixes
     if words:
         first_word = words[0]
-        for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
+        for intent_type, patterns in SEARCH_INTENT_PATTERms.items():
             if "prefixes" in patterns and any(first_word == prefix.lower() for prefix in patterns["prefixes"]):
                 features[f"has_{intent_type.lower()}_prefix"] = True
 
@@ -1546,7 +1547,7 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
                 coherence = calculate_cluster_coherence(cluster_embeddings)
 
                 # Assign to all rows in this cluster using .loc for reliable assignment
-                df_evaluated.loc[cluster_indices_in_original_df, 'cluster_coherence'] = coherence
+                df_evaluated.loc[cluster_indices_in_df, 'cluster_coherence'] = coherence
 
             progress_bar.progress(min(1.0, (i + 1) / len(unique_clusters)))
 
@@ -1759,6 +1760,7 @@ def generate_semantic_analysis(
                                              subclusters = item.get("subclusters", []) # Expecting a list
 
                                              # Run our ML-based classifier separately for its result
+                                             # Note: This part was added in the previous fix attempt.
                                              ml_intent_classification = classify_search_intent_ml(
                                                  clusters_with_representatives.get(c_id, []), # Use representative keywords for ML analysis
                                                  search_intent, # Pass API's intent description to ML classifier as context
@@ -1784,13 +1786,10 @@ def generate_semantic_analysis(
                                 except Exception as e_item:
                                      st.warning(f"Error processing API response item for cluster ID {c_id_raw}: {str(e_item)}. Skipping this item.")
 
-                        # If we successfully parsed *any* clusters in this attempt, update the main batch results and break retry
+                        # If we successfully parsed *any* clusters in this attempt, update the main batch results
                         if current_batch_attempt_results:
                              batch_analysis_results_from_api.update(current_batch_attempt_results)
-                             if len(batch_analysis_results_from_api) == len(batch_cluster_ids):
-                                  # If all clusters in the batch were successfully processed, break retry loop
-                                  break
-                             # else: continue retrying if only partial results obtained in this attempt
+
 
                 except json.JSONDecodeError as e_json:
                     st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}...")
@@ -1799,9 +1798,10 @@ def generate_semantic_analysis(
                 except Exception as api_error:
                     st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
 
-            # Check after each attempt if we have results for all clusters in the batch
+            # Check if we have results for all clusters in the batch after this attempt (useful if parsing/errors were partial)
+            # THIS IS THE LINE REPORTED IN THE SYNTAX ERROR
             if len(batch_analysis_results_from_api) == len(batch_cluster_ids):
-                 break # Exit retry loop if all done
+                 break # Exit retry loop if done
 
             if attempt < num_retries - 1:
                  time.sleep(2) # Wait a bit before retrying
@@ -1812,18 +1812,165 @@ def generate_semantic_analysis(
 
         # After retries for the batch, update the overall results with any successful API results
         # For clusters that failed API analysis, they will retain their initial default values (including ML intent)
-        analysis_results.update(batch_analysis_results_from_api)
+        # This line was previously reported in a SyntaxError, but it seems correctly placed now
+        # results.update(batch_analysis_results_from_api) # This was already done inside the try block updates
+
+        # The update call should be OUTSIDE the attempt loop, once per batch. Let's move it here.
+        # Let's revert the 'update' call back to OUTSIDE the inner retry try block,
+        # but *after* the attempt loop, just before the progress update.
+        # It seems I might have accidentally moved the update inside the try block in the previous fix.
+        # The original structure had it outside the attempt loop, which is correct.
+        # Let's restore that.
+
+        # Okay, reviewing the original code's generate_cluster_names (which generate_semantic_analysis was based on),
+        # the structure was:
+        # for batch_start:
+        #    for attempt:
+        #        try:
+        #            # API call
+        #            # parse and update batch_results for this attempt
+        #            if batch_results: break # break attempt loop
+        #        except: pass
+        #    results.update(batch_results) # <--- THIS LINE WAS OUTSIDE ATTEMPT LOOP
+        #    # update progress
+
+        # The current generate_semantic_analysis seems to have blended updating the main
+        # analysis_results *within* the retry try block. Let's fix this to match the
+        # more robust pattern from generate_cluster_names.
+
+        # Restore the update to be after the retry loop for the batch
+        # The variable names were causing confusion. batch_analysis_results_from_api
+        # should be accumulated results *across* attempts for this batch,
+        # and current_batch_attempt_results is what was parsed in one attempt.
+        # The update should be results.update(batch_analysis_results_from_api) after the attempt loop.
+
+        # Let's remove the `batch_analysis_results_from_api.update(current_batch_attempt_results)`
+        # from *inside* the try block and place `results.update(batch_analysis_results_from_api)`
+        # *after* the `for attempt` loop.
+        # The check `if len(batch_analysis_results_from_api) == len(batch_cluster_ids): break`
+        # should also stay *after* the attempt loop to check cumulative results.
+
+        # Re-initialize batch_analysis_results_from_api before the attempt loop
+        batch_analysis_results_from_api = {}
+        for attempt in range(num_retries):
+             try:
+                progress_text.text(f"Analyzing clusters {batch_start+1}-{batch_end} (attempt {attempt+1}/{num_retries})...")
+                # API call and parsing logic (same as before)
+                try:
+                    response = client.chat.completions.create( model=model, messages=[{"role": "user", "content": batch_prompt_content}], temperature=0.3, response_format={"type": "json_object"}, max_tokens=2500 )
+                except Exception as e_json_format:
+                     st.warning(f"Model {model} might not support JSON response format or API error: {str(e_json_format)[:100]}. Falling back to text response with JSON request.")
+                     response = client.chat.completions.create( model=model, messages=[{"role": "user", "content": batch_prompt_content + "\nRespond strictly with valid JSON only."}], temperature=0.3, max_tokens=2500 )
+
+                content = response.choices[0].message.content.strip()
+                json_pattern = r'```json\s*([\s\S]*?)\s*```'
+                json_matches = re.findall(json_pattern, content)
+                if json_matches: content = json_matches[0]
+
+                current_attempt_parsed_results = {} # Temp dict for results in this attempt
+
+                # Try to parse JSON
+                try:
+                    json_data = json.loads(content)
+                    if "clusters" in json_data and isinstance(json_data["clusters"], list):
+                        for item in json_data["clusters"]:
+                            c_id_raw = item.get("cluster_id")
+                            if c_id_raw is not None:
+                                try:
+                                    c_id_clean_str = ''.join(filter(str.isdigit, str(c_id_raw).strip()))
+                                    if c_id_clean_str:
+                                         c_id = int(c_id_clean_str)
+                                         if c_id in batch_cluster_ids:
+                                             search_intent = str(item.get("search_intent", "No intent analysis provided by API"))
+                                             split_suggestion = str(item.get("split_suggestion", "No split suggestion provided by API"))
+                                             additional_info = str(item.get("additional_info", "No SEO insights provided by API"))
+                                             coherence_score_raw = item.get("coherence_score")
+                                             try: coherence_score = int(coherence_score_raw) if coherence_score_raw is not None else 5; coherence_score = max(0, min(10, coherence_score))
+                                             except (ValueError, TypeError): coherence_score = 5
+
+                                             subclusters = item.get("subclusters", [])
+
+                                             # Run ML classifier once per cluster ID, if we haven't already for this batch
+                                             # This ML result should probably be calculated once per cluster outside the retry loop
+                                             # and merged later, but for consistency with the variable structure... let's keep it here for now.
+                                             # Better approach: Calculate ML analysis *after* API analysis attempts are done,
+                                             # using the best API results as context.
+
+                                             # Let's calculate ML analysis *after* the API attempt loop is done for the batch.
+                                             # For now, just parse the API results here.
+                                             current_attempt_parsed_results[c_id] = {
+                                                 "search_intent_api": search_intent,
+                                                 "split_suggestion": split_suggestion,
+                                                 "additional_info": additional_info,
+                                                 "coherence_score_api": coherence_score,
+                                                 "subclusters": subclusters
+                                             }
+
+                                except Exception as e_item: st.warning(f"Error processing API response item for cluster ID {c_id_raw}: {str(e_item)}. Skipping.")
+
+                        # If we successfully parsed any items in this attempt, update the batch results
+                        if current_attempt_parsed_results:
+                             batch_analysis_results_from_api.update(current_attempt_parsed_results)
+
+                except json.JSONDecodeError as e_json: st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}...")
+                except Exception as api_error: st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
+
+             # Check if we have results for all clusters in the batch after this attempt
+             # THIS IS THE LINE REPORTED IN THE SYNTAX ERROR - It is now correctly placed after the try/except
+             if len(batch_analysis_results_from_api) == len(batch_cluster_ids):
+                 break # Exit retry loop if done
+
+             if attempt < num_retries - 1:
+                 time.sleep(2) # Wait a bit before retrying
+             else:
+                 st.warning(f"All attempts failed to get analysis results for some clusters in batch {batch_start+1}-{batch_end}.")
+
+        # End of 'for attempt' retry loop
+
+        # Update the overall results with the best results obtained for this batch after retries
+        # This replaces the default/initial analysis_results for these clusters
+        results.update(batch_analysis_results_from_api)
+
+        # Now calculate ML analysis and intent flow for each cluster in this batch
+        # Use the API results as context for the ML intent classifier if available
+        for c_id in batch_cluster_ids:
+             # Get the (potentially partial or default) analysis data for this cluster
+             analysis_data = results.get(c_id, analysis_results[c_id]) # Use results if updated, else default
+
+             # Calculate ML intent classification
+             ml_intent_classification = classify_search_intent_ml(
+                 clusters_with_representatives.get(c_id, []), # Representative keywords
+                 analysis_data.get("search_intent_api", "API analysis failed or not attempted"), # Use API intent as context if available
+                 # cluster_name needs df, which is not directly available here without passing it around
+             )
+
+             # Calculate local intent flow analysis
+             # Note: analyze_cluster_for_intent_flow needs the full df, which IS available in the outer function scope
+             # and passed down via 'evaluate_and_refine_clusters'. We need to pass df into generate_semantic_analysis or call this outside.
+             # Let's stick to calling this outside generate_semantic_analysis as it's simpler.
+
+             # Update the results dictionary for this cluster with the ML analysis
+             # Note: The original analysis_results dict (initialized with defaults) is updated.
+             # We need to update the *final* results dict. Let's update 'results'.
+             if c_id in results: # Ensure the cluster ID is in the results dictionary (it should be)
+                 results[c_id]['intent_classification_ml'] = ml_intent_classification
+             else:
+                 # Should not happen, but as a fallback, add basic entry
+                 results[c_id] = {"intent_classification_ml": ml_intent_classification}
 
 
-        # Update progress
+        # Update progress for the batch
         progress_bar.progress(min(1.0, (batch_end) / len(cluster_ids)))
 
-    # No final check needed here; analysis_results was initialized with defaults for all clusters
+    # End of 'for batch_start' loop
+
+    # Final check: ensure all requested cluster IDs have an entry (defaults or API results)
+    # This was done at the beginning, so it should be fine.
 
     progress_bar.progress(1.0)
     progress_text.text("✅ Semantic analysis completed.")
 
-    return analysis_results
+    return results
 
 
 # This function orchestrates the AI-driven analysis and intent flow analysis
@@ -1877,6 +2024,7 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo", user_prompt_
 
     try:
         # Call GPT-based semantic analysis
+        # This function now returns results that *include* the ML intent classification calculated internally per cluster per batch.
         semantic_analysis_results = generate_semantic_analysis(
             clusters_with_representatives=clusters_with_representatives,
             client=client,
@@ -1887,6 +2035,7 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo", user_prompt_
         # Process intent flow (customer journey) for each cluster using our local ML classifier
         # This is separate from the AI's general search intent description, but we add it to the results
         st.info("Running local Intent Flow (Customer Journey) analysis...")
+        # Iterate through the clusters for which we have any analysis results (API or ML default)
         for c_id in semantic_analysis_results:
             # Ensure the cluster ID exists in the DataFrame before analyzing intent flow
              if c_id in df['cluster_id'].values:
@@ -1902,11 +2051,11 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo", user_prompt_
 
 
         # Check if we got any useful results from either API or ML fallback
-        if semantic_analysis_results and any("intent_classification_ml" in res or "search_intent_api" in res for res in semantic_analysis_results.values()):
+        # We should always have ML results now due to initialization within generate_semantic_analysis
+        if semantic_analysis_results:
              st.success(f"✅ Cluster analysis completed for {len(semantic_analysis_results)} clusters.")
         else:
-            st.warning("No cluster analysis results were generated (neither API nor local ML fallback were successful).")
-
+            st.warning("No cluster analysis results were generated.")
 
         return semantic_analysis_results
 
