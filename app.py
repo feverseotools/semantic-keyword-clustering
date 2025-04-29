@@ -44,7 +44,7 @@ try:
     sentence_transformers_available = True
 except ImportError:
     sentence_transformers_available = False
-# We will load spaCy models dynamically based on language
+    # We will load spaCy models dynamically based on language
 try:
     import spacy
     spacy_base_available = True
@@ -115,7 +115,7 @@ SEARCH_INTENT_PATTERNS = {
         "brand_indicators": True,  # Presence of brand names indicates navigational intent
         "weight": 1.2  # Navigational intent is often more clear-cut
     },
-"Transactional": {
+    "Transactional": {
         "prefixes": ["buy", "purchase", "order", "shop", "get"],
         "suffixes": [
             "for sale", "discount", "deal", "coupon", "price", "cost", "cheap", "online", 
@@ -201,7 +201,7 @@ def load_spacy_model_by_language(selected_language):
         return spacy.load(model_name)
     except:
         return None
-################################################################
+        ################################################################
 #          COST CALCULATION AND SUPPORT FUNCTIONS
 ################################################################
 
@@ -315,7 +315,7 @@ def add_cost_calculator():
             **Note:** This is an estimate only. Actual costs may vary based on keyword length and clustering complexity.
             Using SentenceTransformers instead of OpenAI embeddings is $0.
             """)
-def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
+            def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
     if num_keywords > 0:
         cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
         
@@ -367,7 +367,7 @@ def generate_sample_csv():
     data += "buy nike air zoom,1500,0.87,1.95,130,140,150,160,170,180,190,200,210,220,230,240\n"
     
     return ",".join(header) + "\n" + data
-################################################################
+    ################################################################
 #          SEMANTIC PREPROCESSING
 ################################################################
 
@@ -458,7 +458,29 @@ def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
     processed_keywords = []
     progress_bar = st.progress(0)
     total = len(keywords)
-################################################################
+    
+    if use_advanced:
+        if spacy_nlp is not None:
+            st.success("Using advanced preprocessing with spaCy for the selected language.")
+        elif textblob_available:
+            st.success("Using fallback preprocessing with TextBlob.")
+        else:
+            st.info("Using standard preprocessing with NLTK.")
+    else:
+        st.info("Using standard preprocessing with NLTK (advanced preprocessing disabled).")
+    
+    for i, keyword in enumerate(keywords):
+        if use_advanced and (spacy_nlp is not None or textblob_available):
+            processed_keywords.append(enhanced_preprocessing(keyword, True, spacy_nlp))
+        else:
+            processed_keywords.append(preprocess_text(keyword, True))
+        
+        if i % 100 == 0:
+            progress_bar.progress(min(i / total, 1.0))
+    
+    progress_bar.progress(1.0)
+    return processed_keywords
+    ################################################################
 #          EMBEDDING GENERATION
 ################################################################
 
@@ -605,7 +627,7 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         st.warning("Generating random vectors as a last resort.")
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
-################################################################
+        ################################################################
 #          CLUSTERING ALGORITHMS
 ################################################################
 
@@ -626,7 +648,7 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
     st.info("Refining clusters to improve coherence...")
     # If outlier or merging logic is needed, place it here
     return df
-################################################################
+    ################################################################
 #          GENERATE CLUSTER NAMES
 ################################################################
 
@@ -791,7 +813,7 @@ def generate_cluster_names(
     progress_bar.progress(1.0)
     progress_text.text("✅ Cluster naming completed.")
     return results
-################################################################
+    ################################################################
 #          SEARCH INTENT CLASSIFICATION
 ################################################################
 
@@ -1098,7 +1120,7 @@ def analyze_cluster_for_intent_flow(df, cluster_id):
         "journey_phase": journey_phase,
         "keyword_sample": [{"keyword": k["keyword"], "intent": k["primary_intent"]} for k in keyword_intents[:10]]
     }
-################################################################
+    ################################################################
 #          CLUSTER SEMANTIC ANALYSIS
 ################################################################
 
@@ -1247,45 +1269,7 @@ def generate_semantic_analysis(
                                             cluster_name
                                         )
                                         
-                                        batch_results[c_id] = {
-                                            "search_intent": search_intent,
-                                            "split_suggestion": split_suggestion,
-                                            "additional_info": additional_info,
-                                            "coherence_score": coherence_score,
-                                            "subclusters": subclusters,
-                                            "intent_classification": intent_classification
-                                        }
-                                    except Exception as e:
-                                        st.warning(f"Error processing cluster_id: {str(e)}")
-                                        continue
-                            
-                            # If we got good results, break the retry loop
-                            if batch_results:
-                                break
-                    except json.JSONDecodeError:
-                        # JSON parsing failed, try regex extraction
-                        if attempt == num_retries - 1:  # Only on last attempt
-                            for cluster_id in batch_cluster_ids:
-                                cluster_pattern = rf"(?:cluster|cluster_id)[^0-9]*{cluster_id}[^0-9]"
-                                if re.search(cluster_pattern, content, re.IGNORECASE):
-                                    # Extract basic data with regex
-                                    search_intent = "Extracted from partial response"
-                                    coherence_score = 5  # Default
-                                    
-                                    # Try to extract coherence score with regex
-                                    score_match = re.search(r'coherence_score["\s:]+(\d+)', content)
-                                    if score_match:
-                                        try:
-                                            coherence_score = int(score_match.group(1))
-                                        except:
-                                            pass
-                                    
-                                    # Use our ML classifier regardless
-                                    intent_classification = classify_search_intent_ml(
-                                        clusters_with_representatives.get(cluster_id, []),
-                                        search_intent,
-                                        f"Cluster {cluster_id}"
-                                    )
+                                        )
                                     
                                     batch_results[cluster_id] = {
                                         "search_intent": search_intent,
@@ -1500,7 +1484,7 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     except Exception as e:
         st.error(f"Error in cluster evaluation: {str(e)}")
         return {}
-    ################################################################
+        ################################################################
 #          MAIN CLUSTERING PIPELINE
 ################################################################
 
