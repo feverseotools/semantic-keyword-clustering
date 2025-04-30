@@ -1076,7 +1076,6 @@ def generate_cluster_names(
 
                     if "clusters" in json_data and isinstance(json_data["clusters"], list):
                         for item in json_data["clusters"]:
-                            # Robustly extract cluster_id, name, and description
                             c_id_raw = item.get("cluster_id")
                             if c_id_raw is not None:
                                 try:
@@ -1107,6 +1106,41 @@ def generate_cluster_names(
                              for c_id in batch_cluster_ids:
                                   if c_id not in batch_results: # Only add generic if it wasn't successfully parsed
                                        batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
+
+                except json.JSONDecodeError as e_json:
+                    st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}... Trying regex fallback.")
+                    # Fallback to regex extraction if JSON parsing fails
+                    for cluster_id in batch_cluster_ids:
+                        # Look for patterns like "cluster_id": 1, "cluster_name": "..."
+                        name_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*"cluster_name"\s*:\s*"([^"]+)"', content, re.DOTALL)
+                        desc_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*.*?"cluster_description"\s*:\s*"([^"]+)"', content, re.DOTALL)
+
+                        c_name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
+                        c_desc = desc_match.group(1).strip() if desc_match else f"Group of related keywords (cluster {cluster_id})"
+
+                        if name_match: # Only add if at least the name was found via regex
+                            batch_results[cluster_id] = (c_name, c_desc)
+                        elif attempt == num_retries - 1:
+                            # On last attempt, if regex also failed, add generic names for this cluster
+                             batch_results[cluster_id] = (f"Cluster {cluster_id}", f"Keywords group {cluster_id}")
+
+                    if batch_results and len(batch_results) == len(batch_cluster_ids): # If regex got all of them for this batch
+                         break # Break retry loop if regex extraction seems successful for the whole batch
+                    elif attempt == num_retries - 1:
+                         st.warning(f"Regex fallback also failed for some clusters in batch {batch_start+1}-{batch_end}. Using generic names for remaining.")
+                         for c_id in batch_cluster_ids:
+                               if c_id not in batch_results:
+                                    batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
+
+
+                except Exception as api_error:
+                    st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
+                    if attempt == num_retries - 1:
+                         st.warning(f"Final attempt failed for clusters {batch_start+1}-{batch_end}. Using generic names.")
+                         # On last attempt, generate generic names for this batch
+                         for c_id in batch_cluster_ids:
+                              if c_id not in batch_results:
+                                   batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
 
 
 except json.JSONDecodeError as e_json:
