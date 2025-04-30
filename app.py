@@ -1642,7 +1642,6 @@ def generate_semantic_analysis(
     if custom_prompt and custom_prompt.strip():
         effective_prompt_base += f"Additional instructions: {custom_prompt.strip()}\n\n"
 
-
     # Process clusters in smaller batches
     cluster_ids = list(clusters_with_representatives.keys())
     batch_size = 5  # Process 5 clusters at a time
@@ -1685,132 +1684,134 @@ def generate_semantic_analysis(
                     sample_kws_clean = [kw for kw in sample_kws_clean if kw.strip()] # Filter empty strings
                     batch_prompt_content += f"Cluster {cluster_id}: {', '.join(sample_kws_clean)}\n"
 
-                # Try API call with error handling and JSON response format preference
+                # Try API call with error handling
                 try:
-                    response = client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": batch_prompt_content}],
-                        temperature=0.3, # Use lower temperature for more consistent output
-                        response_format={"type": "json_object"},
-                        max_tokens=2500 # Allow more tokens for analysis details
-                    )
-                except Exception as e_json_format:
-                     # Fallback without response_format if the model doesn't support it or other API error
-                     st.warning(f"Model {model} might not support JSON response format or API error: {str(e_json_format)[:100]}. Falling back to text response with JSON request.")
-                     response = client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": batch_prompt_content + "\nRespond strictly with valid JSON only."}],
-                        temperature=0.3,
-                        max_tokens=2500
-                    )
+                    # Try with response_format parameter
+                    try:
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt_content}],
+                            temperature=0.3, # Use lower temperature for more consistent output
+                            response_format={"type": "json_object"},
+                            max_tokens=2500 # Allow more tokens for analysis details
+                        )
+                        content = response.choices[0].message.content.strip()
+                    except Exception as e_json_format:
+                         # Fallback without response_format
+                         st.warning(f"Model {model} might not support JSON response format or API error: {str(e_json_format)[:100]}. Falling back to text response with JSON request.")
+                         response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt_content + "\nRespond strictly with valid JSON only."}],
+                            temperature=0.3,
+                            max_tokens=2500
+                        )
+                        content = response.choices[0].message.content.strip()
 
-                content = response.choices[0].message.content.strip()
+                    # Try to extract JSON from markdown code blocks
+                    json_pattern = r'```json\s*([\s\S]*?)\s*```'
+                    json_matches = re.findall(json_pattern, content)
 
-                # Try to extract JSON from markdown code blocks
-                json_pattern = r'```json\s*([\s\S]*?)\s*```'
-                json_matches = re.findall(json_pattern, content)
+                    if json_matches:
+                        content = json_matches[0] # Take the first JSON block
 
-                if json_matches:
-                    content = json_matches[0] # Take the first JSON block
+                    # Try to parse JSON
+                    try:
+                        json_data = json.loads(content)
 
-                # Try to parse JSON
-                try:
-                    json_data = json.loads(content)
+                        if "clusters" in json_data and isinstance(json_data["clusters"], list):
+                            for item in json_data["clusters"]:
+                                c_id_raw = item.get("cluster_id")
+                                if c_id_raw is not None:
+                                    try:
+                                        # Clean and convert cluster_id to integer
+                                        c_id_clean_str = ''.join(filter(str.isdigit, str(c_id_raw).strip()))
+                                        if c_id_clean_str:
+                                             c_id = int(c_id_clean_str)
+                                             # Check if this ID was part of the requested batch
+                                             if c_id in batch_cluster_ids:
+                                                 # Extract analysis details, providing default empty strings/values
+                                                 search_intent = str(item.get("search_intent", "No intent analysis provided by API")) 
+                                                 split_suggestion = str(item.get("split_suggestion", "No split suggestion provided by API")) 
+                                                 additional_info = str(item.get("additional_info", "No SEO insights provided by API")) 
+                                                 
+                                                 # Safely convert coherence score, default to 5 if conversion fails or out of range
+                                                 coherence_score_raw = item.get("coherence_score")
+                                                 try:
+                                                      coherence_score = int(coherence_score_raw) if coherence_score_raw is not None else 5
+                                                      coherence_score = max(0, min(10, coherence_score)) # Clamp to 0-10 range
+                                                 except (ValueError, TypeError):
+                                                      st.warning(f"API returned invalid coherence_score '{coherence_score_raw}' for cluster {c_id}. Defaulting to 5.")
+                                                      coherence_score = 5
 
-                    if "clusters" in json_data and isinstance(json_data["clusters"], list):
-                        for item in json_data["clusters"]:
-                            c_id_raw = item.get("cluster_id")
-                            if c_id_raw is not None:
-                                try:
-                                    # Clean and convert cluster_id to integer
-                                    c_id_clean_str = ''.join(filter(str.isdigit, str(c_id_raw).strip()))
-                                    if c_id_clean_str:
-                                         c_id = int(c_id_clean_str)
-                                         # Check if this ID was part of the requested batch
-                                         if c_id in batch_cluster_ids:
-                                             # Extract analysis details, providing default empty strings/values
-                                             search_intent = str(item.get("search_intent", "No intent analysis provided by API")) 
-                                             split_suggestion = str(item.get("split_suggestion", "No split suggestion provided by API")) 
-                                             additional_info = str(item.get("additional_info", "No SEO insights provided by API")) 
-                                             
-                                             # Safely convert coherence score, default to 5 if conversion fails or out of range
-                                             coherence_score_raw = item.get("coherence_score")
-                                             try:
-                                                  coherence_score = int(coherence_score_raw) if coherence_score_raw is not None else 5
-                                                  coherence_score = max(0, min(10, coherence_score)) # Clamp to 0-10 range
-                                             except (ValueError, TypeError):
-                                                  st.warning(f"API returned invalid coherence_score '{coherence_score_raw}' for cluster {c_id}. Defaulting to 5.")
-                                                  coherence_score = 5
+                                                 subclusters = item.get("subclusters", []) # Expecting a list
+                                                 
+                                                 # Ensure subclusters are properly formatted and have string keywords
+                                                 clean_subclusters = []
+                                                 for sub in subclusters:
+                                                     if isinstance(sub, dict):
+                                                         sub_name = str(sub.get("name", "Unnamed Subcluster"))
+                                                         sub_keywords = [str(kw) for kw in sub.get("keywords", []) if kw is not None]
+                                                         clean_subclusters.append({"name": sub_name, "keywords": sub_keywords})
+                                                 
+                                                 # Run our ML-based classifier with proper string conversion
+                                                 ml_intent_classification = classify_search_intent_ml(
+                                                     [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(c_id, [])],
+                                                     search_intent, # Pass API's intent description to ML classifier as context
+                                                     f"Cluster {c_id}" # Pass cluster name as context
+                                                 )
 
-                                             subclusters = item.get("subclusters", []) # Expecting a list
-                                             
-                                             # Ensure subclusters are properly formatted and have string keywords
-                                             clean_subclusters = []
-                                             for sub in subclusters:
-                                                 if isinstance(sub, dict):
-                                                     sub_name = str(sub.get("name", "Unnamed Subcluster"))
-                                                     sub_keywords = [str(kw) for kw in sub.get("keywords", []) if kw is not None]
-                                                     clean_subclusters.append({"name": sub_name, "keywords": sub_keywords})
-                                             
-                                             # Run our ML-based classifier with proper string conversion
-                                             ml_intent_classification = classify_search_intent_ml(
-                                                 [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(c_id, [])],
-                                                 search_intent, # Pass API's intent description to ML classifier as context
-                                                 f"Cluster {c_id}" # Pass cluster name as context
-                                             )
+                                                 # Store results for this specific cluster
+                                                 batch_analysis_results_from_api[c_id] = {
+                                                     "search_intent_api": search_intent,
+                                                     "split_suggestion": split_suggestion,
+                                                     "additional_info": additional_info,
+                                                     "coherence_score_api": coherence_score,
+                                                     "subclusters": clean_subclusters,
+                                                     "intent_classification_ml": ml_intent_classification # Include ML analysis result
+                                                 }
+                                             else:
+                                                  st.warning(f"Received cluster ID {c_id} in API response but it was not in the requested batch. Skipping.")
 
-                                             # Store results for this specific cluster
-                                             batch_analysis_results_from_api[c_id] = {
-                                                 "search_intent_api": search_intent,
-                                                 "split_suggestion": split_suggestion,
-                                                 "additional_info": additional_info,
-                                                 "coherence_score_api": coherence_score,
-                                                 "subclusters": clean_subclusters,
-                                                 "intent_classification_ml": ml_intent_classification # Include ML analysis result
-                                             }
-                                         else:
-                                              st.warning(f"Received cluster ID {c_id} in API response but it was not in the requested batch. Skipping.")
+                                    except (ValueError, TypeError) as e_id_conv:
+                                         st.warning(f"Error converting cluster_id '{c_id_raw}' to int: {str(e_id_conv)}. Skipping this item from API response.")
+                                    except Exception as e_item:
+                                         st.warning(f"Error processing API response item for cluster ID {c_id_raw}: {str(e_item)}. Skipping this item.")
 
-                                except (ValueError, TypeError) as e_id_conv:
-                                     st.warning(f"Error converting cluster_id '{c_id_raw}' to int: {str(e_id_conv)}. Skipping this item from API response.")
-                                except Exception as e_item:
-                                     st.warning(f"Error processing API response item for cluster ID {c_id_raw}: {str(e_item)}. Skipping this item.")
-
-                        # If we successfully parsed *any* clusters, consider the attempt successful
-                        if batch_analysis_results_from_api:
-                            break # Exit retry loop
-                
-                except json.JSONDecodeError as e_json:
-                    st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}...")
-                    # On last attempt, try regex extraction
-                    if attempt == num_retries - 1:
-                        for cluster_id in batch_cluster_ids:
-                            # Look for cluster ID patterns
-                            intent_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+.*?search_intent["\s:]+([^"]+)["\s,}}]+'
-                            split_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+.*?split_suggestion["\s:]+([^"]+)["\s,}}]+'
-                            
-                            intent_matches = re.findall(intent_pattern, content, re.DOTALL)
-                            split_matches = re.findall(split_pattern, content, re.DOTALL)
-                            
-                            if intent_matches:
-                                search_intent = intent_matches[0].strip()
-                                split_suggestion = split_matches[0].strip() if split_matches else "No split suggestion extracted"
+                            # If we successfully parsed *any* clusters, consider the attempt successful
+                            if batch_analysis_results_from_api:
+                                break # Exit retry loop
+                    
+                    except json.JSONDecodeError as e_json:
+                        st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}...")
+                        # On last attempt, try regex extraction
+                        if attempt == num_retries - 1:
+                            for cluster_id in batch_cluster_ids:
+                                # Look for cluster ID patterns
+                                intent_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+.*?search_intent["\s:]+([^"]+)["\s,}}]+'
+                                split_pattern = rf'cluster_id["\s:]+{cluster_id}["\s,}}]+.*?split_suggestion["\s:]+([^"]+)["\s,}}]+'
                                 
-                                # Run ML classifier with string conversion
-                                ml_intent_classification = classify_search_intent_ml(
-                                    [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(cluster_id, [])],
-                                    search_intent,
-                                    f"Cluster {cluster_id}"
-                                )
+                                intent_matches = re.findall(intent_pattern, content, re.DOTALL)
+                                split_matches = re.findall(split_pattern, content, re.DOTALL)
                                 
-                                batch_analysis_results_from_api[cluster_id] = {
-                                    "search_intent_api": search_intent,
-                                    "split_suggestion": split_suggestion,
-                                    "additional_info": "Unable to extract from API response",
-                                    "coherence_score_api": 5, # Default
-                                    "subclusters": [],
-                                    "intent_classification_ml": ml_intent_classification
-                                }
+                                if intent_matches:
+                                    search_intent = intent_matches[0].strip()
+                                    split_suggestion = split_matches[0].strip() if split_matches else "No split suggestion extracted"
+                                    
+                                    # Run ML classifier with string conversion
+                                    ml_intent_classification = classify_search_intent_ml(
+                                        [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(cluster_id, [])],
+                                        search_intent,
+                                        f"Cluster {cluster_id}"
+                                    )
+                                    
+                                    batch_analysis_results_from_api[cluster_id] = {
+                                        "search_intent_api": search_intent,
+                                        "split_suggestion": split_suggestion,
+                                        "additional_info": "Unable to extract from API response",
+                                        "coherence_score_api": 5, # Default
+                                        "subclusters": [],
+                                        "intent_classification_ml": ml_intent_classification
+                                    }
 
                 except Exception as api_error:
                     st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
@@ -1821,32 +1822,33 @@ def generate_semantic_analysis(
                             if cluster_id not in batch_analysis_results_from_api:
                                 try:
                                     kws = [str(kw) for kw in clusters_with_representatives.get(cluster_id, [])[:5] if kw is not None]
-                                    simple_prompt = f"What is the search intent for these keywords: {', '.join(kws)}? Answer in one sentence."
-                                    
-                                    simple_response = client.chat.completions.create(
-                                        model=model,
-                                        messages=[{"role": "user", "content": simple_prompt}],
-                                        temperature=0.3,
-                                        max_tokens=100
-                                    )
-                                    
-                                    simple_intent = simple_response.choices[0].message.content.strip()
-                                    
-                                    # Run ML classifier
-                                    ml_intent_classification = classify_search_intent_ml(
-                                        [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(cluster_id, [])],
-                                        simple_intent,
-                                        f"Cluster {cluster_id}"
-                                    )
-                                    
-                                    batch_analysis_results_from_api[cluster_id] = {
-                                        "search_intent_api": simple_intent,
-                                        "split_suggestion": "No analysis available for split recommendation",
-                                        "additional_info": "No SEO insights available from fallback",
-                                        "coherence_score_api": 5,
-                                        "subclusters": [],
-                                        "intent_classification_ml": ml_intent_classification
-                                    }
+                                    if kws:
+                                        simple_prompt = f"What is the search intent for these keywords: {', '.join(kws)}? Answer in one sentence."
+                                        
+                                        simple_response = client.chat.completions.create(
+                                            model=model,
+                                            messages=[{"role": "user", "content": simple_prompt}],
+                                            temperature=0.3,
+                                            max_tokens=100
+                                        )
+                                        
+                                        simple_intent = simple_response.choices[0].message.content.strip()
+                                        
+                                        # Run ML classifier
+                                        ml_intent_classification = classify_search_intent_ml(
+                                            [str(kw) if kw is not None else "" for kw in clusters_with_representatives.get(cluster_id, [])],
+                                            simple_intent,
+                                            f"Cluster {cluster_id}"
+                                        )
+                                        
+                                        batch_analysis_results_from_api[cluster_id] = {
+                                            "search_intent_api": simple_intent,
+                                            "split_suggestion": "No analysis available for split recommendation",
+                                            "additional_info": "No SEO insights available from fallback",
+                                            "coherence_score_api": 5,
+                                            "subclusters": [],
+                                            "intent_classification_ml": ml_intent_classification
+                                        }
                                 except Exception:
                                     # Skip this cluster if even the simple request fails
                                     pass
