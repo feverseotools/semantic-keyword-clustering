@@ -13,7 +13,7 @@ nltk          # For tokenization, stopwords, lemmatization (requires data downlo
 textblob      # Alternative/enhanced preprocessing fallback
 
 # Libraries for generating semantic embeddings
-sentence-transformers # For open-source embedding models fallback
+sentence-transformers==2.6.1 # For open-source embedding models fallback
 
 # Libraries for advanced preprocessing (spaCy) and AI features (OpenAI, HDBSCAN)
 # Note: Using OpenAI features requires an API key and incurs costs.
