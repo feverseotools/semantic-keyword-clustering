@@ -1033,7 +1033,6 @@ def generate_cluster_names(
             sample_kws_clean = [kw for kw in sample_kws_clean if kw.strip()] # Filter empty strings
             batch_prompt_content += f"- Cluster {cluster_id}: {', '.join(sample_kws_clean)}\n"
 
-
         num_retries = 3
         batch_results = {} # Store results for the current batch
 
@@ -1042,6 +1041,9 @@ def generate_cluster_names(
                 progress_text.text(f"Generating names for clusters {batch_start+1}-{batch_end} (attempt {attempt+1}/{num_retries})...")
 
                 # Try API call with error handling and JSON response format preference
+                response = None
+                content = ""
+                
                 try:
                     # Attempt with response_format={"type": "json_object"} if the model supports it
                     response = client.chat.completions.create(
@@ -1051,19 +1053,27 @@ def generate_cluster_names(
                         response_format={"type": "json_object"}, # Prefer JSON object output
                         max_tokens=1500 # Sufficient tokens for the expected JSON
                     )
+                    content = response.choices[0].message.content.strip()
                 except Exception as e_json_format:
                     # Fallback without response_format if the model doesn't support it or other API error
                     st.warning(f"Model {model} might not support JSON response format or API error: {str(e_json_format)[:100]}. Falling back to text response with JSON request.")
-                    response = client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": batch_prompt_content + "\nRespond strictly with valid JSON only."}],
-                        temperature=0.3,
-                        max_tokens=1500
-                    )
+                    try:
+                        response = client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": batch_prompt_content + "\nRespond strictly with valid JSON only."}],
+                            temperature=0.3,
+                            max_tokens=1500
+                        )
+                        content = response.choices[0].message.content.strip()
+                    except Exception as e_fallback:
+                        st.error(f"Fallback API call also failed: {str(e_fallback)[:100]}")
+                        if attempt == num_retries - 1:
+                            # On last retry, use generic names
+                            for c_id in batch_cluster_ids:
+                                batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
+                        continue # Skip to next retry attempt if API call failed
 
-                content = response.choices[0].message.content.strip()
-
-                # Try to extract JSON from markdown code blocks if present (common when response_format isn't strictly followed)
+                # Try to extract JSON from markdown code blocks if present
                 json_pattern = r'```json\s*([\s\S]*?)\s*```' # Look specifically for ```json ... ```
                 json_matches = re.findall(json_pattern, content)
 
@@ -1076,6 +1086,7 @@ def generate_cluster_names(
 
                     if "clusters" in json_data and isinstance(json_data["clusters"], list):
                         for item in json_data["clusters"]:
+                            # Robustly extract cluster_id, name, and description
                             c_id_raw = item.get("cluster_id")
                             if c_id_raw is not None:
                                 try:
@@ -1099,14 +1110,14 @@ def generate_cluster_names(
 
                         # If we got *some* good results from the batch, consider it successful and break the retry loop
                         if batch_results:
-                            break
+                            break # Break out of retry loop
                         elif attempt == num_retries - 1:
                              st.warning(f"Last attempt failed to extract valid cluster data from JSON for clusters {batch_start+1}-{batch_end}. Using generic names for this batch.")
                              # On last attempt failure, generate generic names for this batch
                              for c_id in batch_cluster_ids:
                                   if c_id not in batch_results: # Only add generic if it wasn't successfully parsed
                                        batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
-
+                                       
                 except json.JSONDecodeError as e_json:
                     st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}... Trying regex fallback.")
                     # Fallback to regex extraction if JSON parsing fails
@@ -1115,10 +1126,9 @@ def generate_cluster_names(
                         name_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*"cluster_name"\s*:\s*"([^"]+)"', content, re.DOTALL)
                         desc_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*.*?"cluster_description"\s*:\s*"([^"]+)"', content, re.DOTALL)
 
-                        c_name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
-                        c_desc = desc_match.group(1).strip() if desc_match else f"Group of related keywords (cluster {cluster_id})"
-
-                        if name_match: # Only add if at least the name was found via regex
+                        if name_match:
+                            c_name = name_match.group(1).strip() 
+                            c_desc = desc_match.group(1).strip() if desc_match else f"Group of related keywords (cluster {cluster_id})"
                             batch_results[cluster_id] = (c_name, c_desc)
                         elif attempt == num_retries - 1:
                             # On last attempt, if regex also failed, add generic names for this cluster
@@ -1132,7 +1142,6 @@ def generate_cluster_names(
                                if c_id not in batch_results:
                                     batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
 
-
                 except Exception as api_error:
                     st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
                     if attempt == num_retries - 1:
@@ -1141,43 +1150,6 @@ def generate_cluster_names(
                          for c_id in batch_cluster_ids:
                               if c_id not in batch_results:
                                    batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
-
-
-except json.JSONDecodeError as e_json:
-                    st.warning(f"API response is not valid JSON (Attempt {attempt+1}): {str(e_json)}. Content: {content[:200]}... Trying regex fallback.")
-                    # Fallback to regex extraction if JSON parsing fails
-                    for cluster_id in batch_cluster_ids:
-                        # Look for patterns like "cluster_id": 1, "cluster_name": "..."
-                        name_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*"cluster_name"\s*:\s*"([^"]+)"', content, re.DOTALL)
-                        desc_match = re.search(rf'"cluster_id"\s*:\s*{cluster_id},\s*.*?"cluster_description"\s*:\s*"([^"]+)"', content, re.DOTALL)
-
-                        c_name = name_match.group(1).strip() if name_match else f"Cluster {cluster_id}"
-                        c_desc = desc_match.group(1).strip() if desc_match else f"Group of related keywords (cluster {cluster_id})"
-
-                        if name_match: # Only add if at least the name was found via regex
-                            batch_results[cluster_id] = (c_name, c_desc)
-                        elif attempt == num_retries - 1:
-                            # On last attempt, if regex also failed, add generic names for this cluster
-                             batch_results[cluster_id] = (f"Cluster {cluster_id}", f"Keywords group {cluster_id}")
-
-                    if batch_results and len(batch_results) == len(batch_cluster_ids): # If regex got all of them for this batch
-                         break # Break retry loop if regex extraction seems successful for the whole batch
-                    elif attempt == num_retries - 1:
-                         st.warning(f"Regex fallback also failed for some clusters in batch {batch_start+1}-{batch_end}. Using generic names for remaining.")
-                         for c_id in batch_cluster_ids:
-                               if c_id not in batch_results:
-                                    batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
-
-
-                except Exception as api_error:
-                    st.error(f"An unexpected error occurred during API processing (Attempt {attempt+1}): {str(api_error)[:100]}...")
-                    if attempt == num_retries - 1:
-                         st.warning(f"Final attempt failed for clusters {batch_start+1}-{batch_end}. Using generic names.")
-                         # On last attempt, generate generic names for this batch
-                         for c_id in batch_cluster_ids:
-                              if c_id not in batch_results:
-                                   batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
-
 
             except Exception as outer_error:
                 st.error(f"An outer error occurred during batch processing (Attempt {attempt+1}): {str(outer_error)[:100]}...")
@@ -1190,7 +1162,6 @@ except json.JSONDecodeError as e_json:
                           for c_id in batch_cluster_ids:
                                batch_results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
 
-
         # Add batch results to overall results
         results.update(batch_results)
 
@@ -1202,7 +1173,6 @@ except json.JSONDecodeError as e_json:
          if c_id not in results:
               st.warning(f"Cluster ID {c_id} did not receive a name from the API after retries. Assigning generic name.")
               results[c_id] = (f"Cluster {c_id}", f"Keywords group {c_id}")
-
 
     progress_bar.progress(1.0)
     progress_text.text("✅ Cluster naming completed.")
