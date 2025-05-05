@@ -2135,7 +2135,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 # Get search volume if available
                 if 'search_volume' in df.columns:
-                    search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
+                        df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
+                        search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
                 else:
                     search_volume = count * 100  # Default estimate for visualization scaling
                 
