@@ -2178,6 +2178,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 with intent_viz_tabs[0]:
                     st.subheader("Clusters by Search Intent & Coherence")
                     
+                    ai_df['search_volume'] = pd.to_numeric(ai_df['search_volume'], errors='coerce')
+                    
                     fig3 = px.scatter(
                         ai_df,
                         x='coherence_score',
