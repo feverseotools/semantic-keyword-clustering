@@ -18,6 +18,13 @@ import plotly.graph_objects as go
 from io import StringIO
 from collections import Counter
 
+#PDF export Button
+try:
+    from export_pdf import add_pdf_export_button
+    pdf_export_available = True
+except ImportError:
+    pdf_export_available = False
+
 # Attempt to import OpenAI
 try:
     from openai import OpenAI
@@ -2833,6 +2840,18 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
+        
+    # Add PDF export button if available
+    if pdf_export_available:
+        st.markdown("---")
+        st.markdown("### Exportar informe completo")
+        st.markdown("Genera un informe PDF completo con visualizaciones, análisis de intención de búsqueda y detalles de los clusters.")
+        
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        add_pdf_export_button(df, cluster_evaluation)
+    else:
+        st.warning("La exportación a PDF no está disponible. Asegúrate de instalar los requisitos adicionales: reportlab, pillow y kaleido.")
+
         
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
