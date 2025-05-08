@@ -18,13 +18,6 @@ import plotly.graph_objects as go
 from io import StringIO
 from collections import Counter
 
-#PDF export Button
-try:
-    from export_pdf import add_pdf_export_button
-    pdf_export_available = True
-except ImportError:
-    pdf_export_available = False
-
 # Attempt to import OpenAI
 try:
     from openai import OpenAI
@@ -65,6 +58,13 @@ try:
     nltk.download('wordnet', quiet=True)
 except Exception:
     pass  # Continue even if downloads fail
+
+#PDF export Button
+try:
+    from export_pdf import add_pdf_export_button
+    pdf_export_available = True
+except ImportError:
+    pdf_export_available = False
 
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
