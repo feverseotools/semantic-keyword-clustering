@@ -20,6 +20,11 @@ sentence-transformers==2.2.2  # Pinned to a specific version for stability
 openai>=1.6.0           # For OpenAI embeddings and cluster naming
 spacy>=3.7.0            # For advanced language preprocessing
 
+# PDF generation
+reportlab>=3.6.12     # For PDF generation
+pillow>=9.3.0         # For image handling
+kaleido>=0.2.1        # For static Plotly image export
+
 # Post-installation steps:
 # 1. Download NLTK data:
 #    python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet'); nltk.download('omw-1.4')"
