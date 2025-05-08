@@ -2844,13 +2844,13 @@ if st.session_state.process_complete and st.session_state.df_results is not None
     # Add PDF export button if available
     if pdf_export_available:
         st.markdown("---")
-        st.markdown("### Exportar informe completo")
-        st.markdown("Genera un informe PDF completo con visualizaciones, análisis de intención de búsqueda y detalles de los clusters.")
+        st.markdown("### Export full report")
+        st.markdown("Generates a PDF report complete with visualizations, search intent analysis and cluster details.")
         
         cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
         add_pdf_export_button(df, cluster_evaluation)
     else:
-        st.warning("La exportación a PDF no está disponible. Asegúrate de instalar los requisitos adicionales: reportlab, pillow y kaleido.")
+        st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
 
         
         st.subheader("Clusters Summary")
