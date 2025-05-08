@@ -624,8 +624,9 @@ class PDFReport:
             coherent_clusters = []
             for c_id, data in self.cluster_evaluation.items():
                 coherence = data.get('coherence_score', 0)
-                c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"
-                        if coherence >= 7:  # High coherence threshold
+                c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                
+                if coherence >= 7:  # High coherence threshold
                     coherent_clusters.append((c_id, c_name, coherence))
             
             if coherent_clusters:
