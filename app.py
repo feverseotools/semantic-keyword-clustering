@@ -2841,11 +2841,11 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             use_container_width=True
         )
         
-    # Add PDF export button if available
+ # Add PDF export button if available
     if pdf_export_available:
         st.markdown("---")
-        st.markdown("### Export full report")
-        st.markdown("Generates a PDF report complete with visualizations, search intent analysis and cluster details.")
+        st.markdown("### Export Complete Report")
+        st.markdown("Generate a PDF report with visualizations, search intent analysis and cluster details.")
         
         cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
         add_pdf_export_button(df, cluster_evaluation)
