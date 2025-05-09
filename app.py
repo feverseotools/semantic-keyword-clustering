@@ -65,7 +65,6 @@ try:
     pdf_export_available = True
 except ImportError:
     pdf_export_available = False
-
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
 ################################################################
@@ -156,6 +155,90 @@ SEARCH_INTENT_PATTERNS = {
     }
 }
 
+# Polish-specific search intent patterns
+POLISH_SEARCH_INTENT_PATTERNS = {
+    "Informational": {
+        "prefixes": [
+            "jak", "co", "dlaczego", "kiedy", "gdzie", "kto", "który",
+            "czy", "jakie", "jaki", "jaka", "ile", "czym", "skąd",
+            "poradnik", "tutorial", "nauka", "zrozumieć", "wyjaśnienie"
+        ],
+        "suffixes": ["definicja", "znaczenie", "przykłady", "pomysły", "poradnik", "tutorial"],
+        "exact_matches": [
+            "poradnik do", "jak zrobić", "tutorial", "zasoby", "informacje", "wiedza",
+            "przykłady", "definicja", "wyjaśnienie", "kroki do", "dowiedz się", "nauka",
+            "historia", "korzyści", "przyczyny", "rodzaje"
+        ],
+        "keyword_patterns": [
+            r'\bjak\s+\w+\b', r'\bco\s+to\s+jest\b', r'\bdlaczego\s+\w+\b', r'\bkiedy\s+\w+\b', 
+            r'\bgdzie\s+\w+\b', r'\bkto\s+to\s+\w+\b', r'\bktóry\b.*\bnajlepszy\b',
+            r'\bdefinicja\b', r'\bznaczenie\b', r'\bprzykład\w*\b', r'\bporad\w+\b',
+            r'\btutorial\w*\b', r'\bprzewodnik\b', r'\bnauczyć\b', r'\bkrok\w*\b',
+            r'\bkontra\b', r'\bvs\b', r'\bporównanie\b', r'\bróżnica\b'
+        ],
+        "weight": 1.0
+    },
+    
+    "Navigational": {
+        "prefixes": ["wejdź na", "odwiedź", "strona", "homepage", "strona główna", "logowanie", "zaloguj"],
+        "suffixes": ["logowanie", "strona", "oficjalna", "online"],
+        "exact_matches": [
+            "logowanie", "zaloguj się", "zarejestruj", "utwórz konto", "pobierz", "oficjalna strona",
+            "strona główna", "kontakt", "wsparcie", "obsługa klienta", "aplikacja"
+        ],
+        "keyword_patterns": [
+            r'\blogowanie\b', r'\bzaloguj\s+się\b', r'\bstrona\b', r'\bstrona\s+główna\b', r'\bportal\b',
+            r'\bkonto\b', r'\boficjaln\w+\b', r'\bpulpit\b', r'\bpobierz\b.*\bz\b',
+            r'\bkontakt\b', r'\badres\b', r'\blokalizacja\b', r'\btrasa\b',
+            r'\bmapa\b', r'\bśledź\b.*\bzamówienie\b', r'\bmoje\s+\w+\s+konto\b'
+        ],
+        "brand_indicators": True,
+        "weight": 1.2
+    },
+    
+    "Transactional": {
+        "prefixes": ["kup", "kupić", "zamów", "sklep", "gdzie kupić"],
+        "suffixes": [
+            "na sprzedaż", "promocja", "okazja", "kupon", "cena", "koszt", "tanio", "online", 
+            "za darmo", "pobierz", "subskrypcja", "okres próbny"
+        ],
+        "exact_matches": [
+            "kup", "kupić", "zamów", "sklep", "subskrybuj", "pobierz", "darmowy okres próbny",
+            "kod kuponu", "promocja", "okazja", "wyprzedaż", "tanio", "najlepsza cena", "w pobliżu",
+            "wysyłka", "dostawa", "na stanie", "dostępny", "płatność", "kasa"
+        ],
+        "keyword_patterns": [
+            r'\bkup\w*\b', r'\bzamów\w*\b', r'\bsklep\w*\b', r'\bsklepie\b',
+            r'\bcena\b', r'\bkoszt\w*\b', r'\btani\w+\b', r'\bpromocj\w+\b', r'\bokazj\w+\b',
+            r'\bwyprzedaż\b', r'\bkupon\b', r'\bpromocyjny\b', r'\bdarmowa\s+dostawa\b',
+            r'\bw\s+pobliżu\b', r'\bdostawa\b', r'\bwysyłka\b', r'\bkasa\b',
+            r'\bna\s+stanie\b', r'\bdostępn\w+\b', r'\bsubskrypcj\w+\b', r'\bpobierz\b',
+            r'\binstaluj\b', r'\bna\s+sprzedaż\b'
+        ],
+        "weight": 1.5
+    },
+    
+    "Commercial": {
+        "prefixes": ["najlepszy", "top", "recenzja", "porównaj", "vs", "kontra"],
+        "suffixes": [
+            "recenzja", "recenzje", "porównanie", "vs", "kontra", "alternatywa", "alternatywy", 
+            "rekomendacja", "rekomendacje", "porównanie", "poradnik"
+        ],
+        "exact_matches": [
+            "najlepszy", "top", "vs", "kontra", "porównanie", "porównaj", "recenzja", "recenzje", 
+            "ocena", "oceny", "ranking", "polecany", "alternatywa", "alternatywy",
+            "wady i zalety", "funkcje", "czy warto", "czy powinienem kupić", "czy jest dobry"
+        ],
+        "keyword_patterns": [
+            r'\bnajlepsz\w+\b', r'\btop\b', r'\brecenzj\w+\b', r'\bporówn\w+\b', r'\bporównani\w+\b', 
+            r'\bvs\b', r'\bkontra\b', r'\balternatyw\w+\b', r'\bocenian\w+\b', r'\branking\w+\b',
+            r'\bczy\s+warto\b', r'\bczy\s+powinienem\s+kupi\w+\b', r'\bczy\s+jest\s+dobr\w+\b',
+            r'\bwady\s+i\s+zalety\b', r'\bzalet\w+\b', r'\bwad\w+\b',
+            r'\bfunkcj\w+\b', r'\bspecyfikacj\w+\b', r'\bktór\w+\s+(jest\s+)?najlepsz\w+\b'
+        ],
+        "weight": 1.2
+    }
+}
 ################################################################
 #          LANGUAGE MODEL MANAGEMENT
 ################################################################
@@ -176,6 +259,7 @@ SPACY_LANGUAGE_MODELS = {
     "Danish": "da_core_news_sm",
     "Greek": "el_core_news_sm",
     "Romanian": "ro_core_news_sm",
+    "Polish": "pl_core_news_sm",  # Add Polish model
     # The following languages often have partial or community models, which might not be installed by default
     # For now, we will rely on fallback if not installed.
     "Korean": None,
@@ -184,10 +268,43 @@ SPACY_LANGUAGE_MODELS = {
     "Lithuanian": None
 }
 
+# Fallback Polish stopwords in case NLTK doesn't have them or fails to load
+POLISH_STOPWORDS = {
+    'a', 'aby', 'ach', 'acz', 'aczkolwiek', 'aj', 'albo', 'ale', 'ależ', 'ani', 'aż', 'bardziej',
+    'bardzo', 'bez', 'bo', 'bowiem', 'by', 'byli', 'bym', 'był', 'była', 'było', 'były', 'być',
+    'będzie', 'będą', 'cali', 'cała', 'cały', 'ci', 'cię', 'ciebie', 'co', 'cokolwiek', 'coś', 'czas',
+    'czy', 'czyli', 'daleko', 'dla', 'dlaczego', 'dlatego', 'do', 'dobrze', 'dokąd', 'dość', 'dużo',
+    'dwa', 'dwaj', 'dwie', 'dwoje', 'dziś', 'dzisiaj', 'gdy', 'gdyby', 'gdyż', 'gdzie', 'gdziekolwiek',
+    'gdzieś', 'go', 'i', 'ich', 'ile', 'im', 'inna', 'inne', 'inny', 'innych', 'iż', 'ja', 'ją',
+    'jak', 'jakaś', 'jakby', 'jaki', 'jakichś', 'jakie', 'jakiś', 'jakiż', 'jakkolwiek', 'jako',
+    'jakoś', 'je', 'jeden', 'jedna', 'jedno', 'jednak', 'jednakże', 'jego', 'jej', 'jemu', 'jest',
+    'jestem', 'jeszcze', 'jeśli', 'jeżeli', 'już', 'ją', 'każdy', 'kiedy', 'kilka', 'kimś', 'kto',
+    'ktokolwiek', 'ktoś', 'która', 'które', 'którego', 'której', 'który', 'których', 'którym',
+    'którzy', 'ku', 'lat', 'lecz', 'lub', 'ma', 'mają', 'mam', 'mi', 'mimo', 'między', 'mną', 'mnie',
+    'mnóstwo', 'moi', 'moim', 'moja', 'moje', 'może', 'możliwe', 'można', 'mój', 'mu', 'musi',
+    'my', 'na', 'nad', 'nam', 'nami', 'nas', 'nasi', 'nasz', 'nasza', 'nasze', 'naszego', 'naszych',
+    'natomiast', 'natychmiast', 'nawet', 'nią', 'nic', 'nich', 'nie', 'niech', 'niego', 'niej',
+    'niemu', 'nigdy', 'nim', 'nimi', 'niż', 'no', 'o', 'obok', 'od', 'około', 'on', 'ona', 'one',
+    'oni', 'ono', 'oraz', 'oto', 'owszem', 'pan', 'pana', 'pani', 'po', 'pod', 'podczas', 'pomimo',
+    'ponad', 'ponieważ', 'powinien', 'powinna', 'powinni', 'powinno', 'poza', 'prawie', 'przecież',
+    'przed', 'przede', 'przedtem', 'przez', 'przy', 'roku', 'również', 'sam', 'sama', 'są', 'się',
+    'skąd', 'sobie', 'sobą', 'sposób', 'swoje', 'ta', 'tak', 'taka', 'taki', 'takie', 'także', 'tam',
+    'te', 'tego', 'tej', 'ten', 'teraz', 'też', 'to', 'tobą', 'tobie', 'toteż', 'trzeba', 'tu',
+    'tutaj', 'twoi', 'twoim', 'twoja', 'twoje', 'twym', 'twój', 'ty', 'tych', 'tylko', 'tym',
+    'u', 'w', 'wam', 'wami', 'was', 'wasz', 'wasza', 'wasze', 'we', 'według', 'wiele', 'wielu',
+    'więc', 'więcej', 'wszyscy', 'wszystkich', 'wszystkie', 'wszystkim', 'wszystko', 'wtedy',
+    'wy', 'właśnie', 'z', 'za', 'zapewne', 'zawsze', 'ze', 'zł', 'znowu', 'znów', 'został',
+    'żaden', 'żadna', 'żadne', 'żadnych', 'że', 'żeby'
+}
+
 def load_spacy_model_by_language(selected_language):
     """
     Try to load a spaCy model for the given language. If it fails or doesn't exist, returns None.
+    Also stores the selected language in session state for other functions to use.
     """
+    # Store the selected language in session state
+    st.session_state['selected_language'] = selected_language
+    
     if not spacy_base_available:
         return None
 
@@ -199,7 +316,6 @@ def load_spacy_model_by_language(selected_language):
         return spacy.load(model_name)
     except:
         return None
-
 ################################################################
 #          COST CALCULATION AND SUPPORT FUNCTIONS
 ################################################################
@@ -340,7 +456,6 @@ def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clu
             **Cost Savings**: If you prefer not to use OpenAI, you can 
             use SentenceTransformers at no cost with decent results.
             """)
-
 ################################################################
 #  SAMPLE CSV GENERATION
 ################################################################
@@ -402,17 +517,33 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
             from textblob import TextBlob
             blob = TextBlob(text.lower())
             noun_phrases = list(blob.noun_phrases)
+            
+            # Get appropriate stopwords for the language
+            selected_language = st.session_state.get('selected_language', 'English')
             try:
-                stop_words = set(stopwords.words('english'))
+                if selected_language == 'Polish':
+                    try:
+                        stop_words = set(stopwords.words('polish'))
+                    except:
+                        stop_words = POLISH_STOPWORDS
+                else:
+                    stop_words = set(stopwords.words('english'))
             except:
                 stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
+                # Add Polish fallback if Polish is selected
+                if selected_language == 'Polish':
+                    stop_words = POLISH_STOPWORDS
             
             words = [w for w in blob.words if len(w) > 1 and w.lower() not in stop_words]
             
             if use_lemmatization:
-                lemmatizer = WordNetLemmatizer()
-                lemmas = [lemmatizer.lemmatize(w) for w in words]
-                processed_parts = lemmas + noun_phrases
+                # Skip lemmatization for Polish as WordNet is English-centric
+                if selected_language == 'Polish':
+                    processed_parts = words + noun_phrases
+                else:
+                    lemmatizer = WordNetLemmatizer()
+                    lemmas = [lemmatizer.lemmatize(w) for w in words]
+                    processed_parts = lemmas + noun_phrases
             else:
                 processed_parts = words + noun_phrases
             
@@ -434,17 +565,33 @@ def preprocess_text(text, use_lemmatization=True):
     try:
         text = text.lower()
         tokens = word_tokenize(text)
+        
+        # Try to get language-specific stopwords
+        selected_language = st.session_state.get('selected_language', 'English')
         try:
-            stop_words = set(stopwords.words('english'))
+            if selected_language == 'Polish':
+                try:
+                    stop_words = set(stopwords.words('polish'))
+                except:
+                    # Fallback to our predefined Polish stopwords
+                    stop_words = POLISH_STOPWORDS
+            else:
+                stop_words = set(stopwords.words('english'))
         except:
             stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
+            # Add Polish fallback if Polish is selected
+            if selected_language == 'Polish':
+                stop_words = POLISH_STOPWORDS
         
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
         if use_lemmatization:
             try:
                 lemmatizer = WordNetLemmatizer()
-                tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                # Note: WordNet lemmatizer works best for English
+                # For Polish, we'll just use tokens as-is if lemmatization is selected
+                if selected_language != 'Polish':
+                    tokens = [lemmatizer.lemmatize(t) for t in tokens]
             except:
                 pass
         
@@ -481,7 +628,6 @@ def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
     
     progress_bar.progress(1.0)
     return processed_keywords
-
 ################################################################
 #          EMBEDDING GENERATION
 ################################################################
@@ -629,7 +775,6 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         st.warning("Generating random vectors as a last resort.")
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
-
 ################################################################
 #          CLUSTERING ALGORITHMS
 ################################################################
@@ -817,18 +962,21 @@ def generate_cluster_names(
     progress_bar.progress(1.0)
     progress_text.text("✅ Cluster naming completed.")
     return results
-    
 ################################################################
 #          SEARCH INTENT CLASSIFICATION
 ################################################################
 
-def extract_features_for_intent(keyword, search_intent_description=""):
+def extract_features_for_intent(keyword, search_intent_description="", patterns=None):
     """
     Extracts features for search intent classification based on keyword patterns.
     Returns a dictionary of features that can be used for classification.
     
     This is a more sophisticated approach than the previous classify_search_intent.
     """
+    # Use default patterns if none provided
+    if patterns is None:
+        patterns = SEARCH_INTENT_PATTERNS
+    
     # Features to extract
     features = {
         "keyword_length": len(keyword.split()),
@@ -862,39 +1010,59 @@ def extract_features_for_intent(keyword, search_intent_description=""):
     words = keyword_lower.split()
     if words:
         first_word = words[0]
-        for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
-            if any(first_word == prefix.lower() for prefix in patterns["prefixes"]):
+        for intent_type, intent_patterns in patterns.items():
+            if any(first_word == prefix.lower() for prefix in intent_patterns["prefixes"]):
                 features[f"has_{intent_type.lower()}_prefix"] = True
     
     # Check suffixes 
     if words and len(words) > 1:
         last_word = words[-1]
-        for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
-            if any(last_word == suffix.lower() for suffix in patterns["suffixes"]):
+        for intent_type, intent_patterns in patterns.items():
+            if any(last_word == suffix.lower() for suffix in intent_patterns["suffixes"]):
                 features[f"has_{intent_type.lower()}_suffix"] = True
     
     # Check exact matches
-    for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
-        for exact_match in patterns["exact_matches"]:
+    for intent_type, intent_patterns in patterns.items():
+        for exact_match in intent_patterns["exact_matches"]:
             if exact_match.lower() in keyword_lower:
                 features[f"is_{intent_type.lower()}_exact_match"] = True
                 break
     
     # Check pattern matches
-    for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
+    for intent_type, intent_patterns in patterns.items():
         match_count = 0
-        for pattern in patterns["keyword_patterns"]:
+        for pattern in intent_patterns["keyword_patterns"]:
             if re.search(pattern, keyword_lower):
                 match_count += 1
         features[f"{intent_type.lower()}_pattern_matches"] = match_count
     
     # Additional features
-    features["local_intent"] = any(term in keyword_lower for term in ["near me", "nearby", "in my area", "close to me", "closest", "local"])
-    features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["can", "could", "should", "would", "will", "may", "might"])
-    features["includes_price_modifier"] = any(term in keyword_lower for term in ["price", "cost", "cheap", "expensive", "affordable", "discount", "offer", "deal", "coupon"])
-    features["includes_product_modifier"] = any(term in keyword_lower for term in ["best", "top", "cheap", "premium", "quality", "new", "used", "refurbished", "alternative"])
+    # Get the right "near me" equivalent based on language
+    selected_language = st.session_state.get('selected_language', 'English')
+    if selected_language == 'Polish':
+        local_terms = ["w pobliżu", "blisko mnie", "w mojej okolicy", "niedaleko", "najbliższy", "lokalny"]
+    else:
+        local_terms = ["near me", "nearby", "in my area", "close to me", "closest", "local"]
     
-    # Include any brand names detection here if needed
+    features["local_intent"] = any(term in keyword_lower for term in local_terms)
+    
+    # Modal verbs (different for each language)
+    if selected_language == 'Polish':
+        features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["czy", "może", "można", "powinien", "musi", "warto"])
+    else:
+        features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["can", "could", "should", "would", "will", "may", "might"])
+    
+    # Price modifiers
+    if selected_language == 'Polish':
+        features["includes_price_modifier"] = any(term in keyword_lower for term in ["cena", "koszt", "tani", "tanie", "drogie", "promocja", "oferta", "okazja", "kupon"])
+    else:
+        features["includes_price_modifier"] = any(term in keyword_lower for term in ["price", "cost", "cheap", "expensive", "affordable", "discount", "offer", "deal", "coupon"])
+    
+    # Product modifiers
+    if selected_language == 'Polish':
+        features["includes_product_modifier"] = any(term in keyword_lower for term in ["najlepszy", "najlepsze", "top", "tani", "premium", "jakość", "nowy", "używany", "odnowiony", "alternatywa"])
+    else:
+        features["includes_product_modifier"] = any(term in keyword_lower for term in ["best", "top", "cheap", "premium", "quality", "new", "used", "refurbished", "alternative"])
     
     return features
 
@@ -918,10 +1086,23 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
             "evidence": {}
         }
     
+    # Determine language patterns to use based on session state
+    selected_language = st.session_state.get('selected_language', 'English')
+    
+    # Use language-specific patterns if available
+    if selected_language == 'Polish':
+        # Check if Polish patterns are defined
+        if 'POLISH_SEARCH_INTENT_PATTERNS' in globals():
+            patterns = POLISH_SEARCH_INTENT_PATTERNS
+        else:
+            patterns = SEARCH_INTENT_PATTERNS  # fallback to English patterns
+    else:
+        patterns = SEARCH_INTENT_PATTERNS
+    
     # Extract features for all keywords
     all_features = []
     for keyword in keywords[:min(len(keywords), 20)]:  # Limit to first 20 keywords for performance
-        features = extract_features_for_intent(keyword, search_intent_description)
+        features = extract_features_for_intent(keyword, search_intent_description, patterns)
         all_features.append(features)
     
     # Aggregate features
@@ -989,17 +1170,16 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
     comm_signals = set(commercial_signals)
     
     # Calculate relative proportions (with weighting)
-    info_weight = SEARCH_INTENT_PATTERNS["Informational"]["weight"]
-    nav_weight = SEARCH_INTENT_PATTERNS["Navigational"]["weight"]
-    trans_weight = SEARCH_INTENT_PATTERNS["Transactional"]["weight"]
-    comm_weight = SEARCH_INTENT_PATTERNS["Commercial"]["weight"]
+    info_weight = patterns["Informational"]["weight"]
+    nav_weight = patterns["Navigational"]["weight"]
+    trans_weight = patterns["Transactional"]["weight"]
+    comm_weight = patterns["Commercial"]["weight"]
     
     info_score = len(info_signals) * info_weight
     nav_score = len(nav_signals) * nav_weight
     trans_score = len(trans_signals) * trans_weight
     comm_score = len(comm_signals) * comm_weight
-    
-    # Check description for explicit mentions
+# Check description for explicit mentions
     if search_intent_description:
         desc_lower = search_intent_description.lower()
         if re.search(r'\binformational\b|\binformation\s+intent\b|\binformation\s+search\b|\bleaning\b|\bquestion\b', desc_lower):
@@ -1125,7 +1305,6 @@ def analyze_cluster_for_intent_flow(df, cluster_id):
         "journey_phase": journey_phase,
         "keyword_sample": [{"keyword": k["keyword"], "intent": k["primary_intent"]} for k in keyword_intents[:10]]
     }
-
 ################################################################
 #          CLUSTER SEMANTIC ANALYSIS
 ################################################################
@@ -1395,7 +1574,6 @@ def generate_semantic_analysis(
     progress_bar.progress(1.0)
     progress_text.text("✅ Semantic analysis completed.")
     return results
-
 ################################################################
 #          EVALUATION FUNCTIONS
 ################################################################
@@ -1784,7 +1962,6 @@ st.set_page_config(
         'About': 'Advanced semantic keyword clustering tool using NLP and OpenAI.'
     }
 )
-
 st.markdown("""
 <style>
     .main-header {
@@ -1988,13 +2165,20 @@ language_options = [
     "English", "Spanish", "French", "German", "Dutch", 
     "Korean", "Japanese", "Italian", "Portuguese", 
     "Brazilian Portuguese", "Swedish", "Norwegian", 
-    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian"
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
+    "Polish"  # Added Polish to the language options
 ]
 selected_language = st.sidebar.selectbox(
     "Select language of the CSV",
     options=language_options,
-    index=0
+    index=0,
+    key="language_selectbox"  # Add a key for improved state management
 )
+
+# Store the selected language in session state
+if 'selected_language' not in st.session_state:
+    st.session_state['selected_language'] = "English"
+st.session_state['selected_language'] = selected_language
 
 if openai_available:
     if openai_api_key:
@@ -2056,6 +2240,81 @@ user_prompt = st.sidebar.text_area(
 )
 
 add_cost_calculator()
+
+# Optional Polish Support Testing Function
+def test_polish_support():
+    """
+    Function to test Polish language support components
+    """
+    if st.sidebar.checkbox("Test Polish Support", False):
+        st.subheader("Polish Language Support Test")
+        
+        # Test language selection
+        st.write("1. Language Selection:")
+        st.write(f"Selected language: {st.session_state.get('selected_language', 'Not set')}")
+        
+        # Test spaCy model loading
+        st.write("2. spaCy Model Test:")
+        try:
+            if spacy_base_available:
+                spacy_model = load_spacy_model_by_language("Polish")
+                if spacy_model:
+                    st.success("✅ Polish spaCy model loaded successfully")
+                else:
+                    st.warning("Polish spaCy model could not be loaded")
+            else:
+                st.warning("spaCy is not available")
+        except Exception as e:
+            st.error(f"Error testing spaCy model: {str(e)}")
+        
+        # Test stopwords
+        st.write("3. Polish Stopwords Test:")
+        try:
+            try:
+                polish_stopwords = set(stopwords.words('polish'))
+                st.success(f"✅ NLTK Polish stopwords loaded: {len(polish_stopwords)} words")
+                st.write(f"Sample stopwords: {list(polish_stopwords)[:10]}")
+            except:
+                st.warning("NLTK Polish stopwords not available.")
+                if 'POLISH_STOPWORDS' in globals():
+                    st.success(f"✅ Fallback Polish stopwords available: {len(POLISH_STOPWORDS)} words")
+                    st.write(f"Sample stopwords: {list(POLISH_STOPWORDS)[:10]}")
+                else:
+                    st.error("No Polish stopwords available")
+        except Exception as e:
+            st.error(f"Error testing stopwords: {str(e)}")
+        
+        # Test preprocessing
+        st.write("4. Preprocessing Test:")
+        test_text = "Jak znaleźć najlepsze buty do biegania w Polsce"
+        st.write(f"Original: {test_text}")
+        
+        processed_basic = preprocess_text(test_text, use_lemmatization=True)
+        st.write(f"Basic preprocessing: {processed_basic}")
+        
+        if spacy_base_available:
+            spacy_model = load_spacy_model_by_language("Polish")
+            if spacy_model:
+                processed_advanced = enhanced_preprocessing(test_text, True, spacy_model)
+                st.write(f"Enhanced preprocessing: {processed_advanced}")
+        
+        # Test intent classification
+        st.write("5. Search Intent Classification Test:")
+        test_keywords = [
+            "jak zrobić tort czekoladowy",
+            "najlepsze smartfony 2025",
+            "kup buty nike",
+            "allegro login",
+            "buty do biegania porównanie"
+        ]
+        
+        for kw in test_keywords:
+            intent_data = classify_search_intent_ml([kw])
+            st.write(f"Keyword: {kw} → Intent: {intent_data['primary_intent']}")
+
+# Add the Polish support test if needed
+if selected_language == "Polish":
+    test_polish_support()
 
 # Session states
 if 'process_complete' not in st.session_state:
@@ -2228,7 +2487,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     st.subheader("Customer Journey Analysis")
                     
                     # Count clusters in each journey phase
-                    phase_counts = Counter(ai_df['journey_phase'])
+                    phase_counts = Counter([item['journey_phase'] for item in ai_coherence_data])
                     
                     # Create journey phase visualization
                     phase_order = [
@@ -2428,7 +2687,243 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         selected_cluster = st.selectbox("Select a cluster:", cluster_options)
         
         if selected_cluster:
-            cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
+            cid = int(selectest.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 1rem;
+    }
+    .sub-header {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    .info-box {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .success-box {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    .highlight {
+        background-color: #fffbcc;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.2rem;
+    }
+    .intent-box {
+        padding: 8px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    .intent-info {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
+    }
+    .intent-nav {
+        background-color: #e8f5e9;
+        border-left: 5px solid #4caf50;
+    }
+    .intent-trans {
+        background-color: #fff3e0;
+        border-left: 5px solid #ff9800;
+    }
+    .intent-comm {
+        background-color: #f3e5f5;
+        border-left: 5px solid #9c27b0;
+    }
+    .intent-mixed {
+        background-color: #f5f5f5;
+        border-left: 5px solid #9e9e9e;
+    }
+    .subcluster-box {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .journey-early {
+        background-color: #e8f5e9; 
+        border-left: 5px solid #43a047;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .journey-middle {
+        background-color: #e3f2fd; 
+        border-left: 5px solid #1e88e5;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .journey-late {
+        background-color: #fff3e0; 
+        border-left: 5px solid #ff9800;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .journey-transition {
+        background-color: #f3e5f5; 
+        border-left: 5px solid #8e24aa;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .journey-mixed {
+        background-color: #f5f5f5;
+        border-left: 5px solid #9e9e9e;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    .evidence-list {
+        font-size: 0.9em;
+        color: #666;
+        margin-top: 5px;
+        margin-left: 20px;
+    }
+    
+    .keyword-example {
+        display: inline-block;
+        background-color: #f5f5f5;
+        border-radius: 3px;
+        padding: 3px 6px;
+        margin: 2px;
+        font-size: 0.85em;
+    }
+    
+    .info-tag {
+        background-color: #e3f2fd;
+        color: #0d47a1;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 0.8em;
+        margin-right: 5px;
+    }
+    
+    .commercial-tag {
+        background-color: #f3e5f5;
+        color: #4a148c;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 0.8em;
+        margin-right: 5px;
+    }
+    
+    .transactional-tag {
+        background-color: #fff3e0;
+        color: #e65100;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-size: 0.8em;
+        margin-right: 5px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
+st.markdown("""
+This application clusters semantically similar keywords using advanced NLP and clustering methods.
+You can upload:
+- A **simple CSV** with no header (just one keyword per line), or
+- A **Keyword Planner-like CSV** with a header (Keyword, search_volume, competition, cpc, month1..month12, etc.)
+""")
+
+# -----------------------------------------------------------
+# Expander describing CSV usage
+# -----------------------------------------------------------
+with st.expander("CSV Format Info", expanded=False):
+    st.markdown("""
+**Which CSV format can I use?**
+
+1. **No Header**:  
+   - Each line has just one keyword  
+   - Example:
+     ```
+     red shoes
+     running shoes
+     kids sneakers
+     ```
+   - The app will treat the entire CSV as a single column: 'keyword'.
+
+2. **With Header** (like Keyword Planner):  
+   - The first row has column names (e.g. `Keyword, search_volume, competition, cpc, month1..month12`)  
+   - The app will use the 'Keyword' column as the main text  
+   - Additional columns can be used later for numeric analysis or weighting
+
+If you pick the wrong format, the first row might be interpreted incorrectly.
+""")
+
+# Button to download sample CSV template
+sample_csv_button = st.sidebar.button("Download Sample CSV Template")
+if sample_csv_button:
+    csv_header = generate_sample_csv()
+    st.sidebar.download_button(
+        label="Click to Download CSV Template",
+        data=csv_header,
+        file_name="sample_keyword_planner_template.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+# CSV Format selectbox
+csv_format = st.sidebar.selectbox(
+    "Select CSV format",
+    options=["no_header", "with_header"],
+    index=0
+)
+
+st.sidebar.markdown("<div class='sub-header'>Configuration</div>", unsafe_allow_html=True)
+uploaded_file = st.sidebar.file_uploader("Upload your CSV", type=['csv'])
+
+openai_api_key = st.sidebar.text_input(
+    "OpenAI API Key (optional)",
+    type="password",
+    help="Enter your OpenAI API Key for high-quality embeddings. If omitted, free SentenceTransformers or TF-IDF will be used."
+)
+
+# Language selector
+language_options = [
+    "English", "Spanish", "French", "German", "Dutch", 
+    "Korean", "Japanese", "Italian", "Portuguese", 
+    "Brazilian Portuguese", "Swedish", "Norwegian", 
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
+    "Polish"  # Added Polish to the language options
+]
+selected_language = st.sidebar.selectbox(
+    "Select language of the CSV",
+    options=language_options,
+    index=0,
+    key="language_selectbox"  # Add a key for improved state management
+)
+
+# Store the selected language in session state
+if 'selected_language' not in st.session_state:
+    st.session_state['selected_language'] = "English"
+st.session_state['selected_language'] = selected_language
+
+if openai_available:
+    if openai_api_key:
+        st.sidebar.success("✅ OpenAI key provided - will use OpenAI for embeddings.")
+    else:
+        if sentence_transformers_available:
+            st.sidebar.info("No OpenAI key - fallback to SentenceTransformers.")
+        else:
+            st.sidebar.warning("No OpenAI key, no SentenceTransformers - fallback to TF-IDF.")
+else:
+    if sentence_transformers_available:
+        st.sidebar.info("OpenAI not installed - using SentenceTransformers.")
+    else:
+        st.sidebar.error("No advanced embedding method - fallback TF-IDF only.")
+
+st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
+
+with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
+    st.
+cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             cluster_df = df[df['cluster_id'] == cid].copy()
             
             colA, colB = st.columns(2)
