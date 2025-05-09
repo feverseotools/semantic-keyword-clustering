@@ -2687,7 +2687,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         selected_cluster = st.selectbox("Select a cluster:", cluster_options)
         
         if selected_cluster:
-            cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
+            cid = int(selectest.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
@@ -3445,6 +3445,7 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     """)
 
 st.markdown("---")
+st.markdown("""
 <div style="text-align: center; color: #888;">
     Developed for advanced semantic keyword clustering – featuring intent analysis and customer journey mapping
 </div>
