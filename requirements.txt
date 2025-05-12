@@ -5,25 +5,25 @@ streamlit>=1.29.0
 pandas>=2.0.0
 numpy>=1.24.0
 scikit-learn>=1.3.0  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
-scipy>=1.10.0         # For hierarchical clustering components
-plotly>=5.18.0        # For visualizations
-matplotlib>=3.7.0     # Support for Plotly visualizations
+scipy>=1.10.0        # For hierarchical clustering components
+plotly>=5.18.0       # For visualizations
+matplotlib>=3.7.0    # Support for Plotly visualizations
 
 # NLP libraries
 nltk>=3.8.1          # For tokenization, stopwords, lemmatization
 textblob>=0.17.1     # Alternative preprocessing fallback
 
 # Semantic embeddings
-sentence-transformers==2.2.2  # Pinned to a specific version for stability
+sentence-transformers>=2.2.2  # For embeddings when OpenAI is not used
 
 # OpenAI and advanced preprocessing (optional, install as needed)
-openai>=1.6.0           # For OpenAI embeddings and cluster naming
-spacy>=3.7.0            # For advanced language preprocessing
+openai>=1.6.0        # For OpenAI embeddings and cluster naming
+spacy>=3.7.0         # For advanced language preprocessing
 
 # PDF generation
-reportlab>=3.6.12     # For PDF generation
-pillow>=9.3.0         # For image handling
-kaleido>=0.2.1        # For static Plotly image export
+reportlab>=3.6.12    # For PDF generation
+pillow>=9.3.0        # For image handling
+kaleido>=0.2.1       # For static Plotly image export
 
 # Post-installation steps:
 # 1. Download NLTK data:
@@ -37,6 +37,6 @@ kaleido>=0.2.1        # For static Plotly image export
 #    python -m spacy download pl_core_news_sm  # Polish
 #    # Add other models as needed based on your language requirements
 #
-# 3. Create a 'models' directory at the root of your project:
+# 3. Create a 'models' directory at the root of your project (if not already present):
 #    mkdir -p ./models
 #    This will be used for caching SentenceTransformer models when downloading fails
