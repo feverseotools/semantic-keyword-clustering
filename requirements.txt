@@ -17,7 +17,7 @@ textblob>=0.17.1     # Alternative preprocessing fallback
 sentence-transformers==2.2.2  # Pinned to a specific version for stability
 
 # OpenAI and advanced preprocessing (optional, install as needed)
-openai>=1.6.0           # For OpenAI embeddings and cluster naming
+openai>=1.8.0           # For OpenAI embeddings and cluster naming
 spacy>=3.7.0            # For advanced language preprocessing
 
 # PDF generation
