@@ -50,6 +50,7 @@ try:
     hdbscan_available = True
 except ImportError:
     hdbscan_available = False
+
 # Download NLTK resources at startup
 try:
     nltk.download('stopwords', quiet=True)
@@ -64,6 +65,7 @@ try:
     pdf_export_available = True
 except ImportError:
     pdf_export_available = False
+
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
 ################################################################
@@ -109,7 +111,8 @@ SEARCH_INTENT_PATTERNS = {
         "brand_indicators": True,  # Presence of brand names indicates navigational intent
         "weight": 1.2  # Navigational intent is often more clear-cut
     },
-"Transactional": {
+    
+    "Transactional": {
         "prefixes": ["buy", "purchase", "order", "shop", "get"],
         "suffixes": [
             "for sale", "discount", "deal", "coupon", "price", "cost", "cheap", "online", 
@@ -152,88 +155,7 @@ SEARCH_INTENT_PATTERNS = {
         "weight": 1.2  # Commercial intent signals future transactions
     }
 }
-# Polish-specific search intent patterns
-POLISH_SEARCH_INTENT_PATTERNS = {
-    "Informational": {
-        "prefixes": [
-            "jak", "co", "dlaczego", "kiedy", "gdzie", "kto", "który",
-            "czy", "jakie", "jaki", "jaka", "ile", "czym", "skąd",
-            "poradnik", "tutorial", "nauka", "zrozumieć", "wyjaśnienie"
-        ],
-        "suffixes": ["definicja", "znaczenie", "przykłady", "pomysły", "poradnik", "tutorial"],
-        "exact_matches": [
-            "poradnik do", "jak zrobić", "tutorial", "zasoby", "informacje", "wiedza",
-            "przykłady", "definicja", "wyjaśnienie", "kroki do", "dowiedz się", "nauka",
-            "historia", "korzyści", "przyczyny", "rodzaje"
-        ],
-        "keyword_patterns": [
-            r'\bjak\s+\w+\b', r'\bco\s+to\s+jest\b', r'\bdlaczego\s+\w+\b', r'\bkiedy\s+\w+\b', 
-            r'\bgdzie\s+\w+\b', r'\bkto\s+to\s+\w+\b', r'\bktóry\b.*\bnajlepszy\b',
-            r'\bdefinicja\b', r'\bznaczenie\b', r'\bprzykład\w*\b', r'\bporad\w+\b',
-            r'\btutorial\w*\b', r'\bprzewodnik\b', r'\bnauczyć\b', r'\bkrok\w*\b',
-            r'\bkontra\b', r'\bvs\b', r'\bporównanie\b', r'\bróżnica\b'
-        ],
-        "weight": 1.0
-    },
-"Navigational": {
-        "prefixes": ["wejdź na", "odwiedź", "strona", "homepage", "strona główna", "logowanie", "zaloguj"],
-        "suffixes": ["logowanie", "strona", "oficjalna", "online"],
-        "exact_matches": [
-            "logowanie", "zaloguj się", "zarejestruj", "utwórz konto", "pobierz", "oficjalna strona",
-            "strona główna", "kontakt", "wsparcie", "obsługa klienta", "aplikacja"
-        ],
-        "keyword_patterns": [
-            r'\blogowanie\b', r'\bzaloguj\s+się\b', r'\bstrona\b', r'\bstrona\s+główna\b', r'\bportal\b',
-            r'\bkonto\b', r'\boficjaln\w+\b', r'\bpulpit\b', r'\bpobierz\b.*\bz\b',
-            r'\bkontakt\b', r'\badres\b', r'\blokalizacja\b', r'\btrasa\b',
-            r'\bmapa\b', r'\bśledź\b.*\bzamówienie\b', r'\bmoje\s+\w+\s+konto\b'
-        ],
-        "brand_indicators": True,
-        "weight": 1.2
-    },
-    
-    "Transactional": {
-        "prefixes": ["kup", "kupić", "zamów", "sklep", "gdzie kupić"],
-        "suffixes": [
-            "na sprzedaż", "promocja", "okazja", "kupon", "cena", "koszt", "tanio", "online", 
-            "za darmo", "pobierz", "subskrypcja", "okres próbny"
-        ],
-        "exact_matches": [
-            "kup", "kupić", "zamów", "sklep", "subskrybuj", "pobierz", "darmowy okres próbny",
-            "kod kuponu", "promocja", "okazja", "wyprzedaż", "tanio", "najlepsza cena", "w pobliżu",
-            "wysyłka", "dostawa", "na stanie", "dostępny", "płatność", "kasa"
-        ],
-        "keyword_patterns": [
-            r'\bkup\w*\b', r'\bzamów\w*\b', r'\bsklep\w*\b', r'\bsklepie\b',
-            r'\bcena\b', r'\bkoszt\w*\b', r'\btani\w+\b', r'\bpromocj\w+\b', r'\bokazj\w+\b',
-            r'\bwyprzedaż\b', r'\bkupon\b', r'\bpromocyjny\b', r'\bdarmowa\s+dostawa\b',
-            r'\bw\s+pobliżu\b', r'\bdostawa\b', r'\bwysyłka\b', r'\bkasa\b',
-            r'\bna\s+stanie\b', r'\bdostępn\w+\b', r'\bsubskrypcj\w+\b', r'\bpobierz\b',
-            r'\binstaluj\b', r'\bna\s+sprzedaż\b'
-        ],
-        "weight": 1.5
-    },
-"Commercial": {
-        "prefixes": ["najlepszy", "top", "recenzja", "porównaj", "vs", "kontra"],
-        "suffixes": [
-            "recenzja", "recenzje", "porównanie", "vs", "kontra", "alternatywa", "alternatywy", 
-            "rekomendacja", "rekomendacje", "porównanie", "poradnik"
-        ],
-        "exact_matches": [
-            "najlepszy", "top", "vs", "kontra", "porównanie", "porównaj", "recenzja", "recenzje", 
-            "ocena", "oceny", "ranking", "polecany", "alternatywa", "alternatywy",
-            "wady i zalety", "funkcje", "czy warto", "czy powinienem kupić", "czy jest dobry"
-        ],
-        "keyword_patterns": [
-            r'\bnajlepsz\w+\b', r'\btop\b', r'\brecenzj\w+\b', r'\bporówn\w+\b', r'\bporównani\w+\b', 
-            r'\bvs\b', r'\bkontra\b', r'\balternatyw\w+\b', r'\bocenian\w+\b', r'\branking\w+\b',
-            r'\bczy\s+warto\b', r'\bczy\s+powinienem\s+kupi\w+\b', r'\bczy\s+jest\s+dobr\w+\b',
-            r'\bwady\s+i\s+zalety\b', r'\bzalet\w+\b', r'\bwad\w+\b',
-            r'\bfunkcj\w+\b', r'\bspecyfikacj\w+\b', r'\bktór\w+\s+(jest\s+)?najlepsz\w+\b'
-        ],
-        "weight": 1.2
-    }
-}
+
 ################################################################
 #          LANGUAGE MODEL MANAGEMENT
 ################################################################
@@ -254,7 +176,6 @@ SPACY_LANGUAGE_MODELS = {
     "Danish": "da_core_news_sm",
     "Greek": "el_core_news_sm",
     "Romanian": "ro_core_news_sm",
-    "Polish": "pl_core_news_sm",  # Add Polish model
     # The following languages often have partial or community models, which might not be installed by default
     # For now, we will rely on fallback if not installed.
     "Korean": None,
@@ -262,43 +183,11 @@ SPACY_LANGUAGE_MODELS = {
     "Icelandic": None,
     "Lithuanian": None
 }
-# Fallback Polish stopwords in case NLTK doesn't have them or fails to load
-POLISH_STOPWORDS = {
-    'a', 'aby', 'ach', 'acz', 'aczkolwiek', 'aj', 'albo', 'ale', 'ależ', 'ani', 'aż', 'bardziej',
-    'bardzo', 'bez', 'bo', 'bowiem', 'by', 'byli', 'bym', 'był', 'była', 'było', 'były', 'być',
-    'będzie', 'będą', 'cali', 'cała', 'cały', 'ci', 'cię', 'ciebie', 'co', 'cokolwiek', 'coś', 'czas',
-    'czy', 'czyli', 'daleko', 'dla', 'dlaczego', 'dlatego', 'do', 'dobrze', 'dokąd', 'dość', 'dużo',
-    'dwa', 'dwaj', 'dwie', 'dwoje', 'dziś', 'dzisiaj', 'gdy', 'gdyby', 'gdyż', 'gdzie', 'gdziekolwiek',
-    'gdzieś', 'go', 'i', 'ich', 'ile', 'im', 'inna', 'inne', 'inny', 'innych', 'iż', 'ja', 'ją',
-    'jak', 'jakaś', 'jakby', 'jaki', 'jakichś', 'jakie', 'jakiś', 'jakiż', 'jakkolwiek', 'jako',
-    'jakoś', 'je', 'jeden', 'jedna', 'jedno', 'jednak', 'jednakże', 'jego', 'jej', 'jemu', 'jest',
-    'jestem', 'jeszcze', 'jeśli', 'jeżeli', 'już', 'ją', 'każdy', 'kiedy', 'kilka', 'kimś', 'kto',
-    'ktokolwiek', 'ktoś', 'która', 'które', 'którego', 'której', 'który', 'których', 'którym',
-    'którzy', 'ku', 'lat', 'lecz', 'lub', 'ma', 'mają', 'mam', 'mi', 'mimo', 'między', 'mną', 'mnie',
-    'mnóstwo', 'moi', 'moim', 'moja', 'moje', 'może', 'możliwe', 'można', 'mój', 'mu', 'musi',
-    'my', 'na', 'nad', 'nam', 'nami', 'nas', 'nasi', 'nasz', 'nasza', 'nasze', 'naszego', 'naszych',
-    'natomiast', 'natychmiast', 'nawet', 'nią', 'nic', 'nich', 'nie', 'niech', 'niego', 'niej',
-    'niemu', 'nigdy', 'nim', 'nimi', 'niż', 'no', 'o', 'obok', 'od', 'około', 'on', 'ona', 'one',
-    'oni', 'ono', 'oraz', 'oto', 'owszem', 'pan', 'pana', 'pani', 'po', 'pod', 'podczas', 'pomimo',
-    'ponad', 'ponieważ', 'powinien', 'powinna', 'powinni', 'powinno', 'poza', 'prawie', 'przecież',
-    'przed', 'przede', 'przedtem', 'przez', 'przy', 'roku', 'również', 'sam', 'sama', 'są', 'się',
-    'skąd', 'sobie', 'sobą', 'sposób', 'swoje', 'ta', 'tak', 'taka', 'taki', 'takie', 'także', 'tam',
-    'te', 'tego', 'tej', 'ten', 'teraz', 'też', 'to', 'tobą', 'tobie', 'toteż', 'trzeba', 'tu',
-    'tutaj', 'twoi', 'twoim', 'twoja', 'twoje', 'twym', 'twój', 'ty', 'tych', 'tylko', 'tym',
-    'u', 'w', 'wam', 'wami', 'was', 'wasz', 'wasza', 'wasze', 'we', 'według', 'wiele', 'wielu',
-    'więc', 'więcej', 'wszyscy', 'wszystkich', 'wszystkie', 'wszystkim', 'wszystko', 'wtedy',
-    'wy', 'właśnie', 'z', 'za', 'zapewne', 'zawsze', 'ze', 'zł', 'znowu', 'znów', 'został',
-    'żaden', 'żadna', 'żadne', 'żadnych', 'że', 'żeby'
-}
 
 def load_spacy_model_by_language(selected_language):
     """
     Try to load a spaCy model for the given language. If it fails or doesn't exist, returns None.
-    Also stores the selected language in session state for other functions to use.
     """
-    # Store the selected language in session state
-    st.session_state['selected_language'] = selected_language
-    
     if not spacy_base_available:
         return None
 
@@ -310,6 +199,7 @@ def load_spacy_model_by_language(selected_language):
         return spacy.load(model_name)
     except:
         return None
+
 ################################################################
 #          COST CALCULATION AND SUPPORT FUNCTIONS
 ################################################################
@@ -362,6 +252,7 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
     results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
     
     return results
+
 def add_cost_calculator():
     st.sidebar.markdown("---")
     with st.sidebar.expander("💰 API Cost Calculator", expanded=False):
@@ -449,6 +340,7 @@ def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clu
             **Cost Savings**: If you prefer not to use OpenAI, you can 
             use SentenceTransformers at no cost with decent results.
             """)
+
 ################################################################
 #  SAMPLE CSV GENERATION
 ################################################################
@@ -510,33 +402,17 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
             from textblob import TextBlob
             blob = TextBlob(text.lower())
             noun_phrases = list(blob.noun_phrases)
-            
-            # Get appropriate stopwords for the language
-            selected_language = st.session_state.get('selected_language', 'English')
             try:
-                if selected_language == 'Polish':
-                    try:
-                        stop_words = set(stopwords.words('polish'))
-                    except:
-                        stop_words = POLISH_STOPWORDS
-                else:
-                    stop_words = set(stopwords.words('english'))
+                stop_words = set(stopwords.words('english'))
             except:
                 stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
-                # Add Polish fallback if Polish is selected
-                if selected_language == 'Polish':
-                    stop_words = POLISH_STOPWORDS
             
             words = [w for w in blob.words if len(w) > 1 and w.lower() not in stop_words]
             
             if use_lemmatization:
-                # Skip lemmatization for Polish as WordNet is English-centric
-                if selected_language == 'Polish':
-                    processed_parts = words + noun_phrases
-                else:
-                    lemmatizer = WordNetLemmatizer()
-                    lemmas = [lemmatizer.lemmatize(w) for w in words]
-                    processed_parts = lemmas + noun_phrases
+                lemmatizer = WordNetLemmatizer()
+                lemmas = [lemmatizer.lemmatize(w) for w in words]
+                processed_parts = lemmas + noun_phrases
             else:
                 processed_parts = words + noun_phrases
             
@@ -548,6 +424,7 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
     
     except Exception:
         return text.lower() if isinstance(text, str) else ""
+
 def preprocess_text(text, use_lemmatization=True):
     """
     Basic NLTK-based text preprocessing as a fallback.
@@ -557,33 +434,17 @@ def preprocess_text(text, use_lemmatization=True):
     try:
         text = text.lower()
         tokens = word_tokenize(text)
-        
-        # Try to get language-specific stopwords
-        selected_language = st.session_state.get('selected_language', 'English')
         try:
-            if selected_language == 'Polish':
-                try:
-                    stop_words = set(stopwords.words('polish'))
-                except:
-                    # Fallback to our predefined Polish stopwords
-                    stop_words = POLISH_STOPWORDS
-            else:
-                stop_words = set(stopwords.words('english'))
+            stop_words = set(stopwords.words('english'))
         except:
             stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
-            # Add Polish fallback if Polish is selected
-            if selected_language == 'Polish':
-                stop_words = POLISH_STOPWORDS
         
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
         if use_lemmatization:
             try:
                 lemmatizer = WordNetLemmatizer()
-                # Note: WordNet lemmatizer works best for English
-                # For Polish, we'll just use tokens as-is if lemmatization is selected
-                if selected_language != 'Polish':
-                    tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                tokens = [lemmatizer.lemmatize(t) for t in tokens]
             except:
                 pass
         
@@ -620,6 +481,7 @@ def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
     
     progress_bar.progress(1.0)
     return processed_keywords
+
 ################################################################
 #          EMBEDDING GENERATION
 ################################################################
@@ -712,7 +574,8 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         except Exception as e:
             st.error(f"Error generating embeddings with OpenAI: {str(e)}")
             st.info("Falling back to SentenceTransformers.")
-# Attempt SentenceTransformers if available
+
+    # Attempt SentenceTransformers if available
     if sentence_transformers_available:
         try:
             st.success("Using SentenceTransformer (free fallback).")
@@ -766,6 +629,7 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         st.warning("Generating random vectors as a last resort.")
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
+
 ################################################################
 #          CLUSTERING ALGORITHMS
 ################################################################
@@ -787,6 +651,7 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
     st.info("Refining clusters to improve coherence...")
     # If outlier or merging logic is needed, place it here
     return df
+
 ################################################################
 #          GENERATE CLUSTER NAMES
 ################################################################
@@ -876,6 +741,7 @@ def generate_cluster_names(
                             temperature=0.3,
                             max_tokens=1000
                         )
+                    
                     content = response.choices[0].message.content.strip()
                     
                     # Extract JSON from markdown code blocks if present
@@ -951,21 +817,18 @@ def generate_cluster_names(
     progress_bar.progress(1.0)
     progress_text.text("✅ Cluster naming completed.")
     return results
+    
 ################################################################
 #          SEARCH INTENT CLASSIFICATION
 ################################################################
 
-def extract_features_for_intent(keyword, search_intent_description="", patterns=None):
+def extract_features_for_intent(keyword, search_intent_description=""):
     """
     Extracts features for search intent classification based on keyword patterns.
     Returns a dictionary of features that can be used for classification.
     
     This is a more sophisticated approach than the previous classify_search_intent.
     """
-    # Use default patterns if none provided
-    if patterns is None:
-        patterns = SEARCH_INTENT_PATTERNS
-    
     # Features to extract
     features = {
         "keyword_length": len(keyword.split()),
@@ -999,60 +862,42 @@ def extract_features_for_intent(keyword, search_intent_description="", patterns=
     words = keyword_lower.split()
     if words:
         first_word = words[0]
-        for intent_type, intent_patterns in patterns.items():
-            if any(first_word == prefix.lower() for prefix in intent_patterns["prefixes"]):
+        for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
+            if any(first_word == prefix.lower() for prefix in patterns["prefixes"]):
                 features[f"has_{intent_type.lower()}_prefix"] = True
     
     # Check suffixes 
     if words and len(words) > 1:
         last_word = words[-1]
-        for intent_type, intent_patterns in patterns.items():
-            if any(last_word == suffix.lower() for suffix in intent_patterns["suffixes"]):
+        for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
+            if any(last_word == suffix.lower() for suffix in patterns["suffixes"]):
                 features[f"has_{intent_type.lower()}_suffix"] = True
     
     # Check exact matches
-    for intent_type, intent_patterns in patterns.items():
-        for exact_match in intent_patterns["exact_matches"]:
+    for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
+        for exact_match in patterns["exact_matches"]:
             if exact_match.lower() in keyword_lower:
                 features[f"is_{intent_type.lower()}_exact_match"] = True
                 break
     
     # Check pattern matches
-    for intent_type, intent_patterns in patterns.items():
+    for intent_type, patterns in SEARCH_INTENT_PATTERNS.items():
         match_count = 0
-        for pattern in intent_patterns["keyword_patterns"]:
+        for pattern in patterns["keyword_patterns"]:
             if re.search(pattern, keyword_lower):
                 match_count += 1
         features[f"{intent_type.lower()}_pattern_matches"] = match_count
-# Additional features
-    # Get the right "near me" equivalent based on language
-    selected_language = st.session_state.get('selected_language', 'English')
-    if selected_language == 'Polish':
-        local_terms = ["w pobliżu", "blisko mnie", "w mojej okolicy", "niedaleko", "najbliższy", "lokalny"]
-    else:
-        local_terms = ["near me", "nearby", "in my area", "close to me", "closest", "local"]
     
-    features["local_intent"] = any(term in keyword_lower for term in local_terms)
+    # Additional features
+    features["local_intent"] = any(term in keyword_lower for term in ["near me", "nearby", "in my area", "close to me", "closest", "local"])
+    features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["can", "could", "should", "would", "will", "may", "might"])
+    features["includes_price_modifier"] = any(term in keyword_lower for term in ["price", "cost", "cheap", "expensive", "affordable", "discount", "offer", "deal", "coupon"])
+    features["includes_product_modifier"] = any(term in keyword_lower for term in ["best", "top", "cheap", "premium", "quality", "new", "used", "refurbished", "alternative"])
     
-    # Modal verbs (different for each language)
-    if selected_language == 'Polish':
-        features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["czy", "może", "można", "powinien", "musi", "warto"])
-    else:
-        features["modal_verbs"] = any(modal in keyword_lower.split() for modal in ["can", "could", "should", "would", "will", "may", "might"])
-    
-    # Price modifiers
-    if selected_language == 'Polish':
-        features["includes_price_modifier"] = any(term in keyword_lower for term in ["cena", "koszt", "tani", "tanie", "drogie", "promocja", "oferta", "okazja", "kupon"])
-    else:
-        features["includes_price_modifier"] = any(term in keyword_lower for term in ["price", "cost", "cheap", "expensive", "affordable", "discount", "offer", "deal", "coupon"])
-    
-    # Product modifiers
-    if selected_language == 'Polish':
-        features["includes_product_modifier"] = any(term in keyword_lower for term in ["najlepszy", "najlepsze", "top", "tani", "premium", "jakość", "nowy", "używany", "odnowiony", "alternatywa"])
-    else:
-        features["includes_product_modifier"] = any(term in keyword_lower for term in ["best", "top", "cheap", "premium", "quality", "new", "used", "refurbished", "alternative"])
+    # Include any brand names detection here if needed
     
     return features
+
 def classify_search_intent_ml(keywords, search_intent_description="", cluster_name=""):
     """
     Enhanced search intent classification using a ML-inspired approach
@@ -1073,23 +918,10 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
             "evidence": {}
         }
     
-    # Determine language patterns to use based on session state
-    selected_language = st.session_state.get('selected_language', 'English')
-    
-    # Use language-specific patterns if available
-    if selected_language == 'Polish':
-        # Check if Polish patterns are defined
-        if 'POLISH_SEARCH_INTENT_PATTERNS' in globals():
-            patterns = POLISH_SEARCH_INTENT_PATTERNS
-        else:
-            patterns = SEARCH_INTENT_PATTERNS  # fallback to English patterns
-    else:
-        patterns = SEARCH_INTENT_PATTERNS
-    
     # Extract features for all keywords
     all_features = []
     for keyword in keywords[:min(len(keywords), 20)]:  # Limit to first 20 keywords for performance
-        features = extract_features_for_intent(keyword, search_intent_description, patterns)
+        features = extract_features_for_intent(keyword, search_intent_description)
         all_features.append(features)
     
     # Aggregate features
@@ -1149,17 +981,18 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
             commercial_signals.append(f"Matches {features['commercial_pattern_matches']} commercial patterns")
         if features["includes_product_modifier"]:
             commercial_signals.append("Includes product comparison term")
-# Calculate scores based on unique signals
+    
+    # Calculate scores based on unique signals
     info_signals = set(informational_signals)
     nav_signals = set(navigational_signals)
     trans_signals = set(transactional_signals)
     comm_signals = set(commercial_signals)
     
     # Calculate relative proportions (with weighting)
-    info_weight = patterns["Informational"]["weight"]
-    nav_weight = patterns["Navigational"]["weight"]
-    trans_weight = patterns["Transactional"]["weight"]
-    comm_weight = patterns["Commercial"]["weight"]
+    info_weight = SEARCH_INTENT_PATTERNS["Informational"]["weight"]
+    nav_weight = SEARCH_INTENT_PATTERNS["Navigational"]["weight"]
+    trans_weight = SEARCH_INTENT_PATTERNS["Transactional"]["weight"]
+    comm_weight = SEARCH_INTENT_PATTERNS["Commercial"]["weight"]
     
     info_score = len(info_signals) * info_weight
     nav_score = len(nav_signals) * nav_weight
@@ -1229,6 +1062,7 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
         "scores": scores,
         "evidence": evidence
     }
+
 def analyze_cluster_for_intent_flow(df, cluster_id):
     """
     Following SEJ's recommendation to map customer journey through analysis of
@@ -1291,6 +1125,7 @@ def analyze_cluster_for_intent_flow(df, cluster_id):
         "journey_phase": journey_phase,
         "keyword_sample": [{"keyword": k["keyword"], "intent": k["primary_intent"]} for k in keyword_intents[:10]]
     }
+
 ################################################################
 #          CLUSTER SEMANTIC ANALYSIS
 ################################################################
@@ -1403,24 +1238,27 @@ def generate_semantic_analysis(
                             for item in json_data["clusters"]:
                                 c_id = item.get("cluster_id")
                                 if c_id is not None:
-                                    # Robust cluster_id cleaning and conversion
+                                    # Limpieza y conversión robusta de cluster_id
                                     try:
-                                        # If it's a string, try to clean and convert
+                                        # Si es una cadena, intentamos limpiarla y convertirla
                                         if isinstance(c_id, str):
-                                            # Remove spaces and non-numeric characters
+                                            # Eliminar espacios y caracteres no numéricos
                                             c_id_clean = ''.join(filter(str.isdigit, c_id.strip()))
                                             if c_id_clean:
                                                 c_id = int(c_id_clean)
                                             else:
+                                                st.warning(f"Cluster ID no válido: '{c_id}' - no contiene dígitos")
                                                 continue
-                                        # If it's already a number, use it directly
+                                        # Si ya es un número, usarlo directamente
                                         elif isinstance(c_id, (int, float)):
                                             c_id = int(c_id)
                                         else:
+                                            st.warning(f"Tipo de cluster_id no soportado: {type(c_id)}")
                                             continue
                                         
-                                        # Verify it's a valid and existing cluster ID
+                                        # Verificar que sea un ID de cluster válido y existente
                                         if c_id not in clusters_with_representatives:
+                                            st.warning(f"ID de cluster {c_id} no existe en los datos")
                                             continue
                                         
                                         search_intent = item.get("search_intent", "")
@@ -1446,6 +1284,7 @@ def generate_semantic_analysis(
                                             "intent_classification": intent_classification
                                         }
                                     except Exception as e:
+                                        st.warning(f"Error al procesar cluster_id: {str(e)}")
                                         continue
                             
                             # If we got good results, break the retry loop
@@ -1556,6 +1395,7 @@ def generate_semantic_analysis(
     progress_bar.progress(1.0)
     progress_text.text("✅ Semantic analysis completed.")
     return results
+
 ################################################################
 #          EVALUATION FUNCTIONS
 ################################################################
@@ -1638,6 +1478,7 @@ def calculate_cluster_coherence(cluster_embeddings):
     except Exception as e:
         # If anything goes wrong, return default value
         return 1.0
+
 def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     """
     Performs AI-powered analysis of clusters using OpenAI's API.
@@ -1688,6 +1529,7 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     except Exception as e:
         st.error(f"Error in cluster evaluation: {str(e)}")
         return {}
+
 ################################################################
 #          MAIN CLUSTERING PIPELINE
 ################################################################
@@ -1744,7 +1586,8 @@ def run_clustering(
     
     # Attempt to load spaCy model for selected language
     spacy_nlp = load_spacy_model_by_language(selected_language)
-try:
+
+    try:
         # Load CSV according to user's choice
         if csv_format == "no_header":
             # No header, one column
@@ -1816,7 +1659,8 @@ try:
         else:
             keyword_embeddings_reduced = keyword_embeddings
             st.info(f"No PCA needed (dimension is {keyword_embeddings.shape[1]}).")
-# Clustering
+        
+        # Clustering
         st.subheader("Advanced Semantic Clustering")
         cluster_labels = improved_clustering(keyword_embeddings_reduced, num_clusters=num_clusters)
         df["cluster_id"] = cluster_labels
@@ -1858,6 +1702,7 @@ try:
                 cluster_kws = df[df['cluster_id'] == cnum]['keyword'].tolist()
                 clusters_with_representatives[cnum] = cluster_kws[:min(20, len(cluster_kws))]
             st.warning("Using a basic fallback for representatives.")
+        
         # Generate cluster names
         if client:
             st.subheader("Generating Cluster Names & Descriptions (SEO-focused)")
@@ -1919,81 +1764,12 @@ try:
         
         return True, df
     
-# Generate customer journey analysis if available
-                journey_phases = []
-                for c_id, data in self.cluster_evaluation.items():
-                    if 'intent_flow' in data:
-                        journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
-                        cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
-                        count = len(self.df[self.df['cluster_id'] == c_id])
-                        
-                        journey_phases.append({
-                            'cluster_id': c_id,
-                            'cluster_name': cluster_name,
-                            'journey_phase': journey_phase,
-                            'count': count
-                        })
-                
-                if journey_phases:
-                    try:
-                        doc_elements.append(PageBreak())
-                        doc_elements.append(Paragraph(self.translations["customer_journey_analysis"], self.custom_styles['Subtitle']))
-                        doc_elements.append(Spacer(1, 0.1*inch))
-                        
-                        # Count clusters in each journey phase
-                        phase_counts = Counter([item['journey_phase'] for item in journey_phases])
-                        
-                        # Create journey phase visualization
-                        phase_order = [
-                            self.translations["early_phase"], 
-                            "Research-to-Consideration Transition",
-                            self.translations["middle_phase"], 
-                            "Consideration-to-Purchase Transition",
-                            self.translations["late_phase"],
-                            "Mixed Journey Stages",
-                            "Unknown"
-                        ]
-                        
-                        # Filter to only phases that exist in our data
-                        phase_order = [phase for phase in phase_order if phase in phase_counts]
-                        
-                        phase_colors = {
-                            self.translations["early_phase"]: "#43a047",
-                            "Research-to-Consideration Transition": "#26a69a",
-                            self.translations["middle_phase"]: "#1e88e5",
-                            "Consideration-to-Purchase Transition": "#7b1fa2",
-                            self.translations["late_phase"]: "#ff9800",
-                            "Mixed Journey Stages": "#757575",
-                            "Unknown": "#9e9e9e"
-                        }
-                        
-                        phases = list(phase_counts.keys())
-                        counts = list(phase_counts.values())
-                        
-                        fig4 = go.Figure(data=[
-                            go.Bar(
-                                x=phases,
-                                y=counts,
-                                marker=dict(
-                                    color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
-                                )
-                            )
-                        ])
-                        
-                        fig4.update_layout(
-                            title=self.translations["journey_phase_distribution"],
-                            xaxis_title="Journey Phase",
-                            yaxis_title=self.translations["num_keywords"],
-                            margin=dict(l=50, r=50, t=70, b=150),
-                            height=600
-                        )
-                        
-                        img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
-                        if img4:
-                            doc_elements.append(img4)
-                        doc_elements.append(Spacer(1, 0.2*inch))
-                    except Exception as e:
-                        doc_elements.append(Paragraph(f"Error generating journey analysis: {str(e)}", self.custom_styles['Normal']))
+    except Exception as e:
+        st.error(f"Error in the clustering pipeline: {str(e)}")
+        return False, None
+    
+    return True, None
+
 ################################################################
 #          MAIN STREAMLIT APP
 ################################################################
@@ -2008,6 +1784,7 @@ st.set_page_config(
         'About': 'Advanced semantic keyword clustering tool using NLP and OpenAI.'
     }
 )
+
 st.markdown("""
 <style>
     .main-header {
@@ -2144,6 +1921,7 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
 st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
 st.markdown("""
 This application clusters semantically similar keywords using advanced NLP and clustering methods.
@@ -2176,6 +1954,7 @@ with st.expander("CSV Format Info", expanded=False):
 
 If you pick the wrong format, the first row might be interpreted incorrectly.
 """)
+
 # Button to download sample CSV template
 sample_csv_button = st.sidebar.button("Download Sample CSV Template")
 if sample_csv_button:
@@ -2209,20 +1988,13 @@ language_options = [
     "English", "Spanish", "French", "German", "Dutch", 
     "Korean", "Japanese", "Italian", "Portuguese", 
     "Brazilian Portuguese", "Swedish", "Norwegian", 
-    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
-    "Polish"  # Added Polish to the language options
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian"
 ]
 selected_language = st.sidebar.selectbox(
     "Select language of the CSV",
     options=language_options,
-    index=0,
-    key="language_selectbox"  # Add a key for improved state management
+    index=0
 )
-
-# Store the selected language in session state
-if 'selected_language' not in st.session_state:
-    st.session_state['selected_language'] = "English"
-st.session_state['selected_language'] = selected_language
 
 if openai_available:
     if openai_api_key:
@@ -2237,6 +2009,7 @@ else:
         st.sidebar.info("OpenAI not installed - using SentenceTransformers.")
     else:
         st.sidebar.error("No advanced embedding method - fallback TF-IDF only.")
+
 st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
 
 with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
@@ -2283,86 +2056,13 @@ user_prompt = st.sidebar.text_area(
 )
 
 add_cost_calculator()
-# Optional Polish Support Testing Function
-def test_polish_support():
-    """
-    Function to test Polish language support components
-    """
-    if st.sidebar.checkbox("Test Polish Support", False):
-        st.subheader("Polish Language Support Test")
-        
-        # Test language selection
-        st.write("1. Language Selection:")
-        st.write(f"Selected language: {st.session_state.get('selected_language', 'Not set')}")
-        
-        # Test spaCy model loading
-        st.write("2. spaCy Model Test:")
-        try:
-            if spacy_base_available:
-                spacy_model = load_spacy_model_by_language("Polish")
-                if spacy_model:
-                    st.success("✅ Polish spaCy model loaded successfully")
-                else:
-                    st.warning("Polish spaCy model could not be loaded")
-            else:
-                st.warning("spaCy is not available")
-        except Exception as e:
-            st.error(f"Error testing spaCy model: {str(e)}")
-        
-        # Test stopwords
-        st.write("3. Polish Stopwords Test:")
-        try:
-            try:
-                polish_stopwords = set(stopwords.words('polish'))
-                st.success(f"✅ NLTK Polish stopwords loaded: {len(polish_stopwords)} words")
-                st.write(f"Sample stopwords: {list(polish_stopwords)[:10]}")
-            except:
-                st.warning("NLTK Polish stopwords not available.")
-                if 'POLISH_STOPWORDS' in globals():
-                    st.success(f"✅ Fallback Polish stopwords available: {len(POLISH_STOPWORDS)} words")
-                    st.write(f"Sample stopwords: {list(POLISH_STOPWORDS)[:10]}")
-                else:
-                    st.error("No Polish stopwords available")
-        except Exception as e:
-            st.error(f"Error testing stopwords: {str(e)}")
-        
-        # Test preprocessing
-        st.write("4. Preprocessing Test:")
-        test_text = "Jak znaleźć najlepsze buty do biegania w Polsce"
-        st.write(f"Original: {test_text}")
-        
-        processed_basic = preprocess_text(test_text, use_lemmatization=True)
-        st.write(f"Basic preprocessing: {processed_basic}")
-        
-        if spacy_base_available:
-            spacy_model = load_spacy_model_by_language("Polish")
-            if spacy_model:
-                processed_advanced = enhanced_preprocessing(test_text, True, spacy_model)
-                st.write(f"Enhanced preprocessing: {processed_advanced}")
-        
-        # Test intent classification
-        st.write("5. Search Intent Classification Test:")
-        test_keywords = [
-            "jak zrobić tort czekoladowy",
-            "najlepsze smartfony 2025",
-            "kup buty nike",
-            "allegro login",
-            "buty do biegania porównanie"
-        ]
-        
-        for kw in test_keywords:
-            intent_data = classify_search_intent_ml([kw])
-            st.write(f"Keyword: {kw} → Intent: {intent_data['primary_intent']}")
-
-# Add the Polish support test if needed
-if selected_language == "Polish":
-    test_polish_support()
 
 # Session states
 if 'process_complete' not in st.session_state:
     st.session_state.process_complete = False
 if 'df_results' not in st.session_state:
     st.session_state.df_results = None
+
 # Trigger process
 if uploaded_file is not None and not st.session_state.process_complete:
     col1, col2, col3 = st.columns([1,2,1])
@@ -2426,7 +2126,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             color_continuous_scale=px.colors.sequential.Greens
         )
         st.plotly_chart(fig2, use_container_width=True)
-# Visualization based on AI Coherence Scores
+        
+        # Visualization based on AI Coherence Scores
         if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
             eval_data = st.session_state.cluster_evaluation
             ai_coherence_data = []
@@ -2441,8 +2142,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 # Get search volume if available
                 if 'search_volume' in df.columns:
-                    df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
-                    search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
+                        df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
+                        search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
                 else:
                     search_volume = count * 100  # Default estimate for visualization scaling
                 
@@ -2501,21 +2202,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             'search_volume': 'Search Volume'
                         },
                         title='Clusters by Coherence, Size, and Search Intent',
-                        color_discrete
-                        fig3 = px.scatter(
-                        ai_df,
-                        x='coherence_score',
-                        y='count',
-                        color='primary_intent',
-                        size='search_volume',
-                        hover_name='label',
-                        labels={
-                            'coherence_score': 'AI Coherence Score (0-10)',
-                            'count': 'Number of Keywords',
-                            'primary_intent': 'Search Intent',
-                            'search_volume': 'Search Volume'
-                        },
-                        title='Clusters by Coherence, Size, and Search Intent',
                         color_discrete_map=intent_colors
                     )
                     
@@ -2537,11 +2223,12 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     The most valuable clusters are typically those with high coherence scores (right side) and substantial keyword volume (upper area).
                     Clusters with low coherence might benefit from being split into more focused sub-clusters.
                     """)
-                    with intent_viz_tabs[1]:
+                
+                with intent_viz_tabs[1]:
                     st.subheader("Customer Journey Analysis")
                     
                     # Count clusters in each journey phase
-                    phase_counts = Counter([item['journey_phase'] for item in ai_coherence_data])
+                    phase_counts = Counter(ai_df['journey_phase'])
                     
                     # Create journey phase visualization
                     phase_order = [
@@ -2590,7 +2277,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     )
                     
                     st.plotly_chart(fig_journey, use_container_width=True)
-# Journey sankey diagram - shows flow from intent to journey phase
+                    
+                    # Journey sankey diagram - shows flow from intent to journey phase
                     from collections import defaultdict
                     
                     # Create source-target pairs for Sankey
@@ -2628,19 +2316,19 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             node_colors.append('#9e9e9e')  # Default gray
                     
                     # Create Sankey diagram
-                    if source and target and value:  # Only if we have data
-                        fig_sankey = go.Figure(data=[go.Sankey(
-                            node=dict(
-                                pad=15,
-                                thickness=20,
-                                line=dict(color="black", width=0.5),
-                                label=node_labels,
-                                color=node_colors
-                            ),
-                            link=dict(
-                                source=source,
-                                target=target,
-                                value=value
+                        if source and target and value:  # Only if we have data
+                            fig_sankey = go.Figure(data=[go.Sankey(
+                                node=dict(
+                                    pad=15,
+                                    thickness=20,
+                                    line=dict(color="black", width=0.5),
+                                    label=node_labels,
+                                    color=node_colors
+                                ),
+                                link=dict(
+                                    source=source,
+                                    target=target,
+                                    value=value
                             )
                         )])
                         
@@ -2664,7 +2352,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     
                     Mapping your content to these journey phases helps create targeted content that meets users where they are.
                     """)
-with intent_viz_tabs[2]:
+                
+                with intent_viz_tabs[2]:
                     st.subheader("Search Intent Distribution")
                     
                     # Create data for pie chart
@@ -2737,7 +2426,8 @@ with intent_viz_tabs[2]:
             for _, row in df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].iterrows()
         ]
         selected_cluster = st.selectbox("Select a cluster:", cluster_options)
-if selected_cluster:
+        
+        if selected_cluster:
             cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             cluster_df = df[df['cluster_id'] == cid].copy()
             
@@ -2757,7 +2447,8 @@ if selected_cluster:
                 if reps:
                     st.markdown("**Representative Keywords:**")
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in reps[:10]]) + "</ul>", unsafe_allow_html=True)
-# If AI-based suggestions / semantic analysis is available
+            
+            # If AI-based suggestions / semantic analysis is available
             if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                 ai_eval = st.session_state.cluster_evaluation
                 if cid in ai_eval:
@@ -2807,7 +2498,8 @@ if selected_cluster:
                                 evidence_list += f"<li>{e}</li>"
                             evidence_list += "</ul>"
                             st.markdown(evidence_list, unsafe_allow_html=True)
-# Show all scores as a visualization
+                        
+                        # Show all scores as a visualization
                         if scores:
                             intents = list(scores.keys())
                             values = list(scores.values())
@@ -2877,7 +2569,8 @@ if selected_cluster:
                                     st.markdown(f"<span class='keyword-example'>{kw}</span>", unsafe_allow_html=True)
                             else:
                                 st.markdown("No clear examples found")
-# Tab 2: Customer Journey Analysis
+                    
+                    # Tab 2: Customer Journey Analysis
                     with analysis_tabs[1]:
                         st.subheader("Customer Journey Analysis")
                         
@@ -2954,6 +2647,7 @@ if selected_cluster:
                             """)
                         else:
                             st.info("Customer journey analysis not available for this cluster.")
+                    
                     # Tab 3: Cluster Analysis (Split Suggestions)
                     with analysis_tabs[2]:
                         st.subheader("Cluster Analysis")
@@ -2996,7 +2690,9 @@ if selected_cluster:
                         # Show full split suggestion text
                         st.markdown("**Full Split Analysis:**")
                         st.markdown(f"{split_suggestion}")
-# Tab 4: SEO Insights
+                        
+                    
+                    # Tab 4: SEO Insights
                     with analysis_tabs[3]:
                         st.subheader("SEO Insights & Opportunities")
                         
@@ -3053,7 +2749,8 @@ if selected_cluster:
                                 )
                         
                         st.markdown(info_with_highlights, unsafe_allow_html=True)
-# Display search intent-based content recommendations
+                        
+                        # Display search intent-based content recommendations
                         st.markdown("### Content Recommendations by Search Intent")
                         
                         primary_intent = ai_eval[cid].get('intent_classification', {}).get('primary_intent', 'Unknown')
@@ -3133,7 +2830,8 @@ if selected_cluster:
                 st.dataframe(cluster_df[['keyword', 'search_volume']].sort_values(by='search_volume', ascending=False), use_container_width=True)
             else:
                 st.dataframe(cluster_df[['keyword']], use_container_width=True)
-with st.expander("Download Results"):
+    
+    with st.expander("Download Results"):
         csv_data = df.to_csv(index=False)
         st.download_button(
             label="Download Full Results (CSV)",
@@ -3143,7 +2841,7 @@ with st.expander("Download Results"):
             use_container_width=True
         )
         
-    # Add PDF export button if available
+ # Add PDF export button if available
     if pdf_export_available:
         st.markdown("---")
         st.markdown("### Export Complete Report")
@@ -3153,6 +2851,7 @@ with st.expander("Download Results"):
         add_pdf_export_button(df, cluster_evaluation)
     else:
         st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
+
         
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
@@ -3164,7 +2863,8 @@ with st.expander("Download Results"):
             summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
             summary_df.drop('cluster_id', axis=1, inplace=True)
             summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
-            # Merge coherence
+        
+        # Merge coherence
         coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
@@ -3212,6 +2912,7 @@ with st.expander("Download Results"):
             mime="text/csv",
             use_container_width=True
         )
+
 if 'process_complete' in st.session_state and st.session_state.process_complete:
     if st.button("Reset", use_container_width=True):
         st.session_state.process_complete = False
@@ -3247,6 +2948,7 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     
     Understanding where your keywords fit in this journey helps create targeted content.
     """)
+
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #888;">
