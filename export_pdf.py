@@ -18,7 +18,7 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 from PIL import Image as PILImage
 from collections import Counter
-
+import time  # Added for retry logic
 class PDFReport:
     """
     Class for generating PDF reports from clustering results
@@ -33,8 +33,16 @@ class PDFReport:
         self.translations = self._get_translations()
         self.custom_styles = {}  # Store custom styles separately
         self.setup_custom_styles()
-        
-    def _get_translations(self):
+    
+    def __del__(self):
+        """Cleanup temp files when object is destroyed"""
+        try:
+            import shutil
+            if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+                shutil.rmtree(self.temp_dir)
+        except:
+            pass  # Suppress errors during cleanup
+def _get_translations(self):
         """Get translations dictionary based on language"""
         translations = {
             "en": {
@@ -82,7 +90,7 @@ class PDFReport:
                 "middle_phase": "Middle (Consideration Phase)",
                 "late_phase": "Late (Purchase Phase)"
             },
-            "es": {
+"es": {
                 "report_title": "Informe de Resultados",
                 "generated_on": "Generado el",
                 "total_keywords": "Total de Keywords",
@@ -131,8 +139,7 @@ class PDFReport:
         
         # Default to English if language not available
         return translations.get(self.language, translations["en"])
-        
-    def setup_custom_styles(self):
+def setup_custom_styles(self):
         """Create custom styles for PDF elements"""
         # Create custom styles without adding them to the stylesheet yet
         self.custom_styles['Title'] = ParagraphStyle(
@@ -173,21 +180,45 @@ class PDFReport:
             textColor=colors.darkblue,
             fontName='Helvetica-Bold'
         )
-    
-    def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None):
-        """Convert Plotly figure to ReportLab Image"""
+def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max_retries=3):
+        """Convert Plotly figure to ReportLab Image with retry logic"""
         if filename is None:
             filename = f"temp_plot_{np.random.randint(10000)}.png"
         
         # Save the figure as a PNG file
         img_path = os.path.join(self.temp_dir, filename)
-        pio.write_image(fig, img_path, format='png', width=900, height=500, scale=2)
         
-        # Create ReportLab Image
-        img = Image(img_path, width=width, height=height)
-        return img
-    
-    def generate_summary_page(self, doc_elements):
+        # Add retry logic for more resilience
+        for retry in range(max_retries):
+            try:
+                # Adjust figure layout for better PDF rendering
+                fig.update_layout(
+                    margin=dict(l=50, r=50, t=70, b=150),
+                    font=dict(size=10)  # Smaller font for PDF
+                )
+                
+                # Write with increased timeout for complex charts
+                pio.write_image(fig, img_path, format='png', width=900, height=500, scale=2, engine='kaleido')
+                
+                # Create ReportLab Image
+                img = Image(img_path, width=width, height=height)
+                return img
+            
+            except Exception as e:
+                if retry < max_retries - 1:
+                    time.sleep(1)  # Wait before retrying
+                    continue
+                else:
+                    # On final failure, create a placeholder
+                    try:
+                        # Create a simple placeholder image
+                        placeholder = PILImage.new('RGB', (900, 500), color=(240, 240, 240))
+                        placeholder.save(img_path)
+                        return Image(img_path, width=width, height=height)
+                    except:
+                        # If even the placeholder fails, return None and handle it in the calling function
+                        return None
+def generate_summary_page(self, doc_elements):
         """Generate the summary page"""
         # Title
         doc_elements.append(Paragraph(f"{self.app_name} - {self.translations['report_title']}", self.custom_styles['Title']))
@@ -209,394 +240,444 @@ class PDFReport:
         
         # Add search volume if available
         if 'search_volume' in self.df.columns:
-            total_volume = self.df['search_volume'].sum()
-            summary_text.append(f"{self.translations['total_search_volume']}: {total_volume:,}")
+            try:
+                total_volume = self.df['search_volume'].sum()
+                summary_text.append(f"{self.translations['total_search_volume']}: {total_volume:,}")
+            except:
+                pass  # Skip if there's an error calculating sum
         
         for text in summary_text:
             doc_elements.append(Paragraph(text, self.custom_styles['Normal']))
         
         doc_elements.append(Spacer(1, 0.2*inch))
         return doc_elements
-    
-    def generate_cluster_distribution_chart(self, doc_elements):
+def generate_cluster_distribution_chart(self, doc_elements):
         """Generate cluster distribution chart for the PDF"""
         doc_elements.append(Paragraph(self.translations["cluster_distribution"], self.custom_styles['Subtitle']))
         doc_elements.append(Spacer(1, 0.1*inch))
         
-        # Create a Plotly figure
-        cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
-        cluster_sizes['label'] = cluster_sizes.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
-        
-        fig = go.Figure(data=[
-            go.Bar(
-                x=cluster_sizes['label'],
-                y=cluster_sizes['count'],
-                marker_color='royalblue'
+        try:
+            # Create a Plotly figure
+            cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
+            
+            # Limit to top 20 clusters for PDF if too many
+            if len(cluster_sizes) > 20:
+                cluster_sizes = cluster_sizes.sort_values('count', ascending=False).head(20)
+                doc_elements.append(Paragraph(
+                    "Showing top 20 clusters by size. See the application for the complete visualization.", 
+                    self.custom_styles['SmallText']
+                ))
+            
+            # Shorten labels for readability
+            cluster_sizes['label'] = cluster_sizes.apply(
+                lambda x: f"{x['cluster_name'][:25]}{'...' if len(x['cluster_name']) > 25 else ''} (ID: {x['cluster_id']})", 
+                axis=1
             )
-        ])
-        
-        fig.update_layout(
-            title=self.translations["cluster_size_title"],
-            xaxis_title=self.translations["cluster"],
-            yaxis_title=self.translations["num_keywords"],
-            margin=dict(l=50, r=50, t=70, b=200),  # Adjust margins for better label display
-            xaxis_tickangle=-45,  # Rotate x-axis labels
-            height=600  # Set figure height
-        )
-        
-        # Convert the figure to an image and add to document
-        img = self.plotly_to_image(fig, filename="cluster_distribution.png")
-        doc_elements.append(img)
-        doc_elements.append(Spacer(1, 0.2*inch))
-        
-        # Add semantic coherence chart if available
-        if 'cluster_coherence' in self.df.columns:
-            doc_elements.append(Paragraph(self.translations["semantic_coherence"], self.custom_styles['Subtitle']))
-            doc_elements.append(Spacer(1, 0.1*inch))
-            
-            coherence_data = self.df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
-            coherence_data['label'] = coherence_data.apply(lambda x: f"{x['cluster_name']} (ID: {x['cluster_id']})", axis=1)
-            
-            fig2 = go.Figure(data=[
-                go.Bar(
-                    x=coherence_data['label'],
-                    y=coherence_data['cluster_coherence'],
-                    marker=dict(
-                        color=coherence_data['cluster_coherence'],
-                        colorscale='Viridis'
-                    )
-                )
-            ])
-            
-            fig2.update_layout(
-                title=self.translations["coherence_by_cluster"],
-                xaxis_title=self.translations["cluster"],
-                yaxis_title=self.translations["coherence"],
-                margin=dict(l=50, r=50, t=70, b=200),
-                xaxis_tickangle=-45,
-                height=600
-            )
-            
-            img2 = self.plotly_to_image(fig2, filename="coherence_distribution.png")
-            doc_elements.append(img2)
-            doc_elements.append(Paragraph(self.translations["coherence_description"], self.custom_styles['Normal']))
-            doc_elements.append(Spacer(1, 0.2*inch))
-        
-        return doc_elements
-    
-    def generate_search_intent_charts(self, doc_elements):
-        """Generate search intent charts if intent data is available"""
-        if not self.cluster_evaluation:
-            return doc_elements
-        
-        doc_elements.append(Paragraph(self.translations["search_intent_analysis"], self.custom_styles['Subtitle']))
-        doc_elements.append(Spacer(1, 0.1*inch))
-        
-        # Collect intent data from all clusters
-        intent_data = []
-        for c_id, data in self.cluster_evaluation.items():
-            if 'intent_classification' in data:
-                cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
-                primary_intent = data['intent_classification'].get('primary_intent', 'Unknown')
-                count = len(self.df[self.df['cluster_id'] == c_id])
-                
-                # Get scores if available
-                scores = data['intent_classification'].get('scores', {})
-                
-                intent_data.append({
-                    'cluster_id': c_id,
-                    'cluster_name': cluster_name,
-                    'primary_intent': primary_intent,
-                    'count': count,
-                    'informational_score': scores.get('Informational', 0),
-                    'navigational_score': scores.get('Navigational', 0),
-                    'transactional_score': scores.get('Transactional', 0),
-                    'commercial_score': scores.get('Commercial', 0)
-                })
-        
-        if intent_data:
-            # Create intent distribution pie chart
-            intent_counts = {}
-            for item in intent_data:
-                intent_counts[item['primary_intent']] = intent_counts.get(item['primary_intent'], 0) + item['count']
-            
-            labels = list(intent_counts.keys())
-            values = list(intent_counts.values())
-            
-            intent_colors = {
-                'Informational': 'rgb(33, 150, 243)',
-                'Navigational': 'rgb(76, 175, 80)',
-                'Transactional': 'rgb(255, 152, 0)',
-                'Commercial': 'rgb(156, 39, 176)',
-                'Mixed Intent': 'rgb(158, 158, 158)',
-                'Unknown': 'rgb(158, 158, 158)'
-            }
-            
-            colors = [intent_colors.get(label, 'rgb(158, 158, 158)') for label in labels]
             
             fig = go.Figure(data=[
-                go.Pie(
-                    labels=labels, 
-                    values=values, 
-                    marker_colors=colors,
-                    textinfo='label+percent'
+                go.Bar(
+                    x=cluster_sizes['label'],
+                    y=cluster_sizes['count'],
+                    marker_color='royalblue'
                 )
             ])
             
             fig.update_layout(
-                title=self.translations["intent_distribution"],
-                margin=dict(l=50, r=50, t=70, b=50),
-                height=500
-            )
-            
-            # Convert the figure to an image and add to document
-            img = self.plotly_to_image(fig, filename="intent_distribution.png")
-            doc_elements.append(img)
-            doc_elements.append(Spacer(1, 0.2*inch))
-            
-            # Create bar chart showing intent by cluster
-            df_intent = pd.DataFrame(intent_data)
-            
-            # Limit to top 10 clusters for readability if needed
-            if len(df_intent) > 10:
-                df_intent = df_intent.sort_values('count', ascending=False).head(10)
-            
-            fig2 = go.Figure()
-            
-            for intent in intent_counts.keys():
-                df_filtered = df_intent[df_intent['primary_intent'] == intent]
-                if not df_filtered.empty:
-                    fig2.add_trace(go.Bar(
-                        x=df_filtered['cluster_name'],
-                        y=df_filtered['count'],
-                        name=intent,
-                        marker_color=intent_colors.get(intent, 'rgb(158, 158, 158)')
-                    ))
-            
-            fig2.update_layout(
-                title=self.translations["intent_by_cluster"],
+                title=self.translations["cluster_size_title"],
                 xaxis_title=self.translations["cluster"],
                 yaxis_title=self.translations["num_keywords"],
-                barmode='stack',
-                margin=dict(l=50, r=50, t=70, b=150),
-                xaxis_tickangle=-45,
-                height=600,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
+                margin=dict(l=50, r=50, t=70, b=200),  # Adjust margins for better label display
+                xaxis_tickangle=-45,  # Rotate x-axis labels
+                height=600  # Set figure height
             )
             
             # Convert the figure to an image and add to document
-            img2 = self.plotly_to_image(fig2, filename="intent_by_cluster.png")
-            doc_elements.append(img2)
-            
-            # NEW: Add intent score distribution chart
-            doc_elements.append(PageBreak())
-            doc_elements.append(Paragraph(self.translations["intent_score_distribution"], self.custom_styles['Subtitle']))
-            
-            # Create data for the heatmap
-            top_clusters = df_intent.sort_values('count', ascending=False).head(8)  # Limit to top 8 for readability
-            
-            # Create a stacked bar chart for intent scores
-            fig3 = go.Figure()
-            cluster_names = top_clusters['cluster_name'].tolist()
-            
-            # Add each intent type as a separate bar
-            fig3.add_trace(go.Bar(
-                x=cluster_names,
-                y=top_clusters['informational_score'],
-                name='Informational',
-                marker_color=intent_colors['Informational']
-            ))
-            
-            fig3.add_trace(go.Bar(
-                x=cluster_names,
-                y=top_clusters['commercial_score'],
-                name='Commercial',
-                marker_color=intent_colors['Commercial']
-            ))
-            
-            fig3.add_trace(go.Bar(
-                x=cluster_names,
-                y=top_clusters['transactional_score'],
-                name='Transactional',
-                marker_color=intent_colors['Transactional']
-            ))
-            
-            fig3.add_trace(go.Bar(
-                x=cluster_names,
-                y=top_clusters['navigational_score'],
-                name='Navigational',
-                marker_color=intent_colors['Navigational']
-            ))
-            
-            fig3.update_layout(
-                title=self.translations["intent_score_distribution"],
-                xaxis_title=self.translations["cluster"],
-                yaxis_title='Intent Score (%)',
-                barmode='group',
-                margin=dict(l=50, r=50, t=70, b=150),
-                xaxis_tickangle=-45,
-                height=600,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
-            )
-            
-            img3 = self.plotly_to_image(fig3, filename="intent_scores.png")
-            doc_elements.append(img3)
-            
-            # Generate customer journey analysis if available
-            journey_phases = []
-            for c_id, data in self.cluster_evaluation.items():
-                if 'intent_flow' in data:
-                    journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
-                    cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
-                    count = len(self.df[self.df['cluster_id'] == c_id])
-                    
-                    journey_phases.append({
-                        'cluster_id': c_id,
-                        'cluster_name': cluster_name,
-                        'journey_phase': journey_phase,
-                        'count': count
-                    })
-            
-            if journey_phases:
-                doc_elements.append(PageBreak())
-                doc_elements.append(Paragraph(self.translations["customer_journey_analysis"], self.custom_styles['Subtitle']))
+            img = self.plotly_to_image(fig, filename="cluster_distribution.png")
+            if img:
+                doc_elements.append(img)
+            doc_elements.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            doc_elements.append(Paragraph(f"Error generating cluster distribution chart: {str(e)}", self.custom_styles['Normal']))
+# Add semantic coherence chart if available
+        if 'cluster_coherence' in self.df.columns:
+            try:
+                doc_elements.append(Paragraph(self.translations["semantic_coherence"], self.custom_styles['Subtitle']))
                 doc_elements.append(Spacer(1, 0.1*inch))
                 
-                # Count clusters in each journey phase
-                phase_counts = Counter([item['journey_phase'] for item in journey_phases])
+                coherence_data = self.df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
                 
-                # Create journey phase visualization
-                phase_order = [
-                    self.translations["early_phase"], 
-                    "Research-to-Consideration Transition",
-                    self.translations["middle_phase"], 
-                    "Consideration-to-Purchase Transition",
-                    self.translations["late_phase"],
-                    "Mixed Journey Stages",
-                    "Unknown"
-                ]
+                # Limit to top 20 clusters for PDF if too many
+                if len(coherence_data) > 20:
+                    coherence_data = coherence_data.sort_values('cluster_coherence', ascending=False).head(20)
+                    doc_elements.append(Paragraph(
+                        "Showing top 20 clusters by coherence. See the application for the complete visualization.", 
+                        self.custom_styles['SmallText']
+                    ))
                 
-                # Filter to only phases that exist in our data
-                phase_order = [phase for phase in phase_order if phase in phase_counts]
+                coherence_data['label'] = coherence_data.apply(
+                    lambda x: f"{x['cluster_name'][:25]}{'...' if len(x['cluster_name']) > 25 else ''} (ID: {x['cluster_id']})", 
+                    axis=1
+                )
                 
-                phase_colors = {
-                    self.translations["early_phase"]: "#43a047",
-                    "Research-to-Consideration Transition": "#26a69a",
-                    self.translations["middle_phase"]: "#1e88e5",
-                    "Consideration-to-Purchase Transition": "#7b1fa2",
-                    self.translations["late_phase"]: "#ff9800",
-                    "Mixed Journey Stages": "#757575",
-                    "Unknown": "#9e9e9e"
-                }
-                
-                phases = list(phase_counts.keys())
-                counts = list(phase_counts.values())
-                
-                fig4 = go.Figure(data=[
+                fig2 = go.Figure(data=[
                     go.Bar(
-                        x=phases,
-                        y=counts,
+                        x=coherence_data['label'],
+                        y=coherence_data['cluster_coherence'],
                         marker=dict(
-                            color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
+                            color=coherence_data['cluster_coherence'],
+                            colorscale='Viridis'
                         )
                     )
                 ])
                 
-                fig4.update_layout(
-                    title=self.translations["journey_phase_distribution"],
-                    xaxis_title="Journey Phase",
-                    yaxis_title=self.translations["num_keywords"],
-                    margin=dict(l=50, r=50, t=70, b=150),
+                fig2.update_layout(
+                    title=self.translations["coherence_by_cluster"],
+                    xaxis_title=self.translations["cluster"],
+                    yaxis_title=self.translations["coherence"],
+                    margin=dict(l=50, r=50, t=70, b=200),
+                    xaxis_tickangle=-45,
                     height=600
                 )
                 
-                img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
-                doc_elements.append(img4)
+                img2 = self.plotly_to_image(fig2, filename="coherence_distribution.png")
+                if img2:
+                    doc_elements.append(img2)
+                doc_elements.append(Paragraph(self.translations["coherence_description"], self.custom_styles['Normal']))
                 doc_elements.append(Spacer(1, 0.2*inch))
+            except Exception as e:
+                doc_elements.append(Paragraph(f"Error generating coherence chart: {str(e)}", self.custom_styles['Normal']))
         
         return doc_elements
-    
-    def generate_clusters_detail(self, doc_elements):
+def generate_search_intent_charts(self, doc_elements):
+        """Generate search intent charts if intent data is available"""
+        if not self.cluster_evaluation:
+            return doc_elements
+        
+        try:
+            doc_elements.append(Paragraph(self.translations["search_intent_analysis"], self.custom_styles['Subtitle']))
+            doc_elements.append(Spacer(1, 0.1*inch))
+            
+            # Collect intent data from all clusters
+            intent_data = []
+            for c_id, data in self.cluster_evaluation.items():
+                if 'intent_classification' in data:
+                    cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                    primary_intent = data['intent_classification'].get('primary_intent', 'Unknown')
+                    count = len(self.df[self.df['cluster_id'] == c_id])
+                    
+                    # Get scores if available
+                    scores = data['intent_classification'].get('scores', {})
+                    
+                    intent_data.append({
+                        'cluster_id': c_id,
+                        'cluster_name': cluster_name,
+                        'primary_intent': primary_intent,
+                        'count': count,
+                        'informational_score': scores.get('Informational', 0),
+                        'navigational_score': scores.get('Navigational', 0),
+                        'transactional_score': scores.get('Transactional', 0),
+                        'commercial_score': scores.get('Commercial', 0)
+                    })
+            
+            if intent_data:
+                # Create intent distribution pie chart
+                intent_counts = {}
+                for item in intent_data:
+                    intent_counts[item['primary_intent']] = intent_counts.get(item['primary_intent'], 0) + item['count']
+                
+                labels = list(intent_counts.keys())
+                values = list(intent_counts.values())
+                
+                intent_colors = {
+                    'Informational': 'rgb(33, 150, 243)',
+                    'Navigational': 'rgb(76, 175, 80)',
+                    'Transactional': 'rgb(255, 152, 0)',
+                    'Commercial': 'rgb(156, 39, 176)',
+                    'Mixed Intent': 'rgb(158, 158, 158)',
+                    'Unknown': 'rgb(158, 158, 158)'
+                }
+                
+                colors = [intent_colors.get(label, 'rgb(158, 158, 158)') for label in labels]
+                
+                fig = go.Figure(data=[
+                    go.Pie(
+                        labels=labels, 
+                        values=values, 
+                        marker_colors=colors,
+                        textinfo='label+percent'
+                    )
+                ])
+                
+                fig.update_layout(
+                    title=self.translations["intent_distribution"],
+                    margin=dict(l=50, r=50, t=70, b=50),
+                    height=500
+                )
+                
+                # Convert the figure to an image and add to document
+                img = self.plotly_to_image(fig, filename="intent_distribution.png")
+                if img:
+                    doc_elements.append(img)
+                doc_elements.append(Spacer(1, 0.2*inch))
+# Create bar chart showing intent by cluster
+                df_intent = pd.DataFrame(intent_data)
+                
+                # Limit to top 10 clusters for readability
+                if len(df_intent) > 10:
+                    df_intent = df_intent.sort_values('count', ascending=False).head(10)
+                
+                fig2 = go.Figure()
+                
+                for intent in intent_counts.keys():
+                    df_filtered = df_intent[df_intent['primary_intent'] == intent]
+                    if not df_filtered.empty:
+                        fig2.add_trace(go.Bar(
+                            x=df_filtered['cluster_name'],
+                            y=df_filtered['count'],
+                            name=intent,
+                            marker_color=intent_colors.get(intent, 'rgb(158, 158, 158)')
+                        ))
+                
+                fig2.update_layout(
+                    title=self.translations["intent_by_cluster"],
+                    xaxis_title=self.translations["cluster"],
+                    yaxis_title=self.translations["num_keywords"],
+                    barmode='stack',
+                    margin=dict(l=50, r=50, t=70, b=150),
+                    xaxis_tickangle=-45,
+                    height=600,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                # Convert the figure to an image and add to document
+                img2 = self.plotly_to_image(fig2, filename="intent_by_cluster.png")
+                if img2:
+                    doc_elements.append(img2)
+                
+                # NEW: Add intent score distribution chart
+                doc_elements.append(PageBreak())
+                doc_elements.append(Paragraph(self.translations["intent_score_distribution"], self.custom_styles['Subtitle']))
+                
+                # Create data for the heatmap
+                top_clusters = df_intent.sort_values('count', ascending=False).head(8)  # Limit to top 8 for readability
+                
+                # Create a stacked bar chart for intent scores
+                fig3 = go.Figure()
+                cluster_names = top_clusters['cluster_name'].tolist()
+                
+                # Add each intent type as a separate bar
+                fig3.add_trace(go.Bar(
+                    x=cluster_names,
+                    y=top_clusters['informational_score'],
+                    name='Informational',
+                    marker_color=intent_colors['Informational']
+                ))
+                
+                fig3.add_trace(go.Bar(
+                    x=cluster_names,
+                    y=top_clusters['commercial_score'],
+                    name='Commercial',
+                    marker_color=intent_colors['Commercial']
+                ))
+                
+                fig3.add_trace(go.Bar(
+                    x=cluster_names,
+                    y=top_clusters['transactional_score'],
+                    name='Transactional',
+                    marker_color=intent_colors['Transactional']
+                ))
+                
+                fig3.add_trace(go.Bar(
+                    x=cluster_names,
+                    y=top_clusters['navigational_score'],
+                    name='Navigational',
+                    marker_color=intent_colors['Navigational']
+                ))
+                
+                fig3.update_layout(
+                    title=self.translations["intent_score_distribution"],
+                    xaxis_title=self.translations["cluster"],
+                    yaxis_title='Intent Score (%)',
+                    barmode='group',
+                    margin=dict(l=50, r=50, t=70, b=150),
+                    xaxis_tickangle=-45,
+                    height=600,
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1
+                    )
+                )
+                
+                img3 = self.plotly_to_image(fig3, filename="intent_scores.png")
+                if img3:
+                    doc_elements.append(img3)
+        except Exception as e:
+            doc_elements.append(Paragraph(f"Error generating search intent charts: {str(e)}", self.custom_styles['Normal']))
+        
+        return doc_elements
+# Generate customer journey analysis if available
+                journey_phases = []
+                for c_id, data in self.cluster_evaluation.items():
+                    if 'intent_flow' in data:
+                        journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
+                        cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                        count = len(self.df[self.df['cluster_id'] == c_id])
+                        
+                        journey_phases.append({
+                            'cluster_id': c_id,
+                            'cluster_name': cluster_name,
+                            'journey_phase': journey_phase,
+                            'count': count
+                        })
+                
+                if journey_phases:
+                    try:
+                        doc_elements.append(PageBreak())
+                        doc_elements.append(Paragraph(self.translations["customer_journey_analysis"], self.custom_styles['Subtitle']))
+                        doc_elements.append(Spacer(1, 0.1*inch))
+                        
+                        # Count clusters in each journey phase
+                        phase_counts = Counter([item['journey_phase'] for item in journey_phases])
+                        
+                        # Create journey phase visualization
+                        phase_order = [
+                            self.translations["early_phase"], 
+                            "Research-to-Consideration Transition",
+                            self.translations["middle_phase"], 
+                            "Consideration-to-Purchase Transition",
+                            self.translations["late_phase"],
+                            "Mixed Journey Stages",
+                            "Unknown"
+                        ]
+                        
+                        # Filter to only phases that exist in our data
+                        phase_order = [phase for phase in phase_order if phase in phase_counts]
+                        
+                        phase_colors = {
+                            self.translations["early_phase"]: "#43a047",
+                            "Research-to-Consideration Transition": "#26a69a",
+                            self.translations["middle_phase"]: "#1e88e5",
+                            "Consideration-to-Purchase Transition": "#7b1fa2",
+                            self.translations["late_phase"]: "#ff9800",
+                            "Mixed Journey Stages": "#757575",
+                            "Unknown": "#9e9e9e"
+                        }
+                        
+                        phases = list(phase_counts.keys())
+                        counts = list(phase_counts.values())
+                        
+                        fig4 = go.Figure(data=[
+                            go.Bar(
+                                x=phases,
+                                y=counts,
+                                marker=dict(
+                                    color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
+                                )
+                            )
+                        ])
+                        
+                        fig4.update_layout(
+                            title=self.translations["journey_phase_distribution"],
+                            xaxis_title="Journey Phase",
+                            yaxis_title=self.translations["num_keywords"],
+                            margin=dict(l=50, r=50, t=70, b=150),
+                            height=600
+                        )
+                        
+                        img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
+                        if img4:
+                            doc_elements.append(img4)
+                        doc_elements.append(Spacer(1, 0.2*inch))
+                    except Exception as e:
+                        doc_elements.append(Paragraph(f"Error generating journey analysis: {str(e)}", self.custom_styles['Normal']))
+def generate_clusters_detail(self, doc_elements):
         """Generate detailed information for each cluster"""
         doc_elements.append(PageBreak())
         doc_elements.append(Paragraph(self.translations["cluster_details"], self.custom_styles['Subtitle']))
         doc_elements.append(Spacer(1, 0.1*inch))
         
-        # Get top 10 clusters by keyword count for detailed view
-        cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
-        top_clusters = cluster_sizes.sort_values('count', ascending=False).head(10)
+        try:
+            # Get top 10 clusters by keyword count for detailed view
+            cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
+            top_clusters = cluster_sizes.sort_values('count', ascending=False).head(10)
+            
+            for _, row in top_clusters.iterrows():
+                c_id = row['cluster_id']
+                c_name = row['cluster_name']
+                c_count = row['count']
+                
+                doc_elements.append(Paragraph(f"{self.translations['cluster']}: {c_name} (ID: {c_id})", self.custom_styles['ClusterName']))
+                doc_elements.append(Paragraph(f"{self.translations['total_keywords_in_cluster']}: {c_count}", self.custom_styles['Normal']))
+                
+                # Get cluster description if available
+                c_desc = self.df[self.df['cluster_id'] == c_id]['cluster_description'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else ""
+                if c_desc:
+                    doc_elements.append(Paragraph(f"{self.translations['description']}: {c_desc}", self.custom_styles['Normal']))
+                
+                # Get representative keywords
+                rep_keywords = self.df[(self.df['cluster_id'] == c_id) & (self.df['representative'] == True)]['keyword'].tolist()
+                if rep_keywords:
+                    doc_elements.append(Paragraph(f"{self.translations['representative_keywords']}: {', '.join(rep_keywords[:10])}", self.custom_styles['Normal']))
+                
+                # Search intent information if available
+                if c_id in self.cluster_evaluation:
+                    intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
+                    primary_intent = intent_data.
+             # Search intent information if available
+                if c_id in self.cluster_evaluation:
+                    intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
+                    primary_intent = intent_data.get('primary_intent', 'Unknown')
+                    
+                    doc_elements.append(Paragraph(f"{self.translations['primary_search_intent']}: {primary_intent}", self.custom_styles['Normal']))
+                    
+                    # Customer journey if available
+                    if 'intent_flow' in self.cluster_evaluation[c_id]:
+                        journey_phase = self.cluster_evaluation[c_id]['intent_flow'].get('journey_phase', 'Unknown')
+                        doc_elements.append(Paragraph(f"{self.translations['customer_journey_phase']}: {journey_phase}", self.custom_styles['Normal']))
+                
+                # Top keywords by search volume if available
+                if 'search_volume' in self.df.columns:
+                    try:
+                        top_kws = self.df[self.df['cluster_id'] == c_id].sort_values('search_volume', ascending=False).head(10)
+                        
+                        if not top_kws.empty:
+                            doc_elements.append(Paragraph(f"{self.translations['top_keywords_by_volume']}:", self.custom_styles['Normal']))
+                            
+                            data = [[self.translations['keyword'], self.translations['search_volume']]]
+                            for _, kw_row in top_kws.iterrows():
+                                data.append([kw_row['keyword'], f"{kw_row['search_volume']:,}"])
+                            
+                            # Create a table for the top keywords
+                            table = Table(data, colWidths=[4*inch, 1.5*inch])
+                            table.setStyle(TableStyle([
+                                ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                                ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
+                            ]))
+                            
+                            doc_elements.append(table)
+                    except Exception as e:
+                        doc_elements.append(Paragraph(f"Error displaying top keywords: {str(e)}", self.custom_styles['SmallText']))
+                
+                doc_elements.append(Spacer(1, 0.3*inch))
         
-        for _, row in top_clusters.iterrows():
-            c_id = row['cluster_id']
-            c_name = row['cluster_name']
-            c_count = row['count']
-            
-            doc_elements.append(Paragraph(f"{self.translations['cluster']}: {c_name} (ID: {c_id})", self.custom_styles['ClusterName']))
-            doc_elements.append(Paragraph(f"{self.translations['total_keywords_in_cluster']}: {c_count}", self.custom_styles['Normal']))
-            
-            # Get cluster description if available
-            c_desc = self.df[self.df['cluster_id'] == c_id]['cluster_description'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else ""
-            if c_desc:
-                doc_elements.append(Paragraph(f"{self.translations['description']}: {c_desc}", self.custom_styles['Normal']))
-            
-            # Get representative keywords
-            rep_keywords = self.df[(self.df['cluster_id'] == c_id) & (self.df['representative'] == True)]['keyword'].tolist()
-            if rep_keywords:
-                doc_elements.append(Paragraph(f"{self.translations['representative_keywords']}: {', '.join(rep_keywords[:10])}", self.custom_styles['Normal']))
-            
-            # Search intent information if available
-            if c_id in self.cluster_evaluation:
-                intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
-                primary_intent = intent_data.get('primary_intent', 'Unknown')
-                
-                doc_elements.append(Paragraph(f"{self.translations['primary_search_intent']}: {primary_intent}", self.custom_styles['Normal']))
-                
-                # Customer journey if available
-                if 'intent_flow' in self.cluster_evaluation[c_id]:
-                    journey_phase = self.cluster_evaluation[c_id]['intent_flow'].get('journey_phase', 'Unknown')
-                    doc_elements.append(Paragraph(f"{self.translations['customer_journey_phase']}: {journey_phase}", self.custom_styles['Normal']))
-            
-            # Top keywords by search volume if available
-            if 'search_volume' in self.df.columns:
-                top_kws = self.df[self.df['cluster_id'] == c_id].sort_values('search_volume', ascending=False).head(10)
-                
-                if not top_kws.empty:
-                    doc_elements.append(Paragraph(f"{self.translations['top_keywords_by_volume']}:", self.custom_styles['Normal']))
-                    
-                    data = [[self.translations['keyword'], self.translations['search_volume']]]
-                    for _, kw_row in top_kws.iterrows():
-                        data.append([kw_row['keyword'], f"{kw_row['search_volume']:,}"])
-                    
-                    # Create a table for the top keywords
-                    table = Table(data, colWidths=[4*inch, 1.5*inch])
-                    table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
-                    ]))
-                    
-                    doc_elements.append(table)
-            
-            doc_elements.append(Spacer(1, 0.3*inch))
+        except Exception as e:
+            doc_elements.append(Paragraph(f"Error generating cluster details: {str(e)}", self.custom_styles['Normal']))
         
         return doc_elements
-    
-    def generate_conclusion(self, doc_elements):
+def generate_conclusion(self, doc_elements):
         """Generate conclusion section with recommendations"""
         doc_elements.append(PageBreak())
         doc_elements.append(Paragraph(self.translations["conclusions"], self.custom_styles['Subtitle']))
@@ -620,37 +701,40 @@ class PDFReport:
         
         # Specific recommendations based on data
         if self.cluster_evaluation:
-            # Find most coherent clusters
-            coherent_clusters = []
-            for c_id, data in self.cluster_evaluation.items():
-                coherence = data.get('coherence_score', 0)
-                c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+            try:
+                # Find most coherent clusters
+                coherent_clusters = []
+                for c_id, data in self.cluster_evaluation.items():
+                    coherence = data.get('coherence_score', 0)
+                    c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                    
+                    if coherence >= 7:  # High coherence threshold
+                        coherent_clusters.append((c_id, c_name, coherence))
                 
-                if coherence >= 7:  # High coherence threshold
-                    coherent_clusters.append((c_id, c_name, coherence))
-            
-            if coherent_clusters:
-                doc_elements.append(Paragraph(f"{self.translations['coherent_clusters']}:", self.custom_styles['Normal']))
+                if coherent_clusters:
+                    doc_elements.append(Paragraph(f"{self.translations['coherent_clusters']}:", self.custom_styles['Normal']))
+                    
+                    coherent_clusters.sort(key=lambda x: x[2], reverse=True)
+                    for c_id, c_name, coherence in coherent_clusters[:5]:
+                        doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id}) - {self.translations['coherence']}: {coherence:.1f}/10", self.custom_styles['Normal']))
                 
-                coherent_clusters.sort(key=lambda x: x[2], reverse=True)
-                for c_id, c_name, coherence in coherent_clusters[:5]:
-                    doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id}) - {self.translations['coherence']}: {coherence:.1f}/10", self.custom_styles['Normal']))
-            
-            # Find clusters that need splitting
-            split_clusters = []
-            for c_id, data in self.cluster_evaluation.items():
-                split_suggestion = data.get('split_suggestion', '')
-                c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                # Find clusters that need splitting
+                split_clusters = []
+                for c_id, data in self.cluster_evaluation.items():
+                    split_suggestion = data.get('split_suggestion', '')
+                    c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                    
+                    if 'yes' in split_suggestion.lower():
+                        split_clusters.append((c_id, c_name))
                 
-                if 'yes' in split_suggestion.lower():
-                    split_clusters.append((c_id, c_name))
-            
-            if split_clusters:
-                doc_elements.append(Spacer(1, 0.1*inch))
-                doc_elements.append(Paragraph(f"{self.translations['split_clusters']}:", self.custom_styles['Normal']))
-                
-                for c_id, c_name in split_clusters[:5]:
-                    doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id})", self.custom_styles['Normal']))
+                if split_clusters:
+                    doc_elements.append(Spacer(1, 0.1*inch))
+                    doc_elements.append(Paragraph(f"{self.translations['split_clusters']}:", self.custom_styles['Normal']))
+                    
+                    for c_id, c_name in split_clusters[:5]:
+                        doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id})", self.custom_styles['Normal']))
+            except Exception as e:
+                doc_elements.append(Paragraph(f"Error generating recommendations: {str(e)}", self.custom_styles['SmallText']))
         
         doc_elements.append(Spacer(1, 0.3*inch))
         
@@ -658,47 +742,78 @@ class PDFReport:
         doc_elements.append(Paragraph(self.translations['report_footer'], self.custom_styles['SmallText']))
         
         return doc_elements
-    
-    def generate_pdf(self, output_file='clustering_report.pdf'):
+def generate_pdf(self, output_file='clustering_report.pdf'):
         """Generate the complete PDF report"""
         buffer = BytesIO()
         
         # Create the PDF document
-        doc = SimpleDocTemplate(
-            buffer,
-            pagesize=A4,
-            rightMargin=0.5*inch,
-            leftMargin=0.5*inch,
-            topMargin=0.5*inch,
-            bottomMargin=0.5*inch
-        )
-        
-        # Container for the elements to add to the PDF
-        doc_elements = []
-        
-        # Generate each section
-        doc_elements = self.generate_summary_page(doc_elements)
-        doc_elements = self.generate_cluster_distribution_chart(doc_elements)
-        doc_elements = self.generate_search_intent_charts(doc_elements)
-        doc_elements = self.generate_clusters_detail(doc_elements)
-        doc_elements = self.generate_conclusion(doc_elements)
-        
-        # Build the PDF
-        doc.build(doc_elements)
-        
-        # Return the buffer
-        buffer.seek(0)
-        return buffer
-
-def create_download_link(buffer, filename="report.pdf", text="Download PDF Report"):
-    """Create a download link for Streamlit"""
-    pdf_data = buffer.getvalue()
-    b64_pdf = base64.b64encode(pdf_data).decode()
-    href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{filename}">{text}</a>'
-    return href
+        try:
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                rightMargin=0.5*inch,
+                leftMargin=0.5*inch,
+                topMargin=0.5*inch,
+                bottomMargin=0.5*inch
+            )
+            
+            # Container for the elements to add to the PDF
+            doc_elements = []
+            
+            # Generate each section
+            doc_elements = self.generate_summary_page(doc_elements)
+            doc_elements = self.generate_cluster_distribution_chart(doc_elements)
+            doc_elements = self.generate_search_intent_charts(doc_elements)
+            doc_elements = self.generate_clusters_detail(doc_elements)
+            doc_elements = self.generate_conclusion(doc_elements)
+            
+            # Build the PDF
+            doc.build(doc_elements)
+            
+            # Return the buffer
+            buffer.seek(0)
+            return buffer
+            
+        except Exception as e:
+            # If PDF generation fails completely, return a simple error PDF
+            try:
+                simple_doc = SimpleDocTemplate(
+                    buffer,
+                    pagesize=A4,
+                    rightMargin=0.5*inch,
+                    leftMargin=0.5*inch,
+                    topMargin=0.5*inch,
+                    bottomMargin=0.5*inch
+                )
+                
+                simple_elements = []
+                simple_elements.append(Paragraph("Error Generating PDF Report", self.styles['Title']))
+                simple_elements.append(Spacer(1, 0.2*inch))
+                simple_elements.append(Paragraph(f"An error occurred: {str(e)}", self.styles['Normal']))
+                simple_elements.append(Spacer(1, 0.1*inch))
+                simple_elements.append(Paragraph("Please try again with a smaller dataset or contact support.", self.styles['Normal']))
+                
+                simple_doc.build(simple_elements)
+                
+                buffer.seek(0)
+                return buffer
+            except:
+                # Last resort: return an empty buffer
+                buffer.seek(0)
+                return buffer
+   def create_download_link(buffer, filename="report.pdf", text="Download PDF Report"):
+    """Create a download link for Streamlit with improved error handling"""
+    try:
+        pdf_data = buffer.getvalue()
+        b64_pdf = base64.b64encode(pdf_data).decode()
+        href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{filename}">{text}</a>'
+        return href
+    except Exception as e:
+        st.error(f"Error creating download link: {str(e)}")
+        return "Error generating download link. Please try again."
 
 def add_pdf_export_button(df, cluster_evaluation=None, language="en"):
-    """Add PDF export button to Streamlit app"""
+    """Add PDF export button to Streamlit app with enhanced error handling"""
     languages = {
         "en": "English",
         "es": "Spanish"
@@ -744,10 +859,16 @@ def add_pdf_export_button(df, cluster_evaluation=None, language="en"):
                     base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
                     pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
                     st.markdown(pdf_display, unsafe_allow_html=True)
-                except:
-                    info_text = "Preview not available. Please download the PDF to view it." if selected_language == "en" else "Vista previa no disponible. Por favor, descarga el PDF para verlo."
+                except Exception as preview_error:
+                    info_text = f"Preview not available: {str(preview_error)}. Please download the PDF to view it." if selected_language == "en" else f"Vista previa no disponible: {str(preview_error)}. Por favor, descarga el PDF para verlo."
                     st.info(info_text)
                 
             except Exception as e:
                 error_text = f"Error generating PDF report: {str(e)}" if selected_language == "en" else f"Error al generar el informe PDF: {str(e)}"
                 st.error(error_text)
+                
+                # Provide more details in case of common errors
+                if "kaleido" in str(e).lower():
+                    st.info("It appears you're missing the kaleido library needed for chart export. Try installing it with: pip install kaleido")
+                elif "reportlab" in str(e).lower():
+                    st.info("It appears you're missing the reportlab library needed for PDF generation. Try installing it with: pip install reportlab")
