@@ -50,7 +50,6 @@ try:
     hdbscan_available = True
 except ImportError:
     hdbscan_available = False
-
 # Download NLTK resources at startup
 try:
     nltk.download('stopwords', quiet=True)
@@ -110,8 +109,7 @@ SEARCH_INTENT_PATTERNS = {
         "brand_indicators": True,  # Presence of brand names indicates navigational intent
         "weight": 1.2  # Navigational intent is often more clear-cut
     },
-    
-    "Transactional": {
+"Transactional": {
         "prefixes": ["buy", "purchase", "order", "shop", "get"],
         "suffixes": [
             "for sale", "discount", "deal", "coupon", "price", "cost", "cheap", "online", 
@@ -154,7 +152,6 @@ SEARCH_INTENT_PATTERNS = {
         "weight": 1.2  # Commercial intent signals future transactions
     }
 }
-
 # Polish-specific search intent patterns
 POLISH_SEARCH_INTENT_PATTERNS = {
     "Informational": {
@@ -178,8 +175,7 @@ POLISH_SEARCH_INTENT_PATTERNS = {
         ],
         "weight": 1.0
     },
-    
-    "Navigational": {
+"Navigational": {
         "prefixes": ["wejdź na", "odwiedź", "strona", "homepage", "strona główna", "logowanie", "zaloguj"],
         "suffixes": ["logowanie", "strona", "oficjalna", "online"],
         "exact_matches": [
@@ -217,8 +213,7 @@ POLISH_SEARCH_INTENT_PATTERNS = {
         ],
         "weight": 1.5
     },
-    
-    "Commercial": {
+"Commercial": {
         "prefixes": ["najlepszy", "top", "recenzja", "porównaj", "vs", "kontra"],
         "suffixes": [
             "recenzja", "recenzje", "porównanie", "vs", "kontra", "alternatywa", "alternatywy", 
@@ -267,7 +262,6 @@ SPACY_LANGUAGE_MODELS = {
     "Icelandic": None,
     "Lithuanian": None
 }
-
 # Fallback Polish stopwords in case NLTK doesn't have them or fails to load
 POLISH_STOPWORDS = {
     'a', 'aby', 'ach', 'acz', 'aczkolwiek', 'aj', 'albo', 'ale', 'ależ', 'ani', 'aż', 'bardziej',
@@ -368,7 +362,6 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
     results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
     
     return results
-
 def add_cost_calculator():
     st.sidebar.markdown("---")
     with st.sidebar.expander("💰 API Cost Calculator", expanded=False):
@@ -477,12 +470,12 @@ def generate_sample_csv():
     data += "women's running shoes,4100,0.68,1.35,340,350,360,370,380,390,400,410,420,430,440,450\n"
     data += "best running shoes 2025,3100,0.78,1.52,280,290,300,310,320,330,340,350,360,370,380,390\n"
     data += "how to choose running shoes,2500,0.42,0.95,220,230,240,250,260,270,280,290,300,310,320,330\n"
+    data += "
     data += "running shoes for flat feet,1900,0.56,1.28,170,180,190,200,210,220,230,240,250,260,270,280\n"
     data += "trail running shoes reviews,1700,0.64,1.42,150,160,170,180,190,200,210,220,230,240,250,260\n"
     data += "buy nike air zoom,1500,0.87,1.95,130,140,150,160,170,180,190,200,210,220,230,240\n"
     
     return ",".join(header) + "\n" + data
-
 ################################################################
 #          SEMANTIC PREPROCESSING
 ################################################################
@@ -555,7 +548,6 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
     
     except Exception:
         return text.lower() if isinstance(text, str) else ""
-
 def preprocess_text(text, use_lemmatization=True):
     """
     Basic NLTK-based text preprocessing as a fallback.
@@ -720,8 +712,7 @@ def generate_embeddings(df, openai_available, openai_api_key=None):
         except Exception as e:
             st.error(f"Error generating embeddings with OpenAI: {str(e)}")
             st.info("Falling back to SentenceTransformers.")
-
-    # Attempt SentenceTransformers if available
+# Attempt SentenceTransformers if available
     if sentence_transformers_available:
         try:
             st.success("Using SentenceTransformer (free fallback).")
@@ -796,7 +787,6 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
     st.info("Refining clusters to improve coherence...")
     # If outlier or merging logic is needed, place it here
     return df
-
 ################################################################
 #          GENERATE CLUSTER NAMES
 ################################################################
@@ -886,7 +876,6 @@ def generate_cluster_names(
                             temperature=0.3,
                             max_tokens=1000
                         )
-                    
                     content = response.choices[0].message.content.strip()
                     
                     # Extract JSON from markdown code blocks if present
@@ -1035,8 +1024,7 @@ def extract_features_for_intent(keyword, search_intent_description="", patterns=
             if re.search(pattern, keyword_lower):
                 match_count += 1
         features[f"{intent_type.lower()}_pattern_matches"] = match_count
-    
-    # Additional features
+# Additional features
     # Get the right "near me" equivalent based on language
     selected_language = st.session_state.get('selected_language', 'English')
     if selected_language == 'Polish':
@@ -1065,7 +1053,6 @@ def extract_features_for_intent(keyword, search_intent_description="", patterns=
         features["includes_product_modifier"] = any(term in keyword_lower for term in ["best", "top", "cheap", "premium", "quality", "new", "used", "refurbished", "alternative"])
     
     return features
-
 def classify_search_intent_ml(keywords, search_intent_description="", cluster_name=""):
     """
     Enhanced search intent classification using a ML-inspired approach
@@ -1162,8 +1149,7 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
             commercial_signals.append(f"Matches {features['commercial_pattern_matches']} commercial patterns")
         if features["includes_product_modifier"]:
             commercial_signals.append("Includes product comparison term")
-    
-    # Calculate scores based on unique signals
+# Calculate scores based on unique signals
     info_signals = set(informational_signals)
     nav_signals = set(navigational_signals)
     trans_signals = set(transactional_signals)
@@ -1179,7 +1165,8 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
     nav_score = len(nav_signals) * nav_weight
     trans_score = len(trans_signals) * trans_weight
     comm_score = len(comm_signals) * comm_weight
-# Check description for explicit mentions
+    
+    # Check description for explicit mentions
     if search_intent_description:
         desc_lower = search_intent_description.lower()
         if re.search(r'\binformational\b|\binformation\s+intent\b|\binformation\s+search\b|\bleaning\b|\bquestion\b', desc_lower):
@@ -1242,7 +1229,6 @@ def classify_search_intent_ml(keywords, search_intent_description="", cluster_na
         "scores": scores,
         "evidence": evidence
     }
-
 def analyze_cluster_for_intent_flow(df, cluster_id):
     """
     Following SEJ's recommendation to map customer journey through analysis of
@@ -1368,8 +1354,7 @@ def generate_semantic_analysis(
         for cluster_id in batch_cluster_ids:
             sample_kws = clusters_with_representatives[cluster_id][:10]  # Limit to 10 keywords
             batch_prompt += f"Cluster {cluster_id}: {', '.join(sample_kws)}\n"
-        
-        num_retries = 3
+num_retries = 3
         batch_results = {}
         
         for attempt in range(num_retries):
@@ -1417,27 +1402,24 @@ def generate_semantic_analysis(
                             for item in json_data["clusters"]:
                                 c_id = item.get("cluster_id")
                                 if c_id is not None:
-                                    # Limpieza y conversión robusta de cluster_id
+                                    # Robust cluster_id cleaning and conversion
                                     try:
-                                        # Si es una cadena, intentamos limpiarla y convertirla
+                                        # If it's a string, try to clean and convert
                                         if isinstance(c_id, str):
-                                            # Eliminar espacios y caracteres no numéricos
+                                            # Remove spaces and non-numeric characters
                                             c_id_clean = ''.join(filter(str.isdigit, c_id.strip()))
                                             if c_id_clean:
                                                 c_id = int(c_id_clean)
                                             else:
-                                                st.warning(f"Cluster ID no válido: '{c_id}' - no contiene dígitos")
                                                 continue
-                                        # Si ya es un número, usarlo directamente
+                                        # If it's already a number, use it directly
                                         elif isinstance(c_id, (int, float)):
                                             c_id = int(c_id)
                                         else:
-                                            st.warning(f"Tipo de cluster_id no soportado: {type(c_id)}")
                                             continue
                                         
-                                        # Verificar que sea un ID de cluster válido y existente
+                                        # Verify it's a valid and existing cluster ID
                                         if c_id not in clusters_with_representatives:
-                                            st.warning(f"ID de cluster {c_id} no existe en los datos")
                                             continue
                                         
                                         search_intent = item.get("search_intent", "")
@@ -1463,10 +1445,8 @@ def generate_semantic_analysis(
                                             "intent_classification": intent_classification
                                         }
                                     except Exception as e:
-                                        st.warning(f"Error al procesar cluster_id: {str(e)}")
                                         continue
-                            
-                            # If we got good results, break the retry loop
+# If we got good results, break the retry loop
                             if batch_results:
                                 break
                     except json.JSONDecodeError:
@@ -1541,8 +1521,7 @@ def generate_semantic_analysis(
                                 }
                         except Exception as e:
                             progress_text.text(f"Final fallback also failed: {str(e)[:100]}")
-            
-            except Exception as outer_error:
+except Exception as outer_error:
                 progress_text.text(f"Outer error: {str(outer_error)[:100]}...")
                 time.sleep(1)  # Wait briefly before retrying
         
@@ -1656,7 +1635,6 @@ def calculate_cluster_coherence(cluster_embeddings):
     except Exception as e:
         # If anything goes wrong, return default value
         return 1.0
-
 def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     """
     Performs AI-powered analysis of clusters using OpenAI's API.
@@ -1707,7 +1685,6 @@ def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
     except Exception as e:
         st.error(f"Error in cluster evaluation: {str(e)}")
         return {}
-
 ################################################################
 #          MAIN CLUSTERING PIPELINE
 ################################################################
@@ -1764,8 +1741,7 @@ def run_clustering(
     
     # Attempt to load spaCy model for selected language
     spacy_nlp = load_spacy_model_by_language(selected_language)
-
-    try:
+try:
         # Load CSV according to user's choice
         if csv_format == "no_header":
             # No header, one column
@@ -1837,8 +1813,7 @@ def run_clustering(
         else:
             keyword_embeddings_reduced = keyword_embeddings
             st.info(f"No PCA needed (dimension is {keyword_embeddings.shape[1]}).")
-        
-        # Clustering
+# Clustering
         st.subheader("Advanced Semantic Clustering")
         cluster_labels = improved_clustering(keyword_embeddings_reduced, num_clusters=num_clusters)
         df["cluster_id"] = cluster_labels
@@ -1880,8 +1855,7 @@ def run_clustering(
                 cluster_kws = df[df['cluster_id'] == cnum]['keyword'].tolist()
                 clusters_with_representatives[cnum] = cluster_kws[:min(20, len(cluster_kws))]
             st.warning("Using a basic fallback for representatives.")
-        
-        # Generate cluster names
+# Generate cluster names
         if client:
             st.subheader("Generating Cluster Names & Descriptions (SEO-focused)")
             try:
@@ -1947,7 +1921,6 @@ def run_clustering(
         return False, None
     
     return True, None
-
 ################################################################
 #          MAIN STREAMLIT APP
 ################################################################
@@ -2098,7 +2071,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
 st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
 st.markdown("""
 This application clusters semantically similar keywords using advanced NLP and clustering methods.
@@ -2131,7 +2103,6 @@ with st.expander("CSV Format Info", expanded=False):
 
 If you pick the wrong format, the first row might be interpreted incorrectly.
 """)
-
 # Button to download sample CSV template
 sample_csv_button = st.sidebar.button("Download Sample CSV Template")
 if sample_csv_button:
@@ -2193,7 +2164,6 @@ else:
         st.sidebar.info("OpenAI not installed - using SentenceTransformers.")
     else:
         st.sidebar.error("No advanced embedding method - fallback TF-IDF only.")
-
 st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
 
 with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
@@ -2240,7 +2210,6 @@ user_prompt = st.sidebar.text_area(
 )
 
 add_cost_calculator()
-
 # Optional Polish Support Testing Function
 def test_polish_support():
     """
@@ -2321,7 +2290,6 @@ if 'process_complete' not in st.session_state:
     st.session_state.process_complete = False
 if 'df_results' not in st.session_state:
     st.session_state.df_results = None
-
 # Trigger process
 if uploaded_file is not None and not st.session_state.process_complete:
     col1, col2, col3 = st.columns([1,2,1])
@@ -2385,8 +2353,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             color_continuous_scale=px.colors.sequential.Greens
         )
         st.plotly_chart(fig2, use_container_width=True)
-        
-        # Visualization based on AI Coherence Scores
+# Visualization based on AI Coherence Scores
         if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
             eval_data = st.session_state.cluster_evaluation
             ai_coherence_data = []
@@ -2401,8 +2368,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 # Get search volume if available
                 if 'search_volume' in df.columns:
-                        df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
-                        search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
+                    df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
+                    search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
                 else:
                     search_volume = count * 100  # Default estimate for visualization scaling
                 
@@ -2461,6 +2428,21 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             'search_volume': 'Search Volume'
                         },
                         title='Clusters by Coherence, Size, and Search Intent',
+                        color_discrete
+                        fig3 = px.scatter(
+                        ai_df,
+                        x='coherence_score',
+                        y='count',
+                        color='primary_intent',
+                        size='search_volume',
+                        hover_name='label',
+                        labels={
+                            'coherence_score': 'AI Coherence Score (0-10)',
+                            'count': 'Number of Keywords',
+                            'primary_intent': 'Search Intent',
+                            'search_volume': 'Search Volume'
+                        },
+                        title='Clusters by Coherence, Size, and Search Intent',
                         color_discrete_map=intent_colors
                     )
                     
@@ -2482,8 +2464,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     The most valuable clusters are typically those with high coherence scores (right side) and substantial keyword volume (upper area).
                     Clusters with low coherence might benefit from being split into more focused sub-clusters.
                     """)
-                
-                with intent_viz_tabs[1]:
+with intent_viz_tabs[1]:
                     st.subheader("Customer Journey Analysis")
                     
                     # Count clusters in each journey phase
@@ -2536,8 +2517,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     )
                     
                     st.plotly_chart(fig_journey, use_container_width=True)
-                    
-                    # Journey sankey diagram - shows flow from intent to journey phase
+# Journey sankey diagram - shows flow from intent to journey phase
                     from collections import defaultdict
                     
                     # Create source-target pairs for Sankey
@@ -2575,19 +2555,19 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             node_colors.append('#9e9e9e')  # Default gray
                     
                     # Create Sankey diagram
-                        if source and target and value:  # Only if we have data
-                            fig_sankey = go.Figure(data=[go.Sankey(
-                                node=dict(
-                                    pad=15,
-                                    thickness=20,
-                                    line=dict(color="black", width=0.5),
-                                    label=node_labels,
-                                    color=node_colors
-                                ),
-                                link=dict(
-                                    source=source,
-                                    target=target,
-                                    value=value
+                    if source and target and value:  # Only if we have data
+                        fig_sankey = go.Figure(data=[go.Sankey(
+                            node=dict(
+                                pad=15,
+                                thickness=20,
+                                line=dict(color="black", width=0.5),
+                                label=node_labels,
+                                color=node_colors
+                            ),
+                            link=dict(
+                                source=source,
+                                target=target,
+                                value=value
                             )
                         )])
                         
@@ -2611,8 +2591,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     
                     Mapping your content to these journey phases helps create targeted content that meets users where they are.
                     """)
-                
-                with intent_viz_tabs[2]:
+with intent_viz_tabs[2]:
                     st.subheader("Search Intent Distribution")
                     
                     # Create data for pie chart
@@ -2685,245 +2664,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             for _, row in df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].iterrows()
         ]
         selected_cluster = st.selectbox("Select a cluster:", cluster_options)
-        
-        if selected_cluster:
-            cid = int(selectest.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        margin-bottom: 1rem;
-    }
-    .sub-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-    }
-    .info-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-    .success-box {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-    }
-    .highlight {
-        background-color: #fffbcc;
-        padding: 0.2rem 0.5rem;
-        border-radius: 0.2rem;
-    }
-    .intent-box {
-        padding: 8px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }
-    .intent-info {
-        background-color: #e3f2fd;
-        border-left: 5px solid #2196f3;
-    }
-    .intent-nav {
-        background-color: #e8f5e9;
-        border-left: 5px solid #4caf50;
-    }
-    .intent-trans {
-        background-color: #fff3e0;
-        border-left: 5px solid #ff9800;
-    }
-    .intent-comm {
-        background-color: #f3e5f5;
-        border-left: 5px solid #9c27b0;
-    }
-    .intent-mixed {
-        background-color: #f5f5f5;
-        border-left: 5px solid #9e9e9e;
-    }
-    .subcluster-box {
-        background-color: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .journey-early {
-        background-color: #e8f5e9; 
-        border-left: 5px solid #43a047;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .journey-middle {
-        background-color: #e3f2fd; 
-        border-left: 5px solid #1e88e5;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .journey-late {
-        background-color: #fff3e0; 
-        border-left: 5px solid #ff9800;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .journey-transition {
-        background-color: #f3e5f5; 
-        border-left: 5px solid #8e24aa;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .journey-mixed {
-        background-color: #f5f5f5;
-        border-left: 5px solid #9e9e9e;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    .evidence-list {
-        font-size: 0.9em;
-        color: #666;
-        margin-top: 5px;
-        margin-left: 20px;
-    }
-    
-    .keyword-example {
-        display: inline-block;
-        background-color: #f5f5f5;
-        border-radius: 3px;
-        padding: 3px 6px;
-        margin: 2px;
-        font-size: 0.85em;
-    }
-    
-    .info-tag {
-        background-color: #e3f2fd;
-        color: #0d47a1;
-        padding: 2px 5px;
-        border-radius: 3px;
-        font-size: 0.8em;
-        margin-right: 5px;
-    }
-    
-    .commercial-tag {
-        background-color: #f3e5f5;
-        color: #4a148c;
-        padding: 2px 5px;
-        border-radius: 3px;
-        font-size: 0.8em;
-        margin-right: 5px;
-    }
-    
-    .transactional-tag {
-        background-color: #fff3e0;
-        color: #e65100;
-        padding: 2px 5px;
-        border-radius: 3px;
-        font-size: 0.8em;
-        margin-right: 5px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("<div class='main-header'>Advanced Semantic Keyword Clustering</div>", unsafe_allow_html=True)
-st.markdown("""
-This application clusters semantically similar keywords using advanced NLP and clustering methods.
-You can upload:
-- A **simple CSV** with no header (just one keyword per line), or
-- A **Keyword Planner-like CSV** with a header (Keyword, search_volume, competition, cpc, month1..month12, etc.)
-""")
-
-# -----------------------------------------------------------
-# Expander describing CSV usage
-# -----------------------------------------------------------
-with st.expander("CSV Format Info", expanded=False):
-    st.markdown("""
-**Which CSV format can I use?**
-
-1. **No Header**:  
-   - Each line has just one keyword  
-   - Example:
-     ```
-     red shoes
-     running shoes
-     kids sneakers
-     ```
-   - The app will treat the entire CSV as a single column: 'keyword'.
-
-2. **With Header** (like Keyword Planner):  
-   - The first row has column names (e.g. `Keyword, search_volume, competition, cpc, month1..month12`)  
-   - The app will use the 'Keyword' column as the main text  
-   - Additional columns can be used later for numeric analysis or weighting
-
-If you pick the wrong format, the first row might be interpreted incorrectly.
-""")
-
-# Button to download sample CSV template
-sample_csv_button = st.sidebar.button("Download Sample CSV Template")
-if sample_csv_button:
-    csv_header = generate_sample_csv()
-    st.sidebar.download_button(
-        label="Click to Download CSV Template",
-        data=csv_header,
-        file_name="sample_keyword_planner_template.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-
-# CSV Format selectbox
-csv_format = st.sidebar.selectbox(
-    "Select CSV format",
-    options=["no_header", "with_header"],
-    index=0
-)
-
-st.sidebar.markdown("<div class='sub-header'>Configuration</div>", unsafe_allow_html=True)
-uploaded_file = st.sidebar.file_uploader("Upload your CSV", type=['csv'])
-
-openai_api_key = st.sidebar.text_input(
-    "OpenAI API Key (optional)",
-    type="password",
-    help="Enter your OpenAI API Key for high-quality embeddings. If omitted, free SentenceTransformers or TF-IDF will be used."
-)
-
-# Language selector
-language_options = [
-    "English", "Spanish", "French", "German", "Dutch", 
-    "Korean", "Japanese", "Italian", "Portuguese", 
-    "Brazilian Portuguese", "Swedish", "Norwegian", 
-    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
-    "Polish"  # Added Polish to the language options
-]
-selected_language = st.sidebar.selectbox(
-    "Select language of the CSV",
-    options=language_options,
-    index=0,
-    key="language_selectbox"  # Add a key for improved state management
-)
-
-# Store the selected language in session state
-if 'selected_language' not in st.session_state:
-    st.session_state['selected_language'] = "English"
-st.session_state['selected_language'] = selected_language
-
-if openai_available:
-    if openai_api_key:
-        st.sidebar.success("✅ OpenAI key provided - will use OpenAI for embeddings.")
-    else:
-        if sentence_transformers_available:
-            st.sidebar.info("No OpenAI key - fallback to SentenceTransformers.")
-        else:
-            st.sidebar.warning("No OpenAI key, no SentenceTransformers - fallback to TF-IDF.")
-else:
-    if sentence_transformers_available:
-        st.sidebar.info("OpenAI not installed - using SentenceTransformers.")
-    else:
-        st.sidebar.error("No advanced embedding method - fallback TF-IDF only.")
-
-st.sidebar.markdown("<div class='sub-header'>Parameters</div>", unsafe_allow_html=True)
-
-with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
-    st.
-cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
+if selected_cluster:
+            cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             cluster_df = df[df['cluster_id'] == cid].copy()
             
             colA, colB = st.columns(2)
@@ -2942,8 +2684,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                 if reps:
                     st.markdown("**Representative Keywords:**")
                     st.markdown("<ul>" + "".join([f"<li>{kw}</li>" for kw in reps[:10]]) + "</ul>", unsafe_allow_html=True)
-            
-            # If AI-based suggestions / semantic analysis is available
+# If AI-based suggestions / semantic analysis is available
             if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                 ai_eval = st.session_state.cluster_evaluation
                 if cid in ai_eval:
@@ -2993,8 +2734,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                                 evidence_list += f"<li>{e}</li>"
                             evidence_list += "</ul>"
                             st.markdown(evidence_list, unsafe_allow_html=True)
-                        
-                        # Show all scores as a visualization
+# Show all scores as a visualization
                         if scores:
                             intents = list(scores.keys())
                             values = list(scores.values())
@@ -3064,8 +2804,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                                     st.markdown(f"<span class='keyword-example'>{kw}</span>", unsafe_allow_html=True)
                             else:
                                 st.markdown("No clear examples found")
-                    
-                    # Tab 2: Customer Journey Analysis
+# Tab 2: Customer Journey Analysis
                     with analysis_tabs[1]:
                         st.subheader("Customer Journey Analysis")
                         
@@ -3142,8 +2881,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                             """)
                         else:
                             st.info("Customer journey analysis not available for this cluster.")
-                    
-                    # Tab 3: Cluster Analysis (Split Suggestions)
+# Tab 3: Cluster Analysis (Split Suggestions)
                     with analysis_tabs[2]:
                         st.subheader("Cluster Analysis")
                         
@@ -3185,9 +2923,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                         # Show full split suggestion text
                         st.markdown("**Full Split Analysis:**")
                         st.markdown(f"{split_suggestion}")
-                        
-                    
-                    # Tab 4: SEO Insights
+# Tab 4: SEO Insights
                     with analysis_tabs[3]:
                         st.subheader("SEO Insights & Opportunities")
                         
@@ -3244,8 +2980,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                                 )
                         
                         st.markdown(info_with_highlights, unsafe_allow_html=True)
-                        
-                        # Display search intent-based content recommendations
+# Display search intent-based content recommendations
                         st.markdown("### Content Recommendations by Search Intent")
                         
                         primary_intent = ai_eval[cid].get('intent_classification', {}).get('primary_intent', 'Unknown')
@@ -3325,8 +3060,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
                 st.dataframe(cluster_df[['keyword', 'search_volume']].sort_values(by='search_volume', ascending=False), use_container_width=True)
             else:
                 st.dataframe(cluster_df[['keyword']], use_container_width=True)
-    
-    with st.expander("Download Results"):
+with st.expander("Download Results"):
         csv_data = df.to_csv(index=False)
         st.download_button(
             label="Download Full Results (CSV)",
@@ -3336,7 +3070,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             use_container_width=True
         )
         
- # Add PDF export button if available
+    # Add PDF export button if available
     if pdf_export_available:
         st.markdown("---")
         st.markdown("### Export Complete Report")
@@ -3346,7 +3080,6 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
         add_pdf_export_button(df, cluster_evaluation)
     else:
         st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
-
         
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
@@ -3358,8 +3091,7 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
             summary_df.drop('cluster_id', axis=1, inplace=True)
             summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
-        
-        # Merge coherence
+            # Merge coherence
         coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
         summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
         summary_df.drop('cluster_id', axis=1, inplace=True)
@@ -3407,7 +3139,6 @@ cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
             mime="text/csv",
             use_container_width=True
         )
-
 if 'process_complete' in st.session_state and st.session_state.process_complete:
     if st.button("Reset", use_container_width=True):
         st.session_state.process_complete = False
@@ -3443,7 +3174,6 @@ with st.expander("More Information about Advanced Semantic Clustering"):
     
     Understanding where your keywords fit in this journey helps create targeted content.
     """)
-
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #888;">
