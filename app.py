@@ -1354,8 +1354,8 @@ def generate_semantic_analysis(
         for cluster_id in batch_cluster_ids:
             sample_kws = clusters_with_representatives[cluster_id][:10]  # Limit to 10 keywords
             batch_prompt += f"Cluster {cluster_id}: {', '.join(sample_kws)}\n"
-num_retries = 3
-        batch_results = {}
+            num_retries = 3
+            batch_results = {}
         
         for attempt in range(num_retries):
             try:
