@@ -1354,8 +1354,9 @@ def generate_semantic_analysis(
         for cluster_id in batch_cluster_ids:
             sample_kws = clusters_with_representatives[cluster_id][:10]  # Limit to 10 keywords
             batch_prompt += f"Cluster {cluster_id}: {', '.join(sample_kws)}\n"
-            num_retries = 3
-            batch_results = {}
+        
+        num_retries = 3
+        batch_results = {}
         
         for attempt in range(num_retries):
             try:
@@ -1446,7 +1447,8 @@ def generate_semantic_analysis(
                                         }
                                     except Exception as e:
                                         continue
-# If we got good results, break the retry loop
+                            
+                            # If we got good results, break the retry loop
                             if batch_results:
                                 break
                     except json.JSONDecodeError:
@@ -1521,7 +1523,8 @@ def generate_semantic_analysis(
                                 }
                         except Exception as e:
                             progress_text.text(f"Final fallback also failed: {str(e)[:100]}")
-except Exception as outer_error:
+            
+            except Exception as outer_error:
                 progress_text.text(f"Outer error: {str(outer_error)[:100]}...")
                 time.sleep(1)  # Wait briefly before retrying
         
