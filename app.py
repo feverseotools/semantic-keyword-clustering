@@ -1858,7 +1858,7 @@ try:
                 cluster_kws = df[df['cluster_id'] == cnum]['keyword'].tolist()
                 clusters_with_representatives[cnum] = cluster_kws[:min(20, len(cluster_kws))]
             st.warning("Using a basic fallback for representatives.")
-# Generate cluster names
+        # Generate cluster names
         if client:
             st.subheader("Generating Cluster Names & Descriptions (SEO-focused)")
             try:
@@ -1919,11 +1919,81 @@ try:
         
         return True, df
     
-    except Exception as e:
-        st.error(f"Error in the clustering pipeline: {str(e)}")
-        return False, None
-    
-    return True, None
+# Generate customer journey analysis if available
+                journey_phases = []
+                for c_id, data in self.cluster_evaluation.items():
+                    if 'intent_flow' in data:
+                        journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
+                        cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                        count = len(self.df[self.df['cluster_id'] == c_id])
+                        
+                        journey_phases.append({
+                            'cluster_id': c_id,
+                            'cluster_name': cluster_name,
+                            'journey_phase': journey_phase,
+                            'count': count
+                        })
+                
+                if journey_phases:
+                    try:
+                        doc_elements.append(PageBreak())
+                        doc_elements.append(Paragraph(self.translations["customer_journey_analysis"], self.custom_styles['Subtitle']))
+                        doc_elements.append(Spacer(1, 0.1*inch))
+                        
+                        # Count clusters in each journey phase
+                        phase_counts = Counter([item['journey_phase'] for item in journey_phases])
+                        
+                        # Create journey phase visualization
+                        phase_order = [
+                            self.translations["early_phase"], 
+                            "Research-to-Consideration Transition",
+                            self.translations["middle_phase"], 
+                            "Consideration-to-Purchase Transition",
+                            self.translations["late_phase"],
+                            "Mixed Journey Stages",
+                            "Unknown"
+                        ]
+                        
+                        # Filter to only phases that exist in our data
+                        phase_order = [phase for phase in phase_order if phase in phase_counts]
+                        
+                        phase_colors = {
+                            self.translations["early_phase"]: "#43a047",
+                            "Research-to-Consideration Transition": "#26a69a",
+                            self.translations["middle_phase"]: "#1e88e5",
+                            "Consideration-to-Purchase Transition": "#7b1fa2",
+                            self.translations["late_phase"]: "#ff9800",
+                            "Mixed Journey Stages": "#757575",
+                            "Unknown": "#9e9e9e"
+                        }
+                        
+                        phases = list(phase_counts.keys())
+                        counts = list(phase_counts.values())
+                        
+                        fig4 = go.Figure(data=[
+                            go.Bar(
+                                x=phases,
+                                y=counts,
+                                marker=dict(
+                                    color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
+                                )
+                            )
+                        ])
+                        
+                        fig4.update_layout(
+                            title=self.translations["journey_phase_distribution"],
+                            xaxis_title="Journey Phase",
+                            yaxis_title=self.translations["num_keywords"],
+                            margin=dict(l=50, r=50, t=70, b=150),
+                            height=600
+                        )
+                        
+                        img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
+                        if img4:
+                            doc_elements.append(img4)
+                        doc_elements.append(Spacer(1, 0.2*inch))
+                    except Exception as e:
+                        doc_elements.append(Paragraph(f"Error generating journey analysis: {str(e)}", self.custom_styles['Normal']))
 ################################################################
 #          MAIN STREAMLIT APP
 ################################################################
@@ -2467,7 +2537,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     The most valuable clusters are typically those with high coherence scores (right side) and substantial keyword volume (upper area).
                     Clusters with low coherence might benefit from being split into more focused sub-clusters.
                     """)
-with intent_viz_tabs[1]:
+                    with intent_viz_tabs[1]:
                     st.subheader("Customer Journey Analysis")
                     
                     # Count clusters in each journey phase
@@ -2884,7 +2954,7 @@ if selected_cluster:
                             """)
                         else:
                             st.info("Customer journey analysis not available for this cluster.")
-# Tab 3: Cluster Analysis (Split Suggestions)
+                    # Tab 3: Cluster Analysis (Split Suggestions)
                     with analysis_tabs[2]:
                         st.subheader("Cluster Analysis")
                         
