@@ -366,15 +366,16 @@ def generate_sample_csv():
 #          SEMANTIC PREPROCESSING
 ################################################################
 
-def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
+def enhanced_preprocessing(text, use_lemmatization, spacy_nlp, language="english"):
     """
     Enhanced preprocessing using spaCy or fallback with TextBlob.
+    Now with support for Polish.
     """
     if not isinstance(text, str) or not text.strip():
         return ""
     
     try:
-        if spacy_nlp is not None:  # We have a loaded spaCy model
+        if spacy_nlp is not None:  # We use the loaded spaCy model
             doc = spacy_nlp(text.lower())
             entities = [ent.text for ent in doc.ents]
             tokens = []
@@ -396,16 +397,40 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
             from textblob import TextBlob
             blob = TextBlob(text.lower())
             noun_phrases = list(blob.noun_phrases)
+            
+            # Get stopwords according to language
             try:
-                stop_words = set(stopwords.words('english'))
+                stop_words = set(stopwords.words(language))
             except:
                 stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
+                # Add Polish stopwords if needed
+                if language == "polish":
+                    polish_stopwords = {
+                        'i', 'w', 'na', 'z', 'do', 'jest', 'to', 'nie', 'się', 'że', 'dla', 'a', 'od', 'jak',
+                        'po', 'co', 'tak', 'za', 'przez', 'o', 'lub', 'ale', 'już', 'być', 'ten', 'który',
+                        'też', 'tylko', 'jeszcze', 'przy', 'może', 'ich', 'bardzo', 'tam', 'jako', 'wszystko',
+                        'gdy', 'więc', 'zawsze', 'aby', 'kiedy', 'można', 'jeśli', 'bez', 'gdzie', 'czy'
+                    }
+                    stop_words.update(polish_stopwords)
             
             words = [w for w in blob.words if len(w) > 1 and w.lower() not in stop_words]
             
             if use_lemmatization:
-                lemmatizer = WordNetLemmatizer()
-                lemmas = [lemmatizer.lemmatize(w) for w in words]
+                if language == "polish":
+                    # Simplify Polish words (basic approach)
+                    lemmas = []
+                    for w in words:
+                        if len(w) > 4:
+                            for suffix in ['ów', 'ami', 'ach', 'om', 'owi', 'em', 'ie', 'ego', 'emu', 'ymi', 'ich', 'imi']:
+                                if w.endswith(suffix) and len(w) - len(suffix) > 3:
+                                    w = w[:-len(suffix)]
+                                    break
+                        lemmas.append(w)
+                else:
+                    # For other languages use standard lemmatizer
+                    lemmatizer = WordNetLemmatizer()
+                    lemmas = [lemmatizer.lemmatize(w) for w in words]
+                
                 processed_parts = lemmas + noun_phrases
             else:
                 processed_parts = words + noun_phrases
@@ -413,62 +438,132 @@ def enhanced_preprocessing(text, use_lemmatization, spacy_nlp):
             return " ".join(processed_parts)
         
         else:
-            # fallback to standard nltk
-            return preprocess_text(text, use_lemmatization)
+            # fallback to standard NLTK
+            return preprocess_text(text, use_lemmatization, language)
     
-    except Exception:
+    except Exception as e:
+        print(f"Error in enhanced_preprocessing: {str(e)}")
         return text.lower() if isinstance(text, str) else ""
 
-def preprocess_text(text, use_lemmatization=True):
+def preprocess_text(text, use_lemmatization=True, language="english"):
     """
     Basic NLTK-based text preprocessing as a fallback.
+    Supports multiple languages including Polish.
     """
     if not isinstance(text, str) or not text.strip():
         return ""
     try:
         text = text.lower()
-        tokens = word_tokenize(text)
+        
+        # Language-adapted tokenization
         try:
-            stop_words = set(stopwords.words('english'))
+            tokens = word_tokenize(text, language=language)
         except:
+            tokens = word_tokenize(text)  # Fallback to default tokenizer
+        
+        # Language-specific stopwords handling
+        try:
+            stop_words = set(stopwords.words(language))
+        except:
+            # Default stopwords if NLTK fails
             stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
             
+            # Polish-specific stopwords if that language is selected
+            if language == "polish":
+                polish_stopwords = {
+                    'i', 'w', 'na', 'z', 'do', 'jest', 'to', 'nie', 'się', 'że', 'dla', 'a', 'od', 'jak',
+                    'po', 'co', 'tak', 'za', 'przez', 'o', 'lub', 'ale', 'już', 'być', 'ten', 'który',
+                    'też', 'tylko', 'jeszcze', 'przy', 'może', 'ich', 'bardzo', 'tam', 'jako', 'wszystko',
+                    'gdy', 'więc', 'zawsze', 'aby', 'kiedy', 'można', 'jeśli', 'bez', 'gdzie', 'czy'
+                }
+                stop_words.update(polish_stopwords)
+        
+        # Filter tokens that are words and not stopwords
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
+        # Lemmatization according to language
         if use_lemmatization:
-            try:
-                lemmatizer = WordNetLemmatizer()
-                tokens = [lemmatizer.lemmatize(t) for t in tokens]
-            except:
-                pass
+            if language == "polish":
+                # For Polish, try to use spaCy if available
+                try:
+                    import spacy
+                    try:
+                        nlp = spacy.load("pl_core_news_sm")
+                        doc = nlp(" ".join(tokens))
+                        tokens = [token.lemma_ for token in doc]
+                    except:
+                        # Fallback to simple approach for Polish if spaCy is not available
+                        # Remove common Polish endings (simplified)
+                        simplified_tokens = []
+                        for t in tokens:
+                            # Remove some common plural and case endings
+                            if len(t) > 4:
+                                for suffix in ['ów', 'ami', 'ach', 'om', 'owi', 'em', 'ie', 'ego', 'emu', 'ymi', 'ich', 'imi']:
+                                    if t.endswith(suffix) and len(t) - len(suffix) > 3:
+                                        t = t[:-len(suffix)]
+                                        break
+                            simplified_tokens.append(t)
+                        tokens = simplified_tokens
+                except ImportError:
+                    # If spaCy is not installed, use the simplified approach
+                    simplified_tokens = []
+                    for t in tokens:
+                        if len(t) > 4:
+                            for suffix in ['ów', 'ami', 'ach', 'om', 'owi', 'em', 'ie', 'ego', 'emu', 'ymi', 'ich', 'imi']:
+                                if t.endswith(suffix) and len(t) - len(suffix) > 3:
+                                    t = t[:-len(suffix)]
+                                    break
+                        simplified_tokens.append(t)
+                    tokens = simplified_tokens
+            else:
+                # For other languages, use WordNetLemmatizer
+                try:
+                    lemmatizer = WordNetLemmatizer()
+                    tokens = [lemmatizer.lemmatize(t) for t in tokens]
+                except:
+                    pass
         
         return " ".join(tokens)
-    except Exception:
+    except Exception as e:
+        print(f"Error in preprocess_text: {str(e)}")
         return text.lower() if isinstance(text, str) else ""
 
-def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
+def preprocess_keywords(keywords, use_advanced, spacy_nlp=None, selected_language="English"):
     """
-    Main keyword preprocessing loop.
+    Main keyword preprocessing loop with language support.
     """
     processed_keywords = []
     progress_bar = st.progress(0)
     total = len(keywords)
     
+    # Map the selected language to NLTK codes
+    language_map = {
+        "English": "english",
+        "Spanish": "spanish",
+        "French": "french",
+        "German": "german",
+        "Italian": "italian",
+        "Portuguese": "portuguese",
+        "Polish": "polish",  # Add mapping for Polish
+        # You can add more mappings as needed
+    }
+    nltk_language = language_map.get(selected_language, "english")
+    
     if use_advanced:
         if spacy_nlp is not None:
-            st.success("Using advanced preprocessing with spaCy for the selected language.")
+            st.success(f"Using advanced preprocessing with spaCy for {selected_language}")
         elif textblob_available:
-            st.success("Using fallback preprocessing with TextBlob.")
+            st.success(f"Using fallback preprocessing with TextBlob for {selected_language}")
         else:
-            st.info("Using standard preprocessing with NLTK.")
+            st.info(f"Using standard preprocessing with NLTK for {selected_language}")
     else:
-        st.info("Using standard preprocessing with NLTK (advanced preprocessing disabled).")
+        st.info(f"Using standard preprocessing with NLTK for {selected_language} (advanced preprocessing disabled)")
     
     for i, keyword in enumerate(keywords):
         if use_advanced and (spacy_nlp is not None or textblob_available):
-            processed_keywords.append(enhanced_preprocessing(keyword, True, spacy_nlp))
+            processed_keywords.append(enhanced_preprocessing(keyword, True, spacy_nlp, nltk_language))
         else:
-            processed_keywords.append(preprocess_text(keyword, True))
+            processed_keywords.append(preprocess_text(keyword, True, nltk_language))
         
         if i % 100 == 0:
             progress_bar.progress(min(i / total, 1.0))
@@ -1601,7 +1696,7 @@ def run_clustering(
         
         # Preprocessing
         st.subheader("Keyword Preprocessing")
-        st.info("Preprocessing keywords with advanced NLP or fallback.")
+        st.info(f"Preprocessing keywords with advanced NLP or fallback for {selected_language}")
         use_advanced = True  # We'll try advanced approach if possible
 
         if "keyword" not in df.columns:
