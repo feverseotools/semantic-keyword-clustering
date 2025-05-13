@@ -34,6 +34,7 @@ kaleido>=0.2.1        # For static Plotly image export
 #    python -m spacy download fr_core_news_sm  # French
 #    python -m spacy download de_core_news_sm  # German
 #    python -m spacy download es_core_news_sm  # Spanish
+#    python -m spacy download pl_core_news_sm  # Polish
 #    # Add other models as needed based on your language requirements
 #
 # 3. Create a 'models' directory at the root of your project:
