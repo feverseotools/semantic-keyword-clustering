@@ -169,6 +169,7 @@ SPACY_LANGUAGE_MODELS = {
     "Danish": "da_core_news_sm",
     "Greek": "el_core_news_sm",
     "Romanian": "ro_core_news_sm",
+    "Polish": "pl_core_news_sm",
     # The following languages often have partial or community models, which might not be installed by default
     # For now, we will rely on fallback if not installed.
     "Korean": None,
@@ -431,7 +432,7 @@ def preprocess_text(text, use_lemmatization=True):
             stop_words = set(stopwords.words('english'))
         except:
             stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
-        
+            
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
         if use_lemmatization:
@@ -1981,7 +1982,8 @@ language_options = [
     "English", "Spanish", "French", "German", "Dutch", 
     "Korean", "Japanese", "Italian", "Portuguese", 
     "Brazilian Portuguese", "Swedish", "Norwegian", 
-    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian"
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
+    "Polish"
 ]
 selected_language = st.sidebar.selectbox(
     "Select language of the CSV",
