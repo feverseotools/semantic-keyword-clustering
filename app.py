@@ -59,13 +59,6 @@ try:
 except Exception:
     pass  # Continue even if downloads fail
 
-#PDF export Button
-try:
-    from export_pdf import add_pdf_export_button
-    pdf_export_available = True
-except ImportError:
-    pdf_export_available = False
-
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
 ################################################################
@@ -2142,8 +2135,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 # Get search volume if available
                 if 'search_volume' in df.columns:
-                        df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
-                        search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
+                    search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
                 else:
                     search_volume = count * 100  # Default estimate for visualization scaling
                 
@@ -2185,8 +2177,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 with intent_viz_tabs[0]:
                     st.subheader("Clusters by Search Intent & Coherence")
-                    
-                    ai_df['search_volume'] = pd.to_numeric(ai_df['search_volume'], errors='coerce')
                     
                     fig3 = px.scatter(
                         ai_df,
@@ -2840,18 +2830,6 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
-        
- # Add PDF export button if available
-    if pdf_export_available:
-        st.markdown("---")
-        st.markdown("### Export Complete Report")
-        st.markdown("Generate a PDF report with visualizations, search intent analysis and cluster details.")
-        
-        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
-        add_pdf_export_button(df, cluster_evaluation)
-    else:
-        st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
-
         
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
