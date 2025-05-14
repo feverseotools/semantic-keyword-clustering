@@ -59,6 +59,13 @@ try:
 except Exception:
     pass  # Continue even if downloads fail
 
+# Check if PDF export is available
+try:
+    from export_pdf import add_pdf_export_button
+    pdf_export_available = True
+except ImportError:
+    pdf_export_available = False
+
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
 ################################################################
@@ -1531,6 +1538,54 @@ def evaluate_cluster_quality(df, embeddings, cluster_column='cluster_id'):
     
     return df
 
+def extract_entities_for_cluster(df, cluster_id, spacy_nlp):
+    """
+    Extract named entities from keywords in a cluster.
+    Returns a dictionary of entity types and their frequency.
+    """
+    if not spacy_nlp:
+        return {}
+        
+    keywords = df[df['cluster_id'] == cluster_id]['keyword'].tolist()
+    entities = {}
+    
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
+    progress_text.text(f"Extracting entities for cluster {cluster_id}...")
+    
+    try:
+        for i, keyword in enumerate(keywords):
+            doc = spacy_nlp(keyword)
+            for ent in doc.ents:
+                entity_type = ent.label_
+                entity_text = ent.text.lower()
+                
+                if entity_type not in entities:
+                    entities[entity_type] = {}
+                if entity_text not in entities[entity_type]:
+                    entities[entity_type][entity_text] = 0
+                entities[entity_type][entity_text] += 1
+                
+           # Update progress every 10 keywords
+            if i % 10 == 0:
+                progress_bar.progress(min(i / len(keywords), 1.0))
+        
+        progress_bar.progress(1.0)
+        progress_text.text(f"✅ Entity extraction complete for cluster {cluster_id}.")
+        
+        # Sort entities by frequency
+        for entity_type in entities:
+            entities[entity_type] = dict(sorted(
+                entities[entity_type].items(), 
+                key=lambda item: item[1], 
+                reverse=True
+            ))
+            
+        return entities
+    except Exception as e:
+        progress_text.text(f"Error extracting entities: {str(e)}")
+        return {}
+
 def calculate_cluster_coherence(cluster_embeddings):
     """
     Calculate coherence score based on cosine similarity within clusters.
@@ -1618,6 +1673,23 @@ def evaluate_and_refine_clusters(df, client, model="gpt-4.1-nano"):
     except Exception as e:
         st.error(f"Error in cluster evaluation: {str(e)}")
         return {}
+
+def calculate_topic_density(embeddings):
+    """
+    Calculate topic density based on semantic similarity and variance.
+    Returns a score between 0-1 where higher values indicate stronger topical focus.
+    """
+    try:
+        if len(embeddings) < 2:
+            return 0.5  # Valor predeterminado para clusters muy pequeños
+            
+        # Calculate the centroide
+        centroid = np.mean(embeddings, axis=0)
+        
+        # Normalize the centroid
+        centroid_norm = np.linalg.norm(centroid)
+        if centroid_norm > 0:
+            centroid = centroid / centroid_norm
 
 ################################################################
 #          MAIN CLUSTERING PIPELINE
@@ -1858,6 +1930,485 @@ def run_clustering(
         return False, None
     
     return True, None
+
+################################################################
+#          EXPORT FUNCTIONS
+################################################################
+
+def generate_html_report(df, cluster_evaluation=None):
+    """Generate a full HTML report with all analysis and visualizations"""
+    
+    from datetime import datetime
+    import plotly.io as pio
+    
+    # Start HTML with styles
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Semantic Keyword Clustering Report</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            .header {{ background-color: #f8f9fa; padding: 20px; margin-bottom: 20px; border-radius: 5px; }}
+            .section {{ margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 20px; }}
+            h1 {{ color: #2c3e50; }}
+            h2 {{ color: #3498db; margin-top: 30px; }}
+            h3 {{ color: #2980b9; }}
+            table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
+            th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }}
+            th {{ background-color: #f8f9fa; }}
+            tr:hover {{ background-color: #f5f5f5; }}
+            .info-box {{ background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; }}
+            .cluster-box {{ border: 1px solid #ddd; padding: 15px; border-radius: 5px; margin-bottom: 15px; }}
+            .intent-info {{ background-color: #e3f2fd; border-left: 5px solid #2196f3; padding: 10px; margin: 10px 0; }}
+            .intent-nav {{ background-color: #e8f5e9; border-left: 5px solid #4caf50; padding: 10px; margin: 10px 0; }}
+            .intent-trans {{ background-color: #fff3e0; border-left: 5px solid #ff9800; padding: 10px; margin: 10px 0; }}
+            .intent-comm {{ background-color: #f3e5f5; border-left: 5px solid #9c27b0; padding: 10px; margin: 10px 0; }}
+            .chart {{ width: 100%; height: 500px; margin-bottom: 30px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Semantic Keyword Clustering Analysis</h1>
+                <p>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                <p>Total keywords: {len(df)}</p>
+                <p>Number of clusters: {len(df['cluster_id'].unique())}</p>
+                {'<p>Total search volume: ' + format(df['search_volume'].sum(), ',') + '</p>' if 'search_volume' in df.columns else ''}
+            </div>
+    """
+    
+    # Add visualizations
+    html += """
+            <div class="section">
+                <h2>Cluster Distribution</h2>
+                <div id="cluster-distribution" class="chart"></div>
+            </div>
+            
+            <div class="section">
+                <h2>Semantic Coherence</h2>
+                <div id="coherence-chart" class="chart"></div>
+            </div>
+    """
+    
+    # If there is intent data, add visualizations
+    if cluster_evaluation:
+        html += """
+            <div class="section">
+                <h2>Search Intent Analysis</h2>
+                <div id="intent-distribution" class="chart"></div>
+                <div id="intent-by-cluster" class="chart"></div>
+            </div>
+            
+            <div class="section">
+                <h2>Customer Journey Analysis</h2>
+                <div id="journey-phases" class="chart"></div>
+            </div>
+        """
+    
+    # Cluster details completed
+    html += """
+        <div class="section">
+            <h2>Detailed Cluster Analysis</h2>
+    """
+    
+    # For each cluster, generate a specific section
+    for cluster_id in sorted(df['cluster_id'].unique()):
+        cluster_df = df[df['cluster_id'] == cluster_id]
+        cluster_name = cluster_df['cluster_name'].iloc[0] if not cluster_df['cluster_name'].empty else f"Cluster {cluster_id}"
+        cluster_desc = cluster_df['cluster_description'].iloc[0] if not cluster_df['cluster_description'].empty else ""
+        
+        html += f"""
+            <div class="cluster-box">
+                <h3>{cluster_name} (ID: {cluster_id})</h3>
+                <p><strong>Description:</strong> {cluster_desc}</p>
+                <p><strong>Total Keywords:</strong> {len(cluster_df)}</p>
+                <p><strong>Coherence Score:</strong> {cluster_df['cluster_coherence'].mean():.3f}</p>
+        """
+        
+        # Add AI analysis information if it's available
+        if cluster_evaluation and cluster_id in cluster_evaluation:
+            ai_eval = cluster_evaluation[cluster_id]
+            
+            # Search Intent
+            intent_data = ai_eval.get('intent_classification', {})
+            primary_intent = intent_data.get('primary_intent', 'Unknown')
+            intent_class = ""
+            if primary_intent == "Informational": intent_class = "intent-info"
+            elif primary_intent == "Navigational": intent_class = "intent-nav"
+            elif primary_intent == "Transactional": intent_class = "intent-trans"
+            elif primary_intent == "Commercial": intent_class = "intent-comm"
+            
+            html += f"""
+                <div class="{intent_class}">
+                    <p><strong>Primary Search Intent:</strong> {primary_intent}</p>
+                    <p><strong>Search Intent Details:</strong> {ai_eval.get('search_intent', 'N/A')}</p>
+                </div>
+            """
+            
+            # Journey phase
+            if 'intent_flow' in ai_eval and 'journey_phase' in ai_eval['intent_flow']:
+                html += f"""
+                    <p><strong>Customer Journey Phase:</strong> {ai_eval['intent_flow']['journey_phase']}</p>
+                """
+            
+            # Split suggestion
+            html += f"""
+                <p><strong>Split Suggestion:</strong> {ai_eval.get('split_suggestion', 'N/A')}</p>
+                <p><strong>SEO Insights:</strong> {ai_eval.get('additional_info', 'N/A')}</p>
+            """
+        
+        # Representative keywords table
+        rep_kws = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
+        if rep_kws:
+            html += """
+                <h4>Representative Keywords</h4>
+                <ul>
+            """
+            for kw in rep_kws[:10]:
+                html += f"<li>{kw}</li>"
+            html += "</ul>"
+        
+        # Table with all keywords with search volume if they're available
+        html += """
+            <h4>All Keywords</h4>
+            <table>
+                <tr>
+                    <th>Keyword</th>
+        """
+        
+        if 'search_volume' in cluster_df.columns:
+            html += "<th>Search Volume</th>"
+        
+        html += "</tr>"
+        
+        # Limit to 100 keywords per cluster to avoid making the file too much bigger
+        display_df = cluster_df.sort_values(by='search_volume', ascending=False) if 'search_volume' in cluster_df.columns else cluster_df
+        display_df = display_df.head(100)
+        
+        for _, row in display_df.iterrows():
+            html += f"<tr><td>{row['keyword']}</td>"
+            if 'search_volume' in cluster_df.columns:
+                html += f"<td>{row['search_volume']:,}</td>"
+            html += "</tr>"
+        
+        html += """
+                </table>
+            </div>
+        """
+    
+    # JS code for visualizations
+    html += """
+        </div>
+        <script>
+    """
+    
+    # Generate data for graphs
+    cluster_sizes = df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
+    cluster_sizes['label'] = cluster_sizes.apply(lambda x: f"{x['cluster_name'][:25]}{'...' if len(x['cluster_name']) > 25 else ''} (ID: {x['cluster_id']})", axis=1)
+    
+    # Cluster distribution graph
+    html += f"""
+        var clusterSizes = {{
+            x: {cluster_sizes['label'].tolist()},
+            y: {cluster_sizes['count'].tolist()},
+            type: 'bar',
+            marker: {{ color: 'royalblue' }}
+        }};
+        
+        Plotly.newPlot('cluster-distribution', [clusterSizes], {{
+            title: 'Size of Each Cluster',
+            xaxis: {{ title: 'Cluster', tickangle: -45 }},
+            yaxis: {{ title: 'Number of Keywords' }},
+            margin: {{ l: 50, r: 50, t: 70, b: 200 }}
+        }});
+    """
+    
+    # Coherence graph
+    coherence_data = df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
+    coherence_data['label'] = coherence_data.apply(lambda x: f"{x['cluster_name'][:25]}{'...' if len(x['cluster_name']) > 25 else ''} (ID: {x['cluster_id']})", axis=1)
+    
+    html += f"""
+        var coherenceData = {{
+            x: {coherence_data['label'].tolist()},
+            y: {coherence_data['cluster_coherence'].tolist()},
+            type: 'bar',
+            marker: {{ 
+                color: {coherence_data['cluster_coherence'].tolist()},
+                colorscale: 'Viridis'
+            }}
+        }};
+        
+        Plotly.newPlot('coherence-chart', [coherenceData], {{
+            title: 'Semantic Coherence by Cluster',
+            xaxis: {{ title: 'Cluster', tickangle: -45 }},
+            yaxis: {{ title: 'Coherence' }},
+            margin: {{ l: 50, r: 50, t: 70, b: 200 }}
+        }});
+    """
+    
+    # If there's intent data, generate visualizations
+    if cluster_evaluation:
+        # Compile intent data
+        intent_data = []
+        for c_id, data in cluster_evaluation.items():
+            if 'intent_classification' in data:
+                cluster_name = df[df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not df[df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                primary_intent = data['intent_classification'].get('primary_intent', 'Unknown')
+                count = len(df[df['cluster_id'] == c_id])
+                
+                intent_data.append({
+                    'cluster_id': c_id,
+                    'cluster_name': cluster_name,
+                    'primary_intent': primary_intent,
+                    'count': count
+                })
+        
+        if intent_data:
+            # Crear distribución de intent
+            intent_counts = {}
+            for item in intent_data:
+                intent_counts[item['primary_intent']] = intent_counts.get(item['primary_intent'], 0) + item['count']
+            
+            html += f"""
+                var intentData = {{
+                    values: {list(intent_counts.values())},
+                    labels: {list(intent_counts.keys())},
+                    type: 'pie',
+                    marker: {{
+                        colors: ['rgb(33, 150, 243)', 'rgb(76, 175, 80)', 'rgb(255, 152, 0)', 'rgb(156, 39, 176)', 'rgb(158, 158, 158)']
+                    }}
+                }};
+                
+                Plotly.newPlot('intent-distribution', [intentData], {{
+                    title: 'Search Intent Distribution',
+                    margin: {{ l: 50, r: 50, t: 70, b: 50 }}
+                }});
+            """
+    
+    html += """
+        </script>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html
+
+def generate_excel_report(df, cluster_evaluation=None):
+    """Generate a detailed Excel report with multiple tabs"""
+    
+    # Require openpyxl library
+    try:
+        import pandas as pd
+        from io import BytesIO
+        
+        output = BytesIO()
+        
+        # Create ExcelWriter
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Tab 1: All data
+            df.to_excel(writer, sheet_name='All Keywords', index=False)
+            
+            # Tab 2: Cluster resume
+            summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
+            summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
+            
+            # Add coherence
+            coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
+            summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
+            summary_df.drop('cluster_id', axis=1, inplace=True)
+            summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
+            
+            # Add volume if it exists
+            if 'search_volume' in df.columns:
+                volume_df = df.groupby('cluster_id')['search_volume'].sum().reset_index()
+                summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
+                summary_df.drop('cluster_id', axis=1, inplace=True)
+                summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
+            
+            # Add intent if it's available
+            if cluster_evaluation:
+                def get_search_intent(cid):
+                    if cid in cluster_evaluation:
+                        intent_data = cluster_evaluation[cid].get('intent_classification', {})
+                        return intent_data.get('primary_intent', 'Unknown')
+                    return 'Unknown'
+                
+                summary_df['Primary Intent'] = summary_df['ID'].apply(get_search_intent)
+                
+                # Add journey phase
+                def get_journey_phase(cid):
+                    if cid in cluster_evaluation and 'intent_flow' in cluster_evaluation[cid]:
+                        return cluster_evaluation[cid]['intent_flow'].get('journey_phase', 'Unknown')
+                    return 'Unknown'
+                
+                summary_df['Customer Journey Phase'] = summary_df['ID'].apply(get_journey_phase)
+            
+            summary_df.to_excel(writer, sheet_name='Clusters Summary', index=False)
+            
+            # Tab 3: Intent analysis if it's available
+            if cluster_evaluation:
+                intent_rows = []
+                
+                for c_id, data in cluster_evaluation.items():
+                    if 'intent_classification' in data:
+                        cluster_name = df[df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not df[df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                        
+                        intent_data = data['intent_classification']
+                        scores = intent_data.get('scores', {})
+                        
+                        row = {
+                            'Cluster ID': c_id,
+                            'Cluster Name': cluster_name,
+                            'Primary Intent': intent_data.get('primary_intent', 'Unknown'),
+                            'Informational Score': scores.get('Informational', 0),
+                            'Navigational Score': scores.get('Navigational', 0),
+                            'Transactional Score': scores.get('Transactional', 0),
+                            'Commercial Score': scores.get('Commercial', 0),
+                            'Search Intent': data.get('search_intent', ''),
+                            'Coherence Score': data.get('coherence_score', 0),
+                            'Split Suggestion': data.get('split_suggestion', ''),
+                            'SEO Insights': data.get('additional_info', '')
+                        }
+                        
+                        # Add journey phase if it's available
+                        if 'intent_flow' in data:
+                            row['Journey Phase'] = data['intent_flow'].get('journey_phase', 'Unknown')
+                            row['Intent Distribution'] = str(data['intent_flow'].get('intent_distribution', {}))
+                        
+                        intent_rows.append(row)
+                
+                if intent_rows:
+                    intent_df = pd.DataFrame(intent_rows)
+                    intent_df.to_excel(writer, sheet_name='Intent Analysis', index=False)
+            
+            # Tab 4+: One tab per cluster
+            for cluster_id in df['cluster_id'].unique():
+                cluster_df = df[df['cluster_id'] == cluster_id]
+                sheet_name = f"Cluster {cluster_id}"
+                
+                #  Sort by volume if it's available
+                if 'search_volume' in cluster_df.columns:
+                    cluster_df = cluster_df.sort_values('search_volume', ascending=False)
+                
+                columns_to_include = ['keyword']
+                if 'search_volume' in cluster_df.columns:
+                    columns_to_include.append('search_volume')
+                if 'competition' in cluster_df.columns:
+                    columns_to_include.append('competition')
+                if 'cpc' in cluster_df.columns:
+                    columns_to_include.append('cpc')
+                
+                cluster_df[columns_to_include].to_excel(writer, sheet_name=sheet_name[:31], index=False)  # Excel limita los nombres de hoja a 31 caracteres
+        
+        # Return buffer
+        output.seek(0)
+        return output
+        
+    except ImportError:
+        st.error("Excel export requires openpyxl. Install with: pip install openpyxl")
+        return None
+        
+def generate_json_report(df, cluster_evaluation=None):
+    """Generate a complete JSON report with all data and analysis"""
+    
+    from datetime import datetime
+    import json
+    
+    # Create dictionary for data
+    report_data = {
+        "metadata": {
+            "generated_at": datetime.now().isoformat(),
+            "total_keywords": len(df),
+            "total_clusters": len(df['cluster_id'].unique()),
+            "search_volume_available": 'search_volume' in df.columns,
+            "ai_analysis_available": cluster_evaluation is not None and len(cluster_evaluation) > 0
+        },
+        "clusters": []
+    }
+    
+    # Collect data for each cluster
+    for cluster_id in sorted(df['cluster_id'].unique()):
+        cluster_df = df[df['cluster_id'] == cluster_id]
+        
+        cluster_data = {
+            "cluster_id": int(cluster_id),
+            "cluster_name": cluster_df['cluster_name'].iloc[0],
+            "cluster_description": cluster_df['cluster_description'].iloc[0],
+            "keyword_count": len(cluster_df),
+            "coherence_score": float(cluster_df['cluster_coherence'].mean()),
+            "keywords": []
+        }
+        
+        # Add total volume if available
+        if 'search_volume' in cluster_df.columns:
+            cluster_data["total_search_volume"] = int(cluster_df['search_volume'].sum())
+        
+        # Add AI analysis data if available
+        if cluster_evaluation and cluster_id in cluster_evaluation:
+            ai_eval = cluster_evaluation[cluster_id]
+            
+            cluster_data["ai_analysis"] = {
+                "search_intent": ai_eval.get('search_intent', ''),
+                "split_suggestion": ai_eval.get('split_suggestion', ''),
+                "additional_info": ai_eval.get('additional_info', ''),
+                "coherence_score": ai_eval.get('coherence_score', 0)
+            }
+            
+            # Add intent classification
+            if 'intent_classification' in ai_eval:
+                cluster_data["ai_analysis"]["intent_classification"] = ai_eval['intent_classification']
+            
+            # Add journey analysis
+            if 'intent_flow' in ai_eval:
+                cluster_data["ai_analysis"]["intent_flow"] = ai_eval['intent_flow']
+            
+            # Añadir análisis de trayectos
+            if 'subclusters' in ai_eval:
+                cluster_data["ai_analysis"]["subclusters"] = ai_eval['subclusters']
+        
+        # Add keywords (all or only the representative ones)
+        representative_kws = cluster_df[cluster_df['representative'] == True]
+        
+        # Add representative keywords
+        if not representative_kws.empty:
+            cluster_data["representative_keywords"] = []
+            
+            for _, row in representative_kws.iterrows():
+                kw_data = {"keyword": row['keyword']}
+                
+                # Add metrics if available
+                if 'search_volume' in row:
+                    kw_data["search_volume"] = int(row['search_volume']) if not pd.isna(row['search_volume']) else 0
+                if 'competition' in row:
+                    kw_data["competition"] = float(row['competition']) if not pd.isna(row['competition']) else 0
+                if 'cpc' in row:
+                    kw_data["cpc"] = float(row['cpc']) if not pd.isna(row['cpc']) else 0
+                
+                cluster_data["representative_keywords"].append(kw_data)
+        
+        # Add all keywords
+        for _, row in cluster_df.iterrows():
+            kw_data = {"keyword": row['keyword']}
+            
+            # Add metrics if available
+            if 'search_volume' in row:
+                kw_data["search_volume"] = int(row['search_volume']) if not pd.isna(row['search_volume']) else 0
+            if 'competition' in row:
+                kw_data["competition"] = float(row['competition']) if not pd.isna(row['competition']) else 0
+            if 'cpc' in row:
+                kw_data["cpc"] = float(row['cpc']) if not pd.isna(row['cpc']) else 0
+            
+            cluster_data["keywords"].append(kw_data)
+        
+        report_data["clusters"].append(cluster_data)
+    
+    return json.dumps(report_data, indent=2)
 
 ################################################################
 #          MAIN STREAMLIT APP
@@ -2921,7 +3472,15 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             else:
                 st.dataframe(cluster_df[['keyword']], use_container_width=True)
     
-    with st.expander("Download Results"):
+with st.expander("Download Results", expanded=True):
+    st.subheader("Export Options")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### Basic Data Export")
+        
+        # CSV de datos básicos
         csv_data = df.to_csv(index=False)
         st.download_button(
             label="Download Full Results (CSV)",
@@ -2930,6 +3489,94 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
+        
+        # CSV de resumen de clusters
+        summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
+        summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
+        
+        # Merge coherence
+        coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
+        summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
+        summary_df.drop('cluster_id', axis=1, inplace=True)
+        summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
+        
+        # Add search volume if it exists
+        if 'search_volume' in df.columns:
+            volume_df = df.groupby('cluster_id')['search_volume'].sum().reset_index()
+            summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
+            summary_df.drop('cluster_id', axis=1, inplace=True)
+            summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
+        
+        csv_summary = summary_df.to_csv(index=False)
+        st.download_button(
+            label="Download Clusters Summary (CSV)",
+            data=csv_summary,
+            file_name="semantic_clusters_summary.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col2:
+        st.markdown("### Complete Analysis Export")
+        
+        # Obtener evaluación de clusters si está disponible
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        
+        # Exportar HTML interactivo
+        if st.button("Generate HTML Report", use_container_width=True):
+            with st.spinner("Generating HTML report..."):
+                html_report = generate_html_report(df, cluster_evaluation)
+                
+                # Crear botón de descarga para el HTML
+                st.download_button(
+                    label="Download HTML Report",
+                    data=html_report,
+                    file_name="semantic_clustering_report.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+        
+        # Exportar Excel
+        if st.button("Generate Excel Report", use_container_width=True):
+            with st.spinner("Generating Excel report..."):
+                try:
+                    excel_buffer = generate_excel_report(df, cluster_evaluation)
+                    if excel_buffer:
+                        st.download_button(
+                            label="Download Excel Report",
+                            data=excel_buffer,
+                            file_name="semantic_clustering_report.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    else:
+                        st.error("Excel export failed. Install openpyxl with: pip install openpyxl")
+                except Exception as e:
+                    st.error(f"Error generating Excel report: {str(e)}")
+        
+        # Exportar JSON
+        if st.button("Generate JSON Data", use_container_width=True):
+            with st.spinner("Generating JSON data..."):
+                json_data = generate_json_report(df, cluster_evaluation)
+                
+                st.download_button(
+                    label="Download JSON Data",
+                    data=json_data,
+                    file_name="semantic_clustering_data.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+    
+    # PDF export (si está disponible)
+    if pdf_export_available:
+        st.markdown("### PDF Report")
+        st.markdown("Generate a PDF report with visualizations, search intent analysis and cluster details.")
+        
+        # Código existente para PDF export
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        add_pdf_export_button(df, cluster_evaluation)
+    else:
+        st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
         
  # Add PDF export button if available
     if pdf_export_available:
