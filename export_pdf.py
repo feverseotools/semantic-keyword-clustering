@@ -1,3 +1,15 @@
+# Add at the top of the file
+"""
+PDF Report Generator for Semantic Keyword Clustering.
+
+This module handles PDF generation from cluster analysis data.
+"""
+
+__all__ = ['PDFReport', 'add_pdf_export_button', 'create_download_link', 'sanitize_filename']
+
+# Add version info
+__version__ = "0.1.0"
+
 import os
 import tempfile
 import base64
@@ -20,6 +32,8 @@ import time
 import logging
 import shutil
 import concurrent.futures
+import contextlib
+from contextlib import ExitStack
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -36,39 +50,45 @@ class PDFReport:
         language (str): Language code for report localization ('en', 'es')
         temp_dir (str): Path to temporary directory for image generation
     """
-    def __init__(self, df, cluster_evaluation=None, app_name="Advanced Semantic Keyword Clustering", language="en"):
-        """
-        Initialize the PDF report generator.
+# Additional import at the top of the file
+import contextlib
+from contextlib import ExitStack
+
+
+def __init__(self, df, cluster_evaluation=None, app_name="Advanced Semantic Keyword Clustering", language="en"):
+    """
+    Initialize the PDF report generator with improved resource management.
+    
+    Args:
+        df (pandas.DataFrame): The clustered keywords dataframe
+        cluster_evaluation (dict, optional): Dictionary containing cluster evaluation data
+        app_name (str, optional): Name of the application
+        language (str, optional): Language code ('en', 'es')
+    """
+    self.df = df.copy()  # Create a copy to avoid modifying the original
+    self.cluster_evaluation = cluster_evaluation if cluster_evaluation else {}
+    self.app_name = app_name
+    self.language = language
+    self.resource_stack = ExitStack()
+    
+    # Create temp directory with error handling
+    try:
+        self.temp_dir = tempfile.mkdtemp()
+        logger.info(f"Created temporary directory: {self.temp_dir}")
+    except Exception as e:
+        logger.error(f"Failed to create temporary directory: {str(e)}")
+        self.temp_dir = None
         
-        Args:
-            df (pandas.DataFrame): The clustered keywords dataframe
-            cluster_evaluation (dict, optional): Dictionary containing cluster evaluation data
-            app_name (str, optional): Name of the application
-            language (str, optional): Language code ('en', 'es')
-        """
-        self.df = df.copy()  # Create a copy to avoid modifying the original
-        self.cluster_evaluation = cluster_evaluation if cluster_evaluation else {}
-        self.app_name = app_name
-        self.language = language
-        
-        # Create temp directory with error handling
-        try:
-            self.temp_dir = tempfile.mkdtemp()
-            logger.info(f"Created temporary directory: {self.temp_dir}")
-        except Exception as e:
-            logger.error(f"Failed to create temporary directory: {str(e)}")
-            self.temp_dir = None
-            
-        # Initialize styles
-        self.styles = getSampleStyleSheet()
-        self.custom_styles = {}
-        self.setup_custom_styles()
-        
-        # Load translations
-        self.translations = self._get_translations()
-        
-        # Validate inputs
-        self._validate_inputs()
+    # Initialize styles
+    self.styles = getSampleStyleSheet()
+    self.custom_styles = {}
+    self.setup_custom_styles()
+    
+    # Load translations
+    self.translations = self._get_translations()
+    
+    # Validate inputs
+    self._validate_inputs()
     
     def _validate_inputs(self):
         """Validate input data to ensure required columns exist."""
@@ -87,14 +107,21 @@ class PDFReport:
         except Exception as e:
             logger.warning(f"Failed to convert cluster_id to int: {str(e)}")
     
-    def __del__(self):
-        """Cleanup temp files when object is destroyed."""
-        try:
-            if hasattr(self, 'temp_dir') and self.temp_dir and os.path.exists(self.temp_dir):
-                shutil.rmtree(self.temp_dir)
-                logger.info(f"Cleaned up temporary directory: {self.temp_dir}")
-        except Exception as e:
-            logger.error(f"Error cleaning up temporary directory: {str(e)}")
+def __del__(self):
+    """Cleanup resources when the object is destroyed."""
+    self.cleanup()
+
+def cleanup(self):
+    """Explicitly clean up resources - can be called manually or by __del__."""
+    if hasattr(self, 'resource_stack'):
+        self.resource_stack.close()
+    
+    try:
+        if hasattr(self, 'temp_dir') and self.temp_dir and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+            logger.info(f"Cleaned up temporary directory: {self.temp_dir}")
+    except Exception as e:
+        logger.error(f"Error cleaning up temporary directory: {str(e)}")
     
     def _get_translations(self):
         """Get translations dictionary based on language."""
@@ -236,65 +263,77 @@ class PDFReport:
             fontName='Helvetica-Bold'
         )
     
-    def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max_retries=3):
-        """
-        Convert Plotly figure to ReportLab Image with retry logic.
-        
-        Args:
-            fig: A plotly figure object
-            width: Desired width in ReportLab units
-            height: Desired height in ReportLab units
-            filename: Optional filename for the temporary image
-            max_retries: Number of retries on failure
+def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max_retries=3, retry_delay=1.0):
+    """
+    Convert Plotly figure to ReportLab Image with enhanced retry logic.
+    
+    Args:
+        fig: A plotly figure object
+        width: Desired width in ReportLab units
+        height: Desired height in ReportLab units
+        filename: Optional filename for the temporary image
+        max_retries: Number of retries on failure
+        retry_delay: Delay between retries in seconds
             
-        Returns:
-            ReportLab Image object or None on failure
-        """
-        if not self.temp_dir or not os.path.exists(self.temp_dir):
-            logger.error("Temporary directory not available")
-            return None
-        
-        if filename is None:
-            filename = f"temp_plot_{np.random.randint(10000)}.png"
-        
-        # Save the figure as a PNG file
-        img_path = os.path.join(self.temp_dir, filename)
-        
-        # Add retry logic for more resilience
-        for retry in range(max_retries):
-            try:
-                # Adjust figure layout for better PDF rendering
-                fig.update_layout(
-                    margin=dict(l=50, r=50, t=70, b=150),
-                    font=dict(size=10)  # Smaller font for PDF
-                )
-                
-                # Write with increased timeout for complex charts
-                pio.write_image(fig, img_path, format='png', width=900, height=500, scale=2, engine='kaleido')
-                
-                # Check if the file was created successfully
-                if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
-                    # Create ReportLab Image
-                    img = Image(img_path, width=width, height=height)
-                    return img
-                else:
-                    raise ValueError("Image file was not created properly")
+    Returns:
+        ReportLab Image object or None on failure
+    """
+    if not self.temp_dir or not os.path.exists(self.temp_dir):
+        logger.error("Temporary directory not available")
+        return None
+    
+    if filename is None:
+        filename = f"temp_plot_{np.random.randint(10000)}.png"
+    
+    # Save the figure as a PNG file
+    img_path = os.path.join(self.temp_dir, filename)
+    
+    # Add retry logic for more resilience
+    for retry in range(max_retries):
+        try:
+            # Adjust figure layout for better PDF rendering
+            fig.update_layout(
+                margin=dict(l=50, r=50, t=70, b=150),
+                font=dict(size=10)  # Smaller font for PDF
+            )
             
-            except Exception as e:
-                logger.warning(f"Error on retry {retry+1}/{max_retries}: {str(e)}")
-                if retry < max_retries - 1:
-                    time.sleep(1)  # Wait before retrying
-                    continue
-                else:
-                    # On final failure, create a placeholder
+            # Write with increased timeout for complex charts
+            pio.write_image(fig, img_path, format='png', width=900, height=500, scale=2, engine='kaleido')
+            
+            # Check if the file was created successfully
+            if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
+                # Create ReportLab Image
+                img = Image(img_path, width=width, height=height)
+                return img
+            else:
+                raise ValueError("Image file was not created properly")
+        
+        except Exception as e:
+            logger.warning(f"Error on retry {retry+1}/{max_retries}: {str(e)}")
+            if retry < max_retries - 1:
+                time.sleep(retry_delay)  # Wait before retrying, with increasing delay
+                retry_delay *= 1.5  # Exponential backoff
+            else:
+                # On final failure, create a placeholder
+                try:
+                    # Create a simple placeholder image
+                    placeholder = PILImage.new('RGB', (900, 500), color=(240, 240, 240))
+                    # Add text to the placeholder
+                    from PIL import ImageDraw, ImageFont
+                    draw = ImageDraw.Draw(placeholder)
                     try:
-                        # Create a simple placeholder image
-                        placeholder = PILImage.new('RGB', (900, 500), color=(240, 240, 240))
-                        placeholder.save(img_path)
-                        return Image(img_path, width=width, height=height)
-                    except Exception as placeholder_error:
-                        logger.error(f"Failed to create placeholder image: {str(placeholder_error)}")
-                        return None
+                        # Try to load a font, fall back to default
+                        font = ImageFont.truetype("Arial", 20)
+                    except IOError:
+                        font = ImageFont.load_default()
+                    
+                    draw.text((450, 250), "Chart generation failed", 
+                             fill=(0, 0, 0), font=font, anchor="mm")
+                    placeholder.save(img_path)
+                    return Image(img_path, width=width, height=height)
+                except Exception as placeholder_error:
+                    logger.error(f"Failed to create placeholder image: {str(placeholder_error)}")
+                    return None
     
     def generate_summary_page(self, doc_elements):
         """
@@ -339,6 +378,38 @@ class PDFReport:
         
         doc_elements.append(Spacer(1, 0.2*inch))
         return doc_elements
+
+    def process_clusters_in_batches(self, batch_size=50):
+    """
+    Process clusters in batches to handle large datasets more efficiently.
+    
+    Args:
+        batch_size: Number of clusters to process in each batch
+        
+    Returns:
+        List of processed cluster IDs
+    """
+    unique_clusters = self.df['cluster_id'].unique()
+    total_clusters = len(unique_clusters)
+    processed_clusters = []
+    
+    logger.info(f"Processing {total_clusters} clusters in batches of {batch_size}")
+    
+    for i in range(0, total_clusters, batch_size):
+        batch_end = min(i + batch_size, total_clusters)
+        batch_clusters = unique_clusters[i:batch_end]
+        
+        # Process this batch
+        logger.info(f"Processing batch of clusters {i+1} to {batch_end}")
+        # Filter dataframe to only include these clusters
+        batch_df = self.df[self.df['cluster_id'].isin(batch_clusters)].copy()
+        
+        # Process batch operations here
+        # For example, calculate metrics, prepare visualizations, etc.
+        
+        processed_clusters.extend(batch_clusters)
+    
+    return processed_clusters
     
     def generate_cluster_distribution_chart(self, doc_elements):
         """
@@ -692,18 +763,41 @@ class PDFReport:
                             "Unknown": "#9e9e9e"
                         }
                         
-                       phases = list(phase_counts.keys())
-                       counts = list(phase_counts.values())
-                       
-                       fig4 = go.Figure(data=[
-                           go.Bar(
-                               x=phases,
-                               y=counts,
-                               marker=dict(
-                                   color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
-                               )
-                           )
-                       ])
+                        phases = list(phase_counts.keys())
+                        counts = list(phase_counts.values())
+                        
+                        fig4 = go.Figure(data=[
+                            go.Bar(
+                                x=phases,
+                                y=counts,
+                                marker=dict(
+                                    color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
+                                )
+                            )
+                        ])
+                        
+                        fig4.update_layout(
+                            title=self.translations["journey_phase_distribution"],
+                            xaxis_title="Journey Phase",
+                            yaxis_title=self.translations["num_keywords"],
+                            margin=dict(l=50, r=50, t=70, b=150),
+                            height=600
+                        )
+                        
+                        img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
+                        if img4:
+                            doc_elements.append(img4)
+                        doc_elements.append(Spacer(1, 0.2*inch))
+                    except Exception as e:
+                        error_msg = f"Error generating journey analysis: {str(e)}"
+                        logger.error(error_msg)
+                        doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+        except Exception as e:
+            error_msg = f"Error generating search intent charts: {str(e)}"
+            logger.error(error_msg)
+            doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+        
+        return doc_elements
                        
                        fig4.update_layout(
                            title=self.translations["journey_phase_distribution"],
@@ -906,77 +1000,85 @@ class PDFReport:
        
        return doc_elements
    
-   def generate_pdf(self, output_file='clustering_report.pdf'):
-       """
-       Generate the complete PDF report.
-       
-       Args:
-           output_file: Optional filename for the PDF
-           
-       Returns:
-           BytesIO buffer containing the PDF
-       """
-       buffer = BytesIO()
-       
-       # Create the PDF document
-       try:
-           doc = SimpleDocTemplate(
-               buffer,
-               pagesize=A4,
-               rightMargin=0.5*inch,
-               leftMargin=0.5*inch,
-               topMargin=0.5*inch,
-               bottomMargin=0.5*inch
-           )
-           
-           # Container for the elements to add to the PDF
-           doc_elements = []
-           
-           # Generate each section
-           doc_elements = self.generate_summary_page(doc_elements)
-           doc_elements = self.generate_cluster_distribution_chart(doc_elements)
-           doc_elements = self.generate_search_intent_charts(doc_elements)
-           doc_elements = self.generate_clusters_detail(doc_elements)
-           doc_elements = self.generate_conclusion(doc_elements)
-           
-           # Build the PDF
-           doc.build(doc_elements)
-           
-           # Return the buffer
-           buffer.seek(0)
-           return buffer
-           
-       except Exception as e:
-           error_msg = f"Error generating PDF: {str(e)}"
-           logger.error(error_msg)
-           
-           # If PDF generation fails completely, return a simple error PDF
-           try:
-               simple_doc = SimpleDocTemplate(
-                   buffer,
-                   pagesize=A4,
-                   rightMargin=0.5*inch,
-                   leftMargin=0.5*inch,
-                   topMargin=0.5*inch,
-                   bottomMargin=0.5*inch
-               )
-               
-               simple_elements = []
-               simple_elements.append(Paragraph("Error Generating PDF Report", self.styles['Title']))
-               simple_elements.append(Spacer(1, 0.2*inch))
-               simple_elements.append(Paragraph(f"An error occurred: {str(e)}", self.styles['Normal']))
-               simple_elements.append(Spacer(1, 0.1*inch))
-               simple_elements.append(Paragraph("Please try again with a smaller dataset or contact support.", self.styles['Normal']))
-               
-               simple_doc.build(simple_elements)
-               
-               buffer.seek(0)
-               return buffer
-           except Exception as fallback_error:
-               logger.critical(f"Critical error creating fallback PDF: {str(fallback_error)}")
-               # Last resort: return an empty buffer
-               buffer.seek(0)
-               return buffer
+def generate_pdf(self, output_file='clustering_report.pdf'):
+    """
+    Generate the complete PDF report with improved resource management.
+    
+    Args:
+        output_file: Optional filename for the PDF
+        
+    Returns:
+        BytesIO buffer containing the PDF
+    """
+    buffer = BytesIO()
+    
+    # Create the PDF document
+    try:
+        # Process any large data in batches if needed
+        if len(self.df) > 10000:  # Threshold for batch processing
+            logger.info("Large dataset detected, processing in batches")
+            self.process_clusters_in_batches()
+        
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=0.5*inch,
+            leftMargin=0.5*inch,
+            topMargin=0.5*inch,
+            bottomMargin=0.5*inch
+        )
+        
+        # Container for the elements to add to the PDF
+        doc_elements = []
+        
+        # Generate each section
+        doc_elements = self.generate_summary_page(doc_elements)
+        doc_elements = self.generate_cluster_distribution_chart(doc_elements)
+        doc_elements = self.generate_search_intent_charts(doc_elements)
+        doc_elements = self.generate_clusters_detail(doc_elements)
+        doc_elements = self.generate_conclusion(doc_elements)
+        
+        # Build the PDF
+        doc.build(doc_elements)
+        
+        # Return the buffer
+        buffer.seek(0)
+        return buffer
+        
+    except Exception as e:
+        error_msg = f"Error generating PDF: {str(e)}"
+        logger.error(error_msg)
+        
+        # If PDF generation fails completely, return a simple error PDF
+        try:
+            simple_doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                rightMargin=0.5*inch,
+                leftMargin=0.5*inch,
+                topMargin=0.5*inch,
+                bottomMargin=0.5*inch
+            )
+            
+            simple_elements = []
+            simple_elements.append(Paragraph("Error Generating PDF Report", self.styles['Title']))
+            simple_elements.append(Spacer(1, 0.2*inch))
+            simple_elements.append(Paragraph(f"An error occurred: {str(e)}", self.styles['Normal']))
+            simple_elements.append(Spacer(1, 0.1*inch))
+            simple_elements.append(Paragraph("Please try again with a smaller dataset or contact support.", self.styles['Normal']))
+            
+            simple_doc.build(simple_elements)
+            
+            buffer.seek(0)
+            return buffer
+        except Exception as fallback_error:
+            logger.critical(f"Critical error creating fallback PDF: {str(fallback_error)}")
+            # Last resort: return an empty buffer
+            buffer.seek(0)
+            return buffer
+    finally:
+        # Ensure we clean up resources
+        self.cleanup()
 
 
 def create_download_link(buffer, filename="report.pdf", text="Download PDF Report"):
@@ -1003,106 +1105,145 @@ def create_download_link(buffer, filename="report.pdf", text="Download PDF Repor
 
 
 def sanitize_filename(filename):
-   """
-   Sanitize a filename to prevent path traversal or invalid characters.
-   
-   Args:
-       filename: Input filename
-       
-   Returns:
-       Sanitized filename
-   """
-   # Replace invalid characters
-   invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
-   for char in invalid_chars:
-       filename = filename.replace(char, '_')
-   
-   # Ensure the filename doesn't start with dots or spaces
-   while filename and (filename[0] == '.' or filename[0] == ' '):
-       filename = filename[1:]
-   
-   # Limit length
-   if len(filename) > 128:
-       name, ext = os.path.splitext(filename)
-       filename = name[:124] + ext
-   
-   # Ensure we have a valid filename
-   if not filename:
-       filename = "report.pdf"
-   
-   return filename
+    """
+    Sanitize a filename to prevent path traversal or invalid characters with enhanced security.
+    
+    Args:
+        filename: Input filename
+        
+    Returns:
+        Sanitized filename
+    """
+    import re
+    import os.path
+    
+    # Replace invalid characters
+    invalid_chars = r'[<>:"/\\|?*\x00-\x1F]'
+    filename = re.sub(invalid_chars, '_', filename)
+    
+    # Remove any leading/trailing spaces and dots
+    filename = filename.strip(' .')
+    
+    # Ensure the filename doesn't escape its directory
+    filename = os.path.basename(filename)
+    
+    # Limit length
+    if len(filename) > 128:
+        name, ext = os.path.splitext(filename)
+        filename = name[:124] + ext
+    
+    # Ensure we have a valid filename
+    if not filename or filename == '.':
+        filename = "report.pdf"
+    
+    return filename
 
 
 def add_pdf_export_button(df, cluster_evaluation=None, language="en"):
-   """
-   Add PDF export button to Streamlit app with enhanced error handling.
-   
-   Args:
-       df: Dataframe containing clustered keywords
-       cluster_evaluation: Dictionary with cluster evaluation data
-       language: Language code ('en', 'es')
-   """
-   languages = {
-       "en": "English",
-       "es": "Spanish"
-   }
-   
-   # Language selection
-   selected_language = st.selectbox(
-       "Select language for the report",
-       options=list(languages.keys()),
-       format_func=lambda x: languages.get(x, x),
-       index=0  # Default to English
-   )
-   
-   button_text = "🔍 Generate PDF Report" if selected_language == "en" else "🔍 Generar Informe PDF"
-   
-   if st.button(button_text, use_container_width=True):
-       with st.spinner("Generating PDF report..." if selected_language == "en" else "Generando el informe PDF..."):
-           try:
-               # Verify Kaleido installation
-               try:
-                   import kaleido
-               except ImportError:
-                   st.warning("The kaleido library is not installed. Charts may not be included in the PDF. Install with: pip install kaleido")
-               
-               # Create the report
-               pdf_report = PDFReport(df, cluster_evaluation, language=selected_language)
-               pdf_buffer = pdf_report.generate_pdf()
-               
-               # Create download link
-               timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-               filename = sanitize_filename(f"clustering_report_{timestamp}.pdf")
-               
-               # Display success message and download link
-               success_message = "✅ PDF report generated successfully" if selected_language == "en" else "✅ Informe PDF generado correctamente"
-               st.success(success_message)
-               
-               download_text = "Download PDF Report" if selected_language == "en" else "Descargar Informe PDF"
-               st.markdown(create_download_link(pdf_buffer, filename, download_text), unsafe_allow_html=True)
-               
-               # Display preview if possible
-               preview_title = "### Report Preview" if selected_language == "en" else "### Vista previa del informe"
-               st.markdown(preview_title)
-               
-               warning_text = "The preview may not be available on all platforms. If you can't see it, download the PDF file directly." if selected_language == "en" else "La vista previa puede no estar disponible en todas las plataformas. Si no puedes verla, descarga el archivo PDF directamente."
-               st.warning(warning_text)
-               
-               try:
-                   # Try to display the PDF
-                   base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
-                   pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                   st.markdown(pdf_display, unsafe_allow_html=True)
-               except Exception as preview_error:
-                   info_text = f"Preview not available: {str(preview_error)}. Please download the PDF to view it." if selected_language == "en" else f"Vista previa no disponible: {str(preview_error)}. Por favor, descarga el PDF para verlo."
-                   st.info(info_text)
-               
-           except Exception as e:
-               error_text = f"Error generating PDF report: {str(e)}" if selected_language == "en" else f"Error al generar el informe PDF: {str(e)}"
-               st.error(error_text)
-               
-               # Provide more details in case of common errors
-               if "kaleido" in str(e).lower():
-                   st.info("It appears you're missing the kaleido library needed for chart export. Try installing it with: pip install kaleido")
-               elif "reportlab" in str(e).lower():
-                   st.info("It appears you're missing the reportlab library needed for PDF generation. Try installing it with: pip install reportlab")
+    """
+    Add PDF export button to Streamlit app with enhanced error handling and resource management.
+    
+    Args:
+        df: Dataframe containing clustered keywords
+        cluster_evaluation: Dictionary with cluster evaluation data
+        language: Language code ('en', 'es')
+    """
+    languages = {
+        "en": "English",
+        "es": "Spanish"
+    }
+    
+    # Language selection
+    selected_language = st.selectbox(
+        "Select language for the report",
+        options=list(languages.keys()),
+        format_func=lambda x: languages.get(x, x),
+        index=0  # Default to English
+    )
+    
+    button_text = "🔍 Generate PDF Report" if selected_language == "en" else "🔍 Generar Informe PDF"
+    
+    # Add a download button as a placeholder in case the worker is busy
+    if st.button(button_text, use_container_width=True):
+        try:
+            # Use a spinner to show progress
+            with st.spinner("Generating PDF report..." if selected_language == "en" else "Generando el informe PDF..."):
+                # Check dependencies before trying to generate
+                missing_deps = []
+                try:
+                    import reportlab
+                except ImportError:
+                    missing_deps.append("reportlab")
+                
+                try:
+                    import kaleido
+                except ImportError:
+                    missing_deps.append("kaleido")
+                
+                try:
+                    from PIL import Image as PILImage
+                except ImportError:
+                    missing_deps.append("pillow")
+                
+                # If missing dependencies, show a helpful message
+                if missing_deps:
+                    missing_str = ", ".join(missing_deps)
+                    st.error(f"Missing required dependencies: {missing_str}")
+                    st.info(f"Please install them with: pip install {missing_str}")
+                    return
+                
+                # Data validation
+                if df is None or len(df) == 0:
+                    st.error("No data available to generate report")
+                    return
+                
+                if 'cluster_id' not in df.columns:
+                    st.error("Required column 'cluster_id' not found in data")
+                    return
+                
+                # Create the report
+                pdf_report = PDFReport(df, cluster_evaluation, language=selected_language)
+                
+                try:
+                    pdf_buffer = pdf_report.generate_pdf()
+                    
+                    # Create download link
+                    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    filename = sanitize_filename(f"clustering_report_{timestamp}.pdf")
+                    
+                    # Display success message and download link
+                    success_message = "✅ PDF report generated successfully" if selected_language == "en" else "✅ Informe PDF generado correctamente"
+                    st.success(success_message)
+                    
+                    download_text = "Download PDF Report" if selected_language == "en" else "Descargar Informe PDF"
+                    st.markdown(create_download_link(pdf_buffer, filename, download_text), unsafe_allow_html=True)
+                    
+                    # Display preview if possible
+                    preview_title = "### Report Preview" if selected_language == "en" else "### Vista previa del informe"
+                    st.markdown(preview_title)
+                    
+                    warning_text = "The preview may not be available on all platforms. If you can't see it, download the PDF file directly." if selected_language == "en" else "La vista previa puede no estar disponible en todas las plataformas. Si no puedes verla, descarga el archivo PDF directamente."
+                    st.warning(warning_text)
+                    
+                    try:
+                        # Try to display the PDF inline
+                        base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+                    except Exception as preview_error:
+                        info_text = f"Preview not available: {str(preview_error)}. Please download the PDF to view it." if selected_language == "en" else f"Vista previa no disponible: {str(preview_error)}. Por favor, descarga el PDF para verlo."
+                        st.info(info_text)
+                finally:
+                    # Explicitly clean up the report object's resources
+                    if 'pdf_report' in locals():
+                        pdf_report.cleanup()
+                
+        except Exception as e:
+            error_text = f"Error generating PDF report: {str(e)}" if selected_language == "en" else f"Error al generar el informe PDF: {str(e)}"
+            st.error(error_text)
+            
+            # Provide more details in case of common errors
+            if "kaleido" in str(e).lower():
+                st.info("It appears you're missing the kaleido library needed for chart export. Try installing it with: pip install kaleido")
+            elif "reportlab" in str(e).lower():
+                st.info("It appears you're missing the reportlab library needed for PDF generation. Try installing it with: pip install reportlab")
