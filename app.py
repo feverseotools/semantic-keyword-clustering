@@ -59,6 +59,13 @@ try:
 except Exception:
     pass  # Continue even if downloads fail
 
+#PDF export Button
+try:
+    from export_pdf import add_pdf_export_button
+    pdf_export_available = True
+except ImportError:
+    pdf_export_available = False
+
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
 ################################################################
