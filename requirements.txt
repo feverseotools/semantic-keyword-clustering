@@ -25,6 +25,9 @@ reportlab>=3.6.12     # For PDF generation
 pillow>=9.3.0         # For image handling
 kaleido>=0.2.1        # For static Plotly image export
 
+# Excel
+openpyxl>=3.1.0
+
 # Post-installation steps:
 # 1. Download NLTK data:
 #    python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet'); nltk.download('omw-1.4')"
