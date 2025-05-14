@@ -191,13 +191,23 @@ SPACY_LANGUAGE_MODELS = {
 }
 
 def load_spacy_model_by_language(selected_language):
-    """
-    Try to load a spaCy model for the given language with improved fallback and user guidance.
-    Returns a tuple (model, status_message) where model is the loaded model or None, and
-    status_message provides information about what happened.
-    """
+    """Try to load a spaCy model for the given language. If it fails or doesn't exist, returns None."""
     if not spacy_base_available:
-        return None, "spaCy is not available. Install it with: pip install spacy"
+        return None
+
+    model_name = SPACY_LANGUAGE_MODELS.get(selected_language, None)
+    if model_name is None:
+        st.warning(f"No spaCy model defined for {selected_language}. Using fallback processing.")
+        return None
+
+    try:
+        return spacy.load(model_name)
+    except OSError:
+        st.warning(f"spaCy model for {selected_language} not found. You might need to download it with: python -m spacy download {model_name}")
+        return None
+    except Exception as e:
+        st.warning(f"Error loading spaCy model: {str(e)}")
+        return None
 
     # Get language config
     lang_config = SPACY_LANGUAGE_MODELS.get(selected_language)
