@@ -1681,15 +1681,35 @@ def calculate_topic_density(embeddings):
     """
     try:
         if len(embeddings) < 2:
-            return 0.5  # Valor predeterminado para clusters muy pequeños
+            return 0.5  # Default value for very small clusters
             
-        # Calculate the centroide
+        # Calculate the centroid
         centroid = np.mean(embeddings, axis=0)
         
         # Normalize the centroid
         centroid_norm = np.linalg.norm(centroid)
         if centroid_norm > 0:
             centroid = centroid / centroid_norm
+            
+        # Calculate pairwise similarities within cluster
+        similarities = []
+        for i in range(len(embeddings)):
+            for j in range(i+1, len(embeddings)):
+                # Normalize embeddings
+                emb_i = embeddings[i] / np.linalg.norm(embeddings[i])
+                emb_j = embeddings[j] / np.linalg.norm(embeddings[j])
+                
+                # Calculate cosine similarity
+                sim = np.dot(emb_i, emb_j)
+                similarities.append(sim)
+        
+        # Topic density is the average of pairwise similarities
+        density = np.mean(similarities) if similarities else 0.5
+        
+        return max(0.0, min(1.0, density))
+    except Exception as e:
+        st.warning(f"Error calculating topic density: {str(e)}")
+        return 0.5
 
 ################################################################
 #          MAIN CLUSTERING PIPELINE
