@@ -5,7 +5,6 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import plotly.io as pio
 import plotly.graph_objects as go
 import plotly.express as px
@@ -14,36 +13,91 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
-from reportlab.pdfgen import canvas
 from io import BytesIO
 from PIL import Image as PILImage
 from collections import Counter
-import time  # Added for retry logic
+import time
+import logging
+import shutil
+import concurrent.futures
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('export_pdf')
+
 class PDFReport:
     """
-    Class for generating PDF reports from clustering results
+    Class for generating PDF reports from keyword clustering results.
+    
+    Attributes:
+        df (pandas.DataFrame): The clustered keywords dataframe
+        cluster_evaluation (dict): Dictionary containing cluster evaluation data
+        app_name (str): Name of the application to show in report
+        language (str): Language code for report localization ('en', 'es')
+        temp_dir (str): Path to temporary directory for image generation
     """
     def __init__(self, df, cluster_evaluation=None, app_name="Advanced Semantic Keyword Clustering", language="en"):
-        self.df = df
+        """
+        Initialize the PDF report generator.
+        
+        Args:
+            df (pandas.DataFrame): The clustered keywords dataframe
+            cluster_evaluation (dict, optional): Dictionary containing cluster evaluation data
+            app_name (str, optional): Name of the application
+            language (str, optional): Language code ('en', 'es')
+        """
+        self.df = df.copy()  # Create a copy to avoid modifying the original
         self.cluster_evaluation = cluster_evaluation if cluster_evaluation else {}
         self.app_name = app_name
-        self.temp_dir = tempfile.mkdtemp()
-        self.styles = getSampleStyleSheet()
         self.language = language
-        self.translations = self._get_translations()
-        self.custom_styles = {}  # Store custom styles separately
+        
+        # Create temp directory with error handling
+        try:
+            self.temp_dir = tempfile.mkdtemp()
+            logger.info(f"Created temporary directory: {self.temp_dir}")
+        except Exception as e:
+            logger.error(f"Failed to create temporary directory: {str(e)}")
+            self.temp_dir = None
+            
+        # Initialize styles
+        self.styles = getSampleStyleSheet()
+        self.custom_styles = {}
         self.setup_custom_styles()
+        
+        # Load translations
+        self.translations = self._get_translations()
+        
+        # Validate inputs
+        self._validate_inputs()
+    
+    def _validate_inputs(self):
+        """Validate input data to ensure required columns exist."""
+        required_columns = ['cluster_id', 'keyword']
+        
+        missing_columns = [col for col in required_columns if col not in self.df.columns]
+        if missing_columns:
+            logger.warning(f"Missing required columns in dataframe: {missing_columns}")
+            # Add dummy columns if needed to prevent errors
+            for col in missing_columns:
+                self.df[col] = "Unknown" if col == 'keyword' else 0
+        
+        # Ensure cluster_id is an integer
+        try:
+            self.df['cluster_id'] = self.df['cluster_id'].astype(int)
+        except Exception as e:
+            logger.warning(f"Failed to convert cluster_id to int: {str(e)}")
     
     def __del__(self):
-        """Cleanup temp files when object is destroyed"""
+        """Cleanup temp files when object is destroyed."""
         try:
-            import shutil
-            if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+            if hasattr(self, 'temp_dir') and self.temp_dir and os.path.exists(self.temp_dir):
                 shutil.rmtree(self.temp_dir)
-        except:
-            pass  # Suppress errors during cleanup
-def _get_translations(self):
-        """Get translations dictionary based on language"""
+                logger.info(f"Cleaned up temporary directory: {self.temp_dir}")
+        except Exception as e:
+            logger.error(f"Error cleaning up temporary directory: {str(e)}")
+    
+    def _get_translations(self):
+        """Get translations dictionary based on language."""
         translations = {
             "en": {
                 "report_title": "Results Report",
@@ -90,7 +144,7 @@ def _get_translations(self):
                 "middle_phase": "Middle (Consideration Phase)",
                 "late_phase": "Late (Purchase Phase)"
             },
-"es": {
+            "es": {
                 "report_title": "Informe de Resultados",
                 "generated_on": "Generado el",
                 "total_keywords": "Total de Keywords",
@@ -139,9 +193,10 @@ def _get_translations(self):
         
         # Default to English if language not available
         return translations.get(self.language, translations["en"])
-def setup_custom_styles(self):
-        """Create custom styles for PDF elements"""
-        # Create custom styles without adding them to the stylesheet yet
+    
+    def setup_custom_styles(self):
+        """Create custom styles for PDF elements."""
+        # Create custom styles
         self.custom_styles['Title'] = ParagraphStyle(
             name='CustomTitle',
             parent=self.styles['Heading1'],
@@ -180,8 +235,25 @@ def setup_custom_styles(self):
             textColor=colors.darkblue,
             fontName='Helvetica-Bold'
         )
-def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max_retries=3):
-        """Convert Plotly figure to ReportLab Image with retry logic"""
+    
+    def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max_retries=3):
+        """
+        Convert Plotly figure to ReportLab Image with retry logic.
+        
+        Args:
+            fig: A plotly figure object
+            width: Desired width in ReportLab units
+            height: Desired height in ReportLab units
+            filename: Optional filename for the temporary image
+            max_retries: Number of retries on failure
+            
+        Returns:
+            ReportLab Image object or None on failure
+        """
+        if not self.temp_dir or not os.path.exists(self.temp_dir):
+            logger.error("Temporary directory not available")
+            return None
+        
         if filename is None:
             filename = f"temp_plot_{np.random.randint(10000)}.png"
         
@@ -200,11 +272,16 @@ def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max
                 # Write with increased timeout for complex charts
                 pio.write_image(fig, img_path, format='png', width=900, height=500, scale=2, engine='kaleido')
                 
-                # Create ReportLab Image
-                img = Image(img_path, width=width, height=height)
-                return img
+                # Check if the file was created successfully
+                if os.path.exists(img_path) and os.path.getsize(img_path) > 0:
+                    # Create ReportLab Image
+                    img = Image(img_path, width=width, height=height)
+                    return img
+                else:
+                    raise ValueError("Image file was not created properly")
             
             except Exception as e:
+                logger.warning(f"Error on retry {retry+1}/{max_retries}: {str(e)}")
                 if retry < max_retries - 1:
                     time.sleep(1)  # Wait before retrying
                     continue
@@ -215,11 +292,20 @@ def plotly_to_image(self, fig, width=7.5*inch, height=4*inch, filename=None, max
                         placeholder = PILImage.new('RGB', (900, 500), color=(240, 240, 240))
                         placeholder.save(img_path)
                         return Image(img_path, width=width, height=height)
-                    except:
-                        # If even the placeholder fails, return None and handle it in the calling function
+                    except Exception as placeholder_error:
+                        logger.error(f"Failed to create placeholder image: {str(placeholder_error)}")
                         return None
-def generate_summary_page(self, doc_elements):
-        """Generate the summary page"""
+    
+    def generate_summary_page(self, doc_elements):
+        """
+        Generate the summary page of the report.
+        
+        Args:
+            doc_elements: List to which elements will be added
+            
+        Returns:
+            Updated doc_elements list
+        """
         # Title
         doc_elements.append(Paragraph(f"{self.app_name} - {self.translations['report_title']}", self.custom_styles['Title']))
         doc_elements.append(Spacer(1, 0.1*inch))
@@ -241,18 +327,29 @@ def generate_summary_page(self, doc_elements):
         # Add search volume if available
         if 'search_volume' in self.df.columns:
             try:
+                # Ensure search_volume is numeric
+                self.df['search_volume'] = pd.to_numeric(self.df['search_volume'], errors='coerce')
                 total_volume = self.df['search_volume'].sum()
-                summary_text.append(f"{self.translations['total_search_volume']}: {total_volume:,}")
-            except:
-                pass  # Skip if there's an error calculating sum
+                summary_text.append(f"{self.translations['total_search_volume']}: {int(total_volume):,}")
+            except Exception as e:
+                logger.warning(f"Error calculating total search volume: {str(e)}")
         
         for text in summary_text:
             doc_elements.append(Paragraph(text, self.custom_styles['Normal']))
         
         doc_elements.append(Spacer(1, 0.2*inch))
         return doc_elements
-def generate_cluster_distribution_chart(self, doc_elements):
-        """Generate cluster distribution chart for the PDF"""
+    
+    def generate_cluster_distribution_chart(self, doc_elements):
+        """
+        Generate cluster distribution chart for the PDF.
+        
+        Args:
+            doc_elements: List to which elements will be added
+            
+        Returns:
+            Updated doc_elements list
+        """
         doc_elements.append(Paragraph(self.translations["cluster_distribution"], self.custom_styles['Subtitle']))
         doc_elements.append(Spacer(1, 0.1*inch))
         
@@ -297,8 +394,11 @@ def generate_cluster_distribution_chart(self, doc_elements):
                 doc_elements.append(img)
             doc_elements.append(Spacer(1, 0.2*inch))
         except Exception as e:
-            doc_elements.append(Paragraph(f"Error generating cluster distribution chart: {str(e)}", self.custom_styles['Normal']))
-# Add semantic coherence chart if available
+            error_msg = f"Error generating cluster distribution chart: {str(e)}"
+            logger.error(error_msg)
+            doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+        
+        # Add semantic coherence chart if available
         if 'cluster_coherence' in self.df.columns:
             try:
                 doc_elements.append(Paragraph(self.translations["semantic_coherence"], self.custom_styles['Subtitle']))
@@ -345,11 +445,22 @@ def generate_cluster_distribution_chart(self, doc_elements):
                 doc_elements.append(Paragraph(self.translations["coherence_description"], self.custom_styles['Normal']))
                 doc_elements.append(Spacer(1, 0.2*inch))
             except Exception as e:
-                doc_elements.append(Paragraph(f"Error generating coherence chart: {str(e)}", self.custom_styles['Normal']))
+                error_msg = f"Error generating coherence chart: {str(e)}"
+                logger.error(error_msg)
+                doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
         
         return doc_elements
-def generate_search_intent_charts(self, doc_elements):
-        """Generate search intent charts if intent data is available"""
+    
+    def generate_search_intent_charts(self, doc_elements):
+        """
+        Generate search intent charts if intent data is available.
+        
+        Args:
+            doc_elements: List to which elements will be added
+            
+        Returns:
+            Updated doc_elements list
+        """
         if not self.cluster_evaluation:
             return doc_elements
         
@@ -361,7 +472,13 @@ def generate_search_intent_charts(self, doc_elements):
             intent_data = []
             for c_id, data in self.cluster_evaluation.items():
                 if 'intent_classification' in data:
-                    cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                    # Find cluster name safely
+                    cluster_rows = self.df[self.df['cluster_id'] == c_id]
+                    cluster_name = f"Cluster {c_id}"
+                    if not cluster_rows.empty and 'cluster_name' in cluster_rows.columns:
+                        cluster_name = cluster_rows['cluster_name'].iloc[0]
+                    
+                    # Get primary intent and count
                     primary_intent = data['intent_classification'].get('primary_intent', 'Unknown')
                     count = len(self.df[self.df['cluster_id'] == c_id])
                     
@@ -419,7 +536,8 @@ def generate_search_intent_charts(self, doc_elements):
                 if img:
                     doc_elements.append(img)
                 doc_elements.append(Spacer(1, 0.2*inch))
-# Create bar chart showing intent by cluster
+                
+                # Create bar chart showing intent by cluster
                 df_intent = pd.DataFrame(intent_data)
                 
                 # Limit to top 10 clusters for readability
@@ -460,7 +578,7 @@ def generate_search_intent_charts(self, doc_elements):
                 if img2:
                     doc_elements.append(img2)
                 
-                # NEW: Add intent score distribution chart
+                # Add intent score distribution chart
                 doc_elements.append(PageBreak())
                 doc_elements.append(Paragraph(self.translations["intent_score_distribution"], self.custom_styles['Subtitle']))
                 
@@ -520,16 +638,18 @@ def generate_search_intent_charts(self, doc_elements):
                 img3 = self.plotly_to_image(fig3, filename="intent_scores.png")
                 if img3:
                     doc_elements.append(img3)
-        except Exception as e:
-            doc_elements.append(Paragraph(f"Error generating search intent charts: {str(e)}", self.custom_styles['Normal']))
-        
-        return doc_elements
-# Generate customer journey analysis if available
+                
+                # Generate customer journey analysis if available
                 journey_phases = []
                 for c_id, data in self.cluster_evaluation.items():
                     if 'intent_flow' in data:
                         journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
-                        cluster_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
+                        # Find cluster name safely
+                        cluster_rows = self.df[self.df['cluster_id'] == c_id]
+                        cluster_name = f"Cluster {c_id}"
+                        if not cluster_rows.empty and 'cluster_name' in cluster_rows.columns:
+                            cluster_name = cluster_rows['cluster_name'].iloc[0]
+                        
                         count = len(self.df[self.df['cluster_id'] == c_id])
                         
                         journey_phases.append({
@@ -572,303 +692,417 @@ def generate_search_intent_charts(self, doc_elements):
                             "Unknown": "#9e9e9e"
                         }
                         
-                        phases = list(phase_counts.keys())
-                        counts = list(phase_counts.values())
-                        
-                        fig4 = go.Figure(data=[
-                            go.Bar(
-                                x=phases,
-                                y=counts,
-                                marker=dict(
-                                    color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
-                                )
-                            )
-                        ])
-                        
-                        fig4.update_layout(
-                            title=self.translations["journey_phase_distribution"],
-                            xaxis_title="Journey Phase",
-                            yaxis_title=self.translations["num_keywords"],
-                            margin=dict(l=50, r=50, t=70, b=150),
-                            height=600
-                        )
-                        
-                        img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
-                        if img4:
-                            doc_elements.append(img4)
-                        doc_elements.append(Spacer(1, 0.2*inch))
-                    except Exception as e:
-                        doc_elements.append(Paragraph(f"Error generating journey analysis: {str(e)}", self.custom_styles['Normal']))
-def generate_clusters_detail(self, doc_elements):
-        """Generate detailed information for each cluster"""
-        doc_elements.append(PageBreak())
-        doc_elements.append(Paragraph(self.translations["cluster_details"], self.custom_styles['Subtitle']))
-        doc_elements.append(Spacer(1, 0.1*inch))
-        
-        try:
-            # Get top 10 clusters by keyword count for detailed view
-            cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
-            top_clusters = cluster_sizes.sort_values('count', ascending=False).head(10)
-            
-            for _, row in top_clusters.iterrows():
-                c_id = row['cluster_id']
-                c_name = row['cluster_name']
-                c_count = row['count']
-                
-                doc_elements.append(Paragraph(f"{self.translations['cluster']}: {c_name} (ID: {c_id})", self.custom_styles['ClusterName']))
-                doc_elements.append(Paragraph(f"{self.translations['total_keywords_in_cluster']}: {c_count}", self.custom_styles['Normal']))
-                
-                # Get cluster description if available
-                c_desc = self.df[self.df['cluster_id'] == c_id]['cluster_description'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else ""
-                if c_desc:
-                    doc_elements.append(Paragraph(f"{self.translations['description']}: {c_desc}", self.custom_styles['Normal']))
-                
-                # Get representative keywords
-                rep_keywords = self.df[(self.df['cluster_id'] == c_id) & (self.df['representative'] == True)]['keyword'].tolist()
-                if rep_keywords:
-                    doc_elements.append(Paragraph(f"{self.translations['representative_keywords']}: {', '.join(rep_keywords[:10])}", self.custom_styles['Normal']))
-                
-                # Search intent information if available
-                if c_id in self.cluster_evaluation:
-                    intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
-                    primary_intent = intent_data.
-             # Search intent information if available
-                if c_id in self.cluster_evaluation:
-                    intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
-                    primary_intent = intent_data.get('primary_intent', 'Unknown')
-                    
-                    doc_elements.append(Paragraph(f"{self.translations['primary_search_intent']}: {primary_intent}", self.custom_styles['Normal']))
-                    
-                    # Customer journey if available
-                    if 'intent_flow' in self.cluster_evaluation[c_id]:
-                        journey_phase = self.cluster_evaluation[c_id]['intent_flow'].get('journey_phase', 'Unknown')
-                        doc_elements.append(Paragraph(f"{self.translations['customer_journey_phase']}: {journey_phase}", self.custom_styles['Normal']))
-                
-                # Top keywords by search volume if available
-                if 'search_volume' in self.df.columns:
-                    try:
-                        top_kws = self.df[self.df['cluster_id'] == c_id].sort_values('search_volume', ascending=False).head(10)
-                        
-                        if not top_kws.empty:
-                            doc_elements.append(Paragraph(f"{self.translations['top_keywords_by_volume']}:", self.custom_styles['Normal']))
-                            
-                            data = [[self.translations['keyword'], self.translations['search_volume']]]
-                            for _, kw_row in top_kws.iterrows():
-                                data.append([kw_row['keyword'], f"{kw_row['search_volume']:,}"])
-                            
-                            # Create a table for the top keywords
-                            table = Table(data, colWidths=[4*inch, 1.5*inch])
-                            table.setStyle(TableStyle([
-                                ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-                                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                                ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
-                            ]))
-                            
-                            doc_elements.append(table)
-                    except Exception as e:
-                        doc_elements.append(Paragraph(f"Error displaying top keywords: {str(e)}", self.custom_styles['SmallText']))
-                
-                doc_elements.append(Spacer(1, 0.3*inch))
-        
-        except Exception as e:
-            doc_elements.append(Paragraph(f"Error generating cluster details: {str(e)}", self.custom_styles['Normal']))
-        
-        return doc_elements
-def generate_conclusion(self, doc_elements):
-        """Generate conclusion section with recommendations"""
-        doc_elements.append(PageBreak())
-        doc_elements.append(Paragraph(self.translations["conclusions"], self.custom_styles['Subtitle']))
-        doc_elements.append(Spacer(1, 0.1*inch))
-        
-        # General recommendations
-        general_recommendations = [
-            self.translations["prioritize_rec"],
-            self.translations["adapt_content_rec"],
-            self.translations["informational_rec"],
-            self.translations["commercial_rec"],
-            self.translations["transactional_rec"],
-            self.translations["navigational_rec"],
-            self.translations["journey_rec"]
-        ]
-        
-        for rec in general_recommendations:
-            doc_elements.append(Paragraph(rec, self.custom_styles['Normal']))
-        
-        doc_elements.append(Spacer(1, 0.2*inch))
-        
-        # Specific recommendations based on data
-        if self.cluster_evaluation:
-            try:
-                # Find most coherent clusters
-                coherent_clusters = []
-                for c_id, data in self.cluster_evaluation.items():
-                    coherence = data.get('coherence_score', 0)
-                    c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
-                    
-                    if coherence >= 7:  # High coherence threshold
-                        coherent_clusters.append((c_id, c_name, coherence))
-                
-                if coherent_clusters:
-                    doc_elements.append(Paragraph(f"{self.translations['coherent_clusters']}:", self.custom_styles['Normal']))
-                    
-                    coherent_clusters.sort(key=lambda x: x[2], reverse=True)
-                    for c_id, c_name, coherence in coherent_clusters[:5]:
-                        doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id}) - {self.translations['coherence']}: {coherence:.1f}/10", self.custom_styles['Normal']))
-                
-                # Find clusters that need splitting
-                split_clusters = []
-                for c_id, data in self.cluster_evaluation.items():
-                    split_suggestion = data.get('split_suggestion', '')
-                    c_name = self.df[self.df['cluster_id'] == c_id]['cluster_name'].iloc[0] if not self.df[self.df['cluster_id'] == c_id].empty else f"Cluster {c_id}"
-                    
-                    if 'yes' in split_suggestion.lower():
-                        split_clusters.append((c_id, c_name))
-                
-                if split_clusters:
-                    doc_elements.append(Spacer(1, 0.1*inch))
-                    doc_elements.append(Paragraph(f"{self.translations['split_clusters']}:", self.custom_styles['Normal']))
-                    
-                    for c_id, c_name in split_clusters[:5]:
-                        doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id})", self.custom_styles['Normal']))
-            except Exception as e:
-                doc_elements.append(Paragraph(f"Error generating recommendations: {str(e)}", self.custom_styles['SmallText']))
-        
-        doc_elements.append(Spacer(1, 0.3*inch))
-        
-        # Footer with attribution
-        doc_elements.append(Paragraph(self.translations['report_footer'], self.custom_styles['SmallText']))
-        
-        return doc_elements
-def generate_pdf(self, output_file='clustering_report.pdf'):
-        """Generate the complete PDF report"""
-        buffer = BytesIO()
-        
-        # Create the PDF document
-        try:
-            doc = SimpleDocTemplate(
-                buffer,
-                pagesize=A4,
-                rightMargin=0.5*inch,
-                leftMargin=0.5*inch,
-                topMargin=0.5*inch,
-                bottomMargin=0.5*inch
-            )
-            
-            # Container for the elements to add to the PDF
-            doc_elements = []
-            
-            # Generate each section
-            doc_elements = self.generate_summary_page(doc_elements)
-            doc_elements = self.generate_cluster_distribution_chart(doc_elements)
-            doc_elements = self.generate_search_intent_charts(doc_elements)
-            doc_elements = self.generate_clusters_detail(doc_elements)
-            doc_elements = self.generate_conclusion(doc_elements)
-            
-            # Build the PDF
-            doc.build(doc_elements)
-            
-            # Return the buffer
-            buffer.seek(0)
-            return buffer
-            
-        except Exception as e:
-            # If PDF generation fails completely, return a simple error PDF
-            try:
-                simple_doc = SimpleDocTemplate(
-                    buffer,
-                    pagesize=A4,
-                    rightMargin=0.5*inch,
-                    leftMargin=0.5*inch,
-                    topMargin=0.5*inch,
-                    bottomMargin=0.5*inch
-                )
-                
-                simple_elements = []
-                simple_elements.append(Paragraph("Error Generating PDF Report", self.styles['Title']))
-                simple_elements.append(Spacer(1, 0.2*inch))
-                simple_elements.append(Paragraph(f"An error occurred: {str(e)}", self.styles['Normal']))
-                simple_elements.append(Spacer(1, 0.1*inch))
-                simple_elements.append(Paragraph("Please try again with a smaller dataset or contact support.", self.styles['Normal']))
-                
-                simple_doc.build(simple_elements)
-                
-                buffer.seek(0)
-                return buffer
-            except:
-                # Last resort: return an empty buffer
-                buffer.seek(0)
-                return buffer
-   def create_download_link(buffer, filename="report.pdf", text="Download PDF Report"):
-    """Create a download link for Streamlit with improved error handling"""
-    try:
-        pdf_data = buffer.getvalue()
-        b64_pdf = base64.b64encode(pdf_data).decode()
-        href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{filename}">{text}</a>'
-        return href
-    except Exception as e:
-        st.error(f"Error creating download link: {str(e)}")
-        return "Error generating download link. Please try again."
+                       phases = list(phase_counts.keys())
+                       counts = list(phase_counts.values())
+                       
+                       fig4 = go.Figure(data=[
+                           go.Bar(
+                               x=phases,
+                               y=counts,
+                               marker=dict(
+                                   color=[phase_colors.get(phase, "#9e9e9e") for phase in phases]
+                               )
+                           )
+                       ])
+                       
+                       fig4.update_layout(
+                           title=self.translations["journey_phase_distribution"],
+                           xaxis_title="Journey Phase",
+                           yaxis_title=self.translations["num_keywords"],
+                           margin=dict(l=50, r=50, t=70, b=150),
+                           height=600
+                       )
+                       
+                       img4 = self.plotly_to_image(fig4, filename="journey_phases.png")
+                       if img4:
+                           doc_elements.append(img4)
+                       doc_elements.append(Spacer(1, 0.2*inch))
+                   except Exception as e:
+                       error_msg = f"Error generating journey analysis: {str(e)}"
+                       logger.error(error_msg)
+                       doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+       except Exception as e:
+           error_msg = f"Error generating search intent charts: {str(e)}"
+           logger.error(error_msg)
+           doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+       
+       return doc_elements
+   
+   def generate_clusters_detail(self, doc_elements):
+       """
+       Generate detailed information for each cluster.
+       
+       Args:
+           doc_elements: List to which elements will be added
+           
+       Returns:
+           Updated doc_elements list
+       """
+       doc_elements.append(PageBreak())
+       doc_elements.append(Paragraph(self.translations["cluster_details"], self.custom_styles['Subtitle']))
+       doc_elements.append(Spacer(1, 0.1*inch))
+       
+       try:
+           # Get top 10 clusters by keyword count for detailed view
+           cluster_sizes = self.df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
+           top_clusters = cluster_sizes.sort_values('count', ascending=False).head(10)
+           
+           for _, row in top_clusters.iterrows():
+               c_id = row['cluster_id']
+               c_name = row['cluster_name']
+               c_count = row['count']
+               
+               doc_elements.append(Paragraph(f"{self.translations['cluster']}: {c_name} (ID: {c_id})", self.custom_styles['ClusterName']))
+               doc_elements.append(Paragraph(f"{self.translations['total_keywords_in_cluster']}: {c_count}", self.custom_styles['Normal']))
+               
+               # Get cluster description if available
+               cluster_desc_rows = self.df[(self.df['cluster_id'] == c_id) & ('cluster_description' in self.df.columns)]
+               c_desc = cluster_desc_rows['cluster_description'].iloc[0] if not cluster_desc_rows.empty else ""
+               if c_desc:
+                   doc_elements.append(Paragraph(f"{self.translations['description']}: {c_desc}", self.custom_styles['Normal']))
+               
+               # Get representative keywords
+               if 'representative' in self.df.columns:
+                   rep_keywords = self.df[(self.df['cluster_id'] == c_id) & (self.df['representative'] == True)]['keyword'].tolist()
+                   if rep_keywords:
+                       doc_elements.append(Paragraph(f"{self.translations['representative_keywords']}: {', '.join(rep_keywords[:10])}", self.custom_styles['Normal']))
+               
+               # Search intent information if available
+               if c_id in self.cluster_evaluation:
+                   intent_data = self.cluster_evaluation[c_id].get('intent_classification', {})
+                   primary_intent = intent_data.get('primary_intent', 'Unknown')
+                   
+                   doc_elements.append(Paragraph(f"{self.translations['primary_search_intent']}: {primary_intent}", self.custom_styles['Normal']))
+                   
+                   # Customer journey if available
+                   if 'intent_flow' in self.cluster_evaluation[c_id]:
+                       journey_phase = self.cluster_evaluation[c_id]['intent_flow'].get('journey_phase', 'Unknown')
+                       doc_elements.append(Paragraph(f"{self.translations['customer_journey_phase']}: {journey_phase}", self.custom_styles['Normal']))
+               
+               # Top keywords by search volume if available
+               if 'search_volume' in self.df.columns:
+                   try:
+                       # Make sure search_volume is numeric
+                       cluster_df = self.df[self.df['cluster_id'] == c_id].copy()
+                       cluster_df['search_volume'] = pd.to_numeric(cluster_df['search_volume'], errors='coerce')
+                       top_kws = cluster_df.sort_values('search_volume', ascending=False).head(10)
+                       
+                       if not top_kws.empty:
+                           doc_elements.append(Paragraph(f"{self.translations['top_keywords_by_volume']}:", self.custom_styles['Normal']))
+                           
+                           data = [[self.translations['keyword'], self.translations['search_volume']]]
+                           for _, kw_row in top_kws.iterrows():
+                               data.append([kw_row['keyword'], f"{int(kw_row['search_volume']):,}"])
+                           
+                           # Create a table for the top keywords
+                           table = Table(data, colWidths=[4*inch, 1.5*inch])
+                           table.setStyle(TableStyle([
+                               ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+                               ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                               ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                               ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                               ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                               ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
+                           ]))
+                           
+                           doc_elements.append(table)
+                   except Exception as e:
+                       error_msg = f"Error displaying top keywords: {str(e)}"
+                       logger.warning(error_msg)
+                       doc_elements.append(Paragraph(error_msg, self.custom_styles['SmallText']))
+               
+               doc_elements.append(Spacer(1, 0.3*inch))
+       
+       except Exception as e:
+           error_msg = f"Error generating cluster details: {str(e)}"
+           logger.error(error_msg)
+           doc_elements.append(Paragraph(error_msg, self.custom_styles['Normal']))
+       
+       return doc_elements
+   
+   def generate_conclusion(self, doc_elements):
+       """
+       Generate conclusion section with recommendations.
+       
+       Args:
+           doc_elements: List to which elements will be added
+           
+       Returns:
+           Updated doc_elements list
+       """
+       doc_elements.append(PageBreak())
+       doc_elements.append(Paragraph(self.translations["conclusions"], self.custom_styles['Subtitle']))
+       doc_elements.append(Spacer(1, 0.1*inch))
+       
+       # General recommendations
+       general_recommendations = [
+           self.translations["prioritize_rec"],
+           self.translations["adapt_content_rec"],
+           self.translations["informational_rec"],
+           self.translations["commercial_rec"],
+           self.translations["transactional_rec"],
+           self.translations["navigational_rec"],
+           self.translations["journey_rec"]
+       ]
+       
+       for rec in general_recommendations:
+           doc_elements.append(Paragraph(rec, self.custom_styles['Normal']))
+       
+       doc_elements.append(Spacer(1, 0.2*inch))
+       
+       # Specific recommendations based on data
+       if self.cluster_evaluation:
+           try:
+               # Find most coherent clusters
+               coherent_clusters = []
+               for c_id, data in self.cluster_evaluation.items():
+                   coherence = data.get('coherence_score', 0)
+                   
+                   # Find cluster name safely
+                   cluster_rows = self.df[self.df['cluster_id'] == c_id]
+                   c_name = f"Cluster {c_id}"
+                   if not cluster_rows.empty and 'cluster_name' in cluster_rows.columns:
+                       c_name = cluster_rows['cluster_name'].iloc[0]
+                   
+                   if coherence >= 7:  # High coherence threshold
+                       coherent_clusters.append((c_id, c_name, coherence))
+               
+               if coherent_clusters:
+                   doc_elements.append(Paragraph(f"{self.translations['coherent_clusters']}:", self.custom_styles['Normal']))
+                   
+                   coherent_clusters.sort(key=lambda x: x[2], reverse=True)
+                   for c_id, c_name, coherence in coherent_clusters[:5]:
+                       doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id}) - {self.translations['coherence']}: {coherence:.1f}/10", self.custom_styles['Normal']))
+               
+               # Find clusters that need splitting
+               split_clusters = []
+               for c_id, data in self.cluster_evaluation.items():
+                   split_suggestion = data.get('split_suggestion', '')
+                   
+                   # Find cluster name safely
+                   cluster_rows = self.df[self.df['cluster_id'] == c_id]
+                   c_name = f"Cluster {c_id}"
+                   if not cluster_rows.empty and 'cluster_name' in cluster_rows.columns:
+                       c_name = cluster_rows['cluster_name'].iloc[0]
+                   
+                   if isinstance(split_suggestion, str) and 'yes' in split_suggestion.lower():
+                       split_clusters.append((c_id, c_name))
+               
+               if split_clusters:
+                   doc_elements.append(Spacer(1, 0.1*inch))
+                   doc_elements.append(Paragraph(f"{self.translations['split_clusters']}:", self.custom_styles['Normal']))
+                   
+                   for c_id, c_name in split_clusters[:5]:
+                       doc_elements.append(Paragraph(f"• {c_name} (ID: {c_id})", self.custom_styles['Normal']))
+           except Exception as e:
+               error_msg = f"Error generating recommendations: {str(e)}"
+               logger.error(error_msg)
+               doc_elements.append(Paragraph(error_msg, self.custom_styles['SmallText']))
+       
+       doc_elements.append(Spacer(1, 0.3*inch))
+       
+       # Footer with attribution
+       doc_elements.append(Paragraph(self.translations['report_footer'], self.custom_styles['SmallText']))
+       
+       return doc_elements
+   
+   def generate_pdf(self, output_file='clustering_report.pdf'):
+       """
+       Generate the complete PDF report.
+       
+       Args:
+           output_file: Optional filename for the PDF
+           
+       Returns:
+           BytesIO buffer containing the PDF
+       """
+       buffer = BytesIO()
+       
+       # Create the PDF document
+       try:
+           doc = SimpleDocTemplate(
+               buffer,
+               pagesize=A4,
+               rightMargin=0.5*inch,
+               leftMargin=0.5*inch,
+               topMargin=0.5*inch,
+               bottomMargin=0.5*inch
+           )
+           
+           # Container for the elements to add to the PDF
+           doc_elements = []
+           
+           # Generate each section
+           doc_elements = self.generate_summary_page(doc_elements)
+           doc_elements = self.generate_cluster_distribution_chart(doc_elements)
+           doc_elements = self.generate_search_intent_charts(doc_elements)
+           doc_elements = self.generate_clusters_detail(doc_elements)
+           doc_elements = self.generate_conclusion(doc_elements)
+           
+           # Build the PDF
+           doc.build(doc_elements)
+           
+           # Return the buffer
+           buffer.seek(0)
+           return buffer
+           
+       except Exception as e:
+           error_msg = f"Error generating PDF: {str(e)}"
+           logger.error(error_msg)
+           
+           # If PDF generation fails completely, return a simple error PDF
+           try:
+               simple_doc = SimpleDocTemplate(
+                   buffer,
+                   pagesize=A4,
+                   rightMargin=0.5*inch,
+                   leftMargin=0.5*inch,
+                   topMargin=0.5*inch,
+                   bottomMargin=0.5*inch
+               )
+               
+               simple_elements = []
+               simple_elements.append(Paragraph("Error Generating PDF Report", self.styles['Title']))
+               simple_elements.append(Spacer(1, 0.2*inch))
+               simple_elements.append(Paragraph(f"An error occurred: {str(e)}", self.styles['Normal']))
+               simple_elements.append(Spacer(1, 0.1*inch))
+               simple_elements.append(Paragraph("Please try again with a smaller dataset or contact support.", self.styles['Normal']))
+               
+               simple_doc.build(simple_elements)
+               
+               buffer.seek(0)
+               return buffer
+           except Exception as fallback_error:
+               logger.critical(f"Critical error creating fallback PDF: {str(fallback_error)}")
+               # Last resort: return an empty buffer
+               buffer.seek(0)
+               return buffer
+
+
+def create_download_link(buffer, filename="report.pdf", text="Download PDF Report"):
+   """
+   Create a download link for Streamlit with improved error handling.
+   
+   Args:
+       buffer: BytesIO buffer containing the PDF
+       filename: Filename for the downloaded file
+       text: Link text to display
+       
+   Returns:
+       HTML string with download link
+   """
+   try:
+       pdf_data = buffer.getvalue()
+       b64_pdf = base64.b64encode(pdf_data).decode()
+       href = f'<a href="data:application/pdf;base64,{b64_pdf}" download="{filename}">{text}</a>'
+       return href
+   except Exception as e:
+       logger.error(f"Error creating download link: {str(e)}")
+       st.error(f"Error creating download link: {str(e)}")
+       return "Error generating download link. Please try again."
+
+
+def sanitize_filename(filename):
+   """
+   Sanitize a filename to prevent path traversal or invalid characters.
+   
+   Args:
+       filename: Input filename
+       
+   Returns:
+       Sanitized filename
+   """
+   # Replace invalid characters
+   invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*']
+   for char in invalid_chars:
+       filename = filename.replace(char, '_')
+   
+   # Ensure the filename doesn't start with dots or spaces
+   while filename and (filename[0] == '.' or filename[0] == ' '):
+       filename = filename[1:]
+   
+   # Limit length
+   if len(filename) > 128:
+       name, ext = os.path.splitext(filename)
+       filename = name[:124] + ext
+   
+   # Ensure we have a valid filename
+   if not filename:
+       filename = "report.pdf"
+   
+   return filename
+
 
 def add_pdf_export_button(df, cluster_evaluation=None, language="en"):
-    """Add PDF export button to Streamlit app with enhanced error handling"""
-    languages = {
-        "en": "English",
-        "es": "Spanish"
-    }
-    
-    # Language selection
-    selected_language = st.selectbox(
-        "Select language for the report",
-        options=list(languages.keys()),
-        format_func=lambda x: languages.get(x, x),
-        index=0  # Default to English
-    )
-    
-    button_text = "🔍 Generate PDF Report" if selected_language == "en" else "🔍 Generar Informe PDF"
-    
-    if st.button(button_text, use_container_width=True):
-        with st.spinner("Generating PDF report..." if selected_language == "en" else "Generando el informe PDF..."):
-            try:
-                # Create the report
-                pdf_report = PDFReport(df, cluster_evaluation, language=selected_language)
-                pdf_buffer = pdf_report.generate_pdf()
-                
-                # Create download link
-                timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-                filename = f"clustering_report_{timestamp}.pdf"
-                
-                # Display success message and download link
-                success_message = "✅ PDF report generated successfully" if selected_language == "en" else "✅ Informe PDF generado correctamente"
-                st.success(success_message)
-                
-                download_text = "Download PDF Report" if selected_language == "en" else "Descargar Informe PDF"
-                st.markdown(create_download_link(pdf_buffer, filename, download_text), unsafe_allow_html=True)
-                
-                # Display preview if possible
-                preview_title = "### Report Preview" if selected_language == "en" else "### Vista previa del informe"
-                st.markdown(preview_title)
-                
-                warning_text = "The preview may not be available on all platforms. If you can't see it, download the PDF file directly." if selected_language == "en" else "La vista previa puede no estar disponible en todas las plataformas. Si no puedes verla, descarga el archivo PDF directamente."
-                st.warning(warning_text)
-                
-                try:
-                    # Try to display the PDF
-                    base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
-                    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-                    st.markdown(pdf_display, unsafe_allow_html=True)
-                except Exception as preview_error:
-                    info_text = f"Preview not available: {str(preview_error)}. Please download the PDF to view it." if selected_language == "en" else f"Vista previa no disponible: {str(preview_error)}. Por favor, descarga el PDF para verlo."
-                    st.info(info_text)
-                
-            except Exception as e:
-                error_text = f"Error generating PDF report: {str(e)}" if selected_language == "en" else f"Error al generar el informe PDF: {str(e)}"
-                st.error(error_text)
-                
-                # Provide more details in case of common errors
-                if "kaleido" in str(e).lower():
-                    st.info("It appears you're missing the kaleido library needed for chart export. Try installing it with: pip install kaleido")
-                elif "reportlab" in str(e).lower():
-                    st.info("It appears you're missing the reportlab library needed for PDF generation. Try installing it with: pip install reportlab")
+   """
+   Add PDF export button to Streamlit app with enhanced error handling.
+   
+   Args:
+       df: Dataframe containing clustered keywords
+       cluster_evaluation: Dictionary with cluster evaluation data
+       language: Language code ('en', 'es')
+   """
+   languages = {
+       "en": "English",
+       "es": "Spanish"
+   }
+   
+   # Language selection
+   selected_language = st.selectbox(
+       "Select language for the report",
+       options=list(languages.keys()),
+       format_func=lambda x: languages.get(x, x),
+       index=0  # Default to English
+   )
+   
+   button_text = "🔍 Generate PDF Report" if selected_language == "en" else "🔍 Generar Informe PDF"
+   
+   if st.button(button_text, use_container_width=True):
+       with st.spinner("Generating PDF report..." if selected_language == "en" else "Generando el informe PDF..."):
+           try:
+               # Verify Kaleido installation
+               try:
+                   import kaleido
+               except ImportError:
+                   st.warning("The kaleido library is not installed. Charts may not be included in the PDF. Install with: pip install kaleido")
+               
+               # Create the report
+               pdf_report = PDFReport(df, cluster_evaluation, language=selected_language)
+               pdf_buffer = pdf_report.generate_pdf()
+               
+               # Create download link
+               timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+               filename = sanitize_filename(f"clustering_report_{timestamp}.pdf")
+               
+               # Display success message and download link
+               success_message = "✅ PDF report generated successfully" if selected_language == "en" else "✅ Informe PDF generado correctamente"
+               st.success(success_message)
+               
+               download_text = "Download PDF Report" if selected_language == "en" else "Descargar Informe PDF"
+               st.markdown(create_download_link(pdf_buffer, filename, download_text), unsafe_allow_html=True)
+               
+               # Display preview if possible
+               preview_title = "### Report Preview" if selected_language == "en" else "### Vista previa del informe"
+               st.markdown(preview_title)
+               
+               warning_text = "The preview may not be available on all platforms. If you can't see it, download the PDF file directly." if selected_language == "en" else "La vista previa puede no estar disponible en todas las plataformas. Si no puedes verla, descarga el archivo PDF directamente."
+               st.warning(warning_text)
+               
+               try:
+                   # Try to display the PDF
+                   base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+                   pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+                   st.markdown(pdf_display, unsafe_allow_html=True)
+               except Exception as preview_error:
+                   info_text = f"Preview not available: {str(preview_error)}. Please download the PDF to view it." if selected_language == "en" else f"Vista previa no disponible: {str(preview_error)}. Por favor, descarga el PDF para verlo."
+                   st.info(info_text)
+               
+           except Exception as e:
+               error_text = f"Error generating PDF report: {str(e)}" if selected_language == "en" else f"Error al generar el informe PDF: {str(e)}"
+               st.error(error_text)
+               
+               # Provide more details in case of common errors
+               if "kaleido" in str(e).lower():
+                   st.info("It appears you're missing the kaleido library needed for chart export. Try installing it with: pip install kaleido")
+               elif "reportlab" in str(e).lower():
+                   st.info("It appears you're missing the reportlab library needed for PDF generation. Try installing it with: pip install reportlab")
