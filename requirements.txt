@@ -1,10 +1,10 @@
 # requirements.txt for Advanced Semantic Keyword Clustering Streamlit App
 
 # Core dependencies
-streamlit>=1.29.0
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
+streamlit==1.31.0
+pandas==2.1.3
+numpy==1.26.2
+scikit-learn==1.3.2  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
 scipy>=1.10.0         # For hierarchical clustering components
 plotly>=5.18.0        # For visualizations
 matplotlib>=3.7.0     # Support for Plotly visualizations
@@ -17,7 +17,8 @@ textblob>=0.17.1     # Alternative preprocessing fallback
 sentence-transformers==2.2.2  # Pinned to a specific version for stability
 
 # OpenAI and advanced preprocessing (optional, install as needed)
-openai>=1.8.0           # For OpenAI embeddings and cluster naming
+# OpenAI (for embeddings and naming - without this you'll use free alternatives)
+openai>=1.8.0
 spacy>=3.7.0            # For advanced language preprocessing
 
 # PDF generation
@@ -42,4 +43,4 @@ openpyxl>=3.1.0
 #
 # 3. Create a 'models' directory at the root of your project:
 #    mkdir -p ./models
-#    This will be used for caching SentenceTransformer models when d
+#    This will be used for caching SentenceTransformer models when downloading them for the first time, which improves performance for subsequent runs.
