@@ -169,6 +169,7 @@ SPACY_LANGUAGE_MODELS = {
     "Danish": "da_core_news_sm",
     "Greek": "el_core_news_sm",
     "Romanian": "ro_core_news_sm",
+    "Polish": "pl_core_news_sm",
     # The following languages often have partial or community models, which might not be installed by default
     # For now, we will rely on fallback if not installed.
     "Korean": None,
@@ -197,20 +198,20 @@ def load_spacy_model_by_language(selected_language):
 #          COST CALCULATION AND SUPPORT FUNCTIONS
 ################################################################
 
-def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
+def calculate_api_cost(num_keywords, selected_model="gpt-4.1-nano", num_clusters=10):
     """
     Calculates the estimated cost of using the OpenAI API based on the number of keywords.
     """
-    # Updated prices (March 2025) - Adjust if new pricing is available
-    EMBEDDING_COST_PER_1K = 0.02  # text-embedding-3-small per 1K tokens
+    # Updated prices (May 2025) - Always check OpenAI's official pricing
+    EMBEDDING_COST_PER_1K = 0.00002  # text-embedding-3-small per 1K tokens
     
-    # GPT-3.5-Turbo costs
-    GPT35_INPUT_COST_PER_1K = 0.0005
-    GPT35_OUTPUT_COST_PER_1K = 0.0015
+    # GPT-4.1-Nano costs
+    GPT41NANO_INPUT_COST_PER_1K = 0.15  # $0.15 per 1K input tokens
+    GPT41NANO_OUTPUT_COST_PER_1K = 0.60  # $0.60 per 1K output tokens
     
-    # GPT-4 costs
-    GPT4_INPUT_COST_PER_1K = 0.03
-    GPT4_OUTPUT_COST_PER_1K = 0.06
+    # GPT-4.1-Mini costs
+    GPT41MINI_INPUT_COST_PER_1K = 0.30  # $0.30 per 1K input tokens
+    GPT41MINI_OUTPUT_COST_PER_1K = 1.20  # $1.20 per 1K output tokens
     
     results = {
         "embedding_cost": 0,
@@ -234,12 +235,12 @@ def calculate_api_cost(num_keywords, selected_model="gpt-3.5-turbo", num_cluster
     estimated_input_tokens = num_clusters * avg_tokens_per_cluster
     estimated_output_tokens = num_clusters * avg_output_tokens_per_cluster
     
-    if selected_model == "gpt-3.5-turbo":
-        input_cost = (estimated_input_tokens / 1000) * GPT35_INPUT_COST_PER_1K
-        output_cost = (estimated_output_tokens / 1000) * GPT35_OUTPUT_COST_PER_1K
-    else:  # GPT-4
-        input_cost = (estimated_input_tokens / 1000) * GPT4_INPUT_COST_PER_1K
-        output_cost = (estimated_output_tokens / 1000) * GPT4_OUTPUT_COST_PER_1K
+    if selected_model == "gpt-4.1-nano":
+        input_cost = (estimated_input_tokens / 1000) * GPT41NANO_INPUT_COST_PER_1K
+        output_cost = (estimated_output_tokens / 1000) * GPT41NANO_OUTPUT_COST_PER_1K
+    else:  # GPT-4.1-Mini
+        input_cost = (estimated_input_tokens / 1000) * GPT41MINI_INPUT_COST_PER_1K
+        output_cost = (estimated_output_tokens / 1000) * GPT41MINI_OUTPUT_COST_PER_1K
     
     results["naming_cost"] = input_cost + output_cost
     results["total_cost"] = results["embedding_cost"] + results["naming_cost"]
@@ -271,7 +272,7 @@ def add_cost_calculator():
         )
         calc_model = st.radio(
             "Model for naming clusters",
-            options=["gpt-3.5-turbo", "gpt-4"],
+            options=["gpt-4.1-nano", "gpt-4.1-mini"],
             index=0,
             horizontal=True
         )
@@ -308,7 +309,7 @@ def add_cost_calculator():
             Using SentenceTransformers instead of OpenAI embeddings is $0.
             """)
 
-def show_csv_cost_estimate(num_keywords, selected_model="gpt-3.5-turbo", num_clusters=10):
+def show_csv_cost_estimate(num_keywords, selected_model="gpt-4.1-nano", num_clusters=10):
     if num_keywords > 0:
         cost_results = calculate_api_cost(num_keywords, selected_model, num_clusters)
         
@@ -431,7 +432,7 @@ def preprocess_text(text, use_lemmatization=True):
             stop_words = set(stopwords.words('english'))
         except:
             stop_words = {'a','an','the','and','or','but','if','because','as','what','in','on','to','for'}
-        
+            
         tokens = [t for t in tokens if t.isalpha() and t not in stop_words]
         
         if use_lemmatization:
@@ -652,7 +653,7 @@ def refine_clusters(df, embeddings, original_cluster_column='cluster_id'):
 def generate_cluster_names(
     clusters_with_representatives, 
     client, 
-    model="gpt-3.5-turbo",
+    model="gpt-4.1-nano",
     custom_prompt=None
 ):
     """
@@ -1126,7 +1127,7 @@ def analyze_cluster_for_intent_flow(df, cluster_id):
 def generate_semantic_analysis(
     clusters_with_representatives,
     client,
-    model="gpt-3.5-turbo"
+    model="gpt-4.1-nano"
 ):
     """
     Calls OpenAI to analyze each cluster for:
@@ -1472,7 +1473,7 @@ def calculate_cluster_coherence(cluster_embeddings):
         # If anything goes wrong, return default value
         return 1.0
 
-def evaluate_and_refine_clusters(df, client, model="gpt-3.5-turbo"):
+def evaluate_and_refine_clusters(df, client, model="gpt-4.1-nano"):
     """
     Performs AI-powered analysis of clusters using OpenAI's API.
     Returns a dictionary of analysis results by cluster ID.
@@ -1561,7 +1562,7 @@ def run_clustering(
             # Basic check
             try:
                 _ = client.chat.completions.create(
-                    model="gpt-3.5-turbo",
+                    model="gpt-4.1-nano",
                     messages=[{"role": "user", "content": "Test"}],
                     max_tokens=5
                 )
@@ -1981,7 +1982,8 @@ language_options = [
     "English", "Spanish", "French", "German", "Dutch", 
     "Korean", "Japanese", "Italian", "Portuguese", 
     "Brazilian Portuguese", "Swedish", "Norwegian", 
-    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian"
+    "Danish", "Icelandic", "Lithuanian", "Greek", "Romanian",
+    "Polish"
 ]
 selected_language = st.sidebar.selectbox(
     "Select language of the CSV",
@@ -2024,8 +2026,8 @@ with st.sidebar.expander("ℹ️ Parameters Guide", expanded=False):
    - Used when TF-IDF is employed. Filters out extremely rare or overly common terms.
 
 5. **Model for naming clusters**  
-   - Either gpt-3.5-turbo or gpt-4 if you have an API key.
-   - GPT-4 is generally more advanced (and more expensive).
+   - Either gpt-4.1-nano or gpt-4.1-turbo if you have an API key.
+   - GPT-4.1-mini is generally more advanced (and more expensive).
     """)
 
 num_clusters = st.sidebar.slider("Number of clusters", 2, 50, 10)
@@ -2033,7 +2035,7 @@ pca_variance = st.sidebar.slider("PCA explained variance (%)", 50, 99, 95)
 max_pca_components = st.sidebar.slider("Max PCA components", 10, 300, 100)
 min_df = st.sidebar.slider("Minimum term frequency", 1, 10, 1)
 max_df = st.sidebar.slider("Maximum term frequency (%)", 50, 100, 95)
-gpt_model = st.sidebar.selectbox("Model for naming clusters", ["gpt-3.5-turbo", "gpt-4"], index=0)
+gpt_model = st.sidebar.selectbox("Model for naming clusters", ["gpt-4.1-nano", "gpt-4.1-mini"], index=0, help="Choose the GPT model for generating cluster names, descriptions, and performing analysis. GPT-4.1-mini is more capable but more expensive than GPT-4.1-nano.")
 
 st.sidebar.markdown("### Custom Prompt for SEO Naming")
 default_prompt = (
@@ -2135,7 +2137,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 # Get search volume if available
                 if 'search_volume' in df.columns:
-                    search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
+                        df['search_volume'] = pd.to_numeric(df['search_volume'], errors='coerce')
+                        search_volume = df[df['cluster_id'] == c_id]['search_volume'].sum()
                 else:
                     search_volume = count * 100  # Default estimate for visualization scaling
                 
@@ -2177,6 +2180,8 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                 
                 with intent_viz_tabs[0]:
                     st.subheader("Clusters by Search Intent & Coherence")
+                    
+                    ai_df['search_volume'] = pd.to_numeric(ai_df['search_volume'], errors='coerce')
                     
                     fig3 = px.scatter(
                         ai_df,
@@ -2830,6 +2835,18 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
+        
+ # Add PDF export button if available
+    if pdf_export_available:
+        st.markdown("---")
+        st.markdown("### Export Complete Report")
+        st.markdown("Generate a PDF report with visualizations, search intent analysis and cluster details.")
+        
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        add_pdf_export_button(df, cluster_evaluation)
+    else:
+        st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
+
         
         st.subheader("Clusters Summary")
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
