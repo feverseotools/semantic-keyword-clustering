@@ -1,53 +1,39 @@
 # Core dependencies
-streamlit==1.31.0
-pandas==2.1.3
-numpy==1.26.2
-scikit-learn==1.3.2
-scipy==1.10.0
-plotly==5.18.0
-matplotlib>=3.7.0
+streamlit>=1.29.0
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
+scipy>=1.10.0         # For hierarchical clustering components
+plotly>=5.18.0        # For visualizations
+matplotlib>=3.7.0     # Support for Plotly visualizations
 
 # NLP libraries
-nltk>=3.8.1
-textblob>=0.17.1
-sentence-transformers==2.2.2
+nltk>=3.8.1          # For tokenization, stopwords, lemmatization
+textblob>=0.17.1     # Alternative preprocessing fallback
 
-# Optional dependencies (uncomment as needed)
-# OpenAI integration
-# openai>=1.8.0
+# Semantic embeddings
+sentence-transformers==2.2.2  # Pinned to a specific version for stability
 
-# Advanced NLP with spaCy
-# spacy>=3.7.0
+# OpenAI and advanced preprocessing (optional, install as needed)
+openai>=1.6.0           # For OpenAI embeddings and cluster naming
+spacy>=3.7.0            # For advanced language preprocessing
 
-# PDF & Excel Export
-# reportlab>=3.6.12
-# pillow>=9.3.0
-# kaleido>=0.2.1
-# openpyxl>=3.1.0
+# PDF generation
+reportlab>=3.6.12     # For PDF generation
+pillow>=9.3.0         # For image handling
+kaleido>=0.2.1        # For static Plotly image export
 
-# Development tools
-# pytest>=7.0.0
-# black>=23.0.0
-# flake8>=6.0.0
-# mypy>=1.0.0
-# isort>=5.12.0
-
-# --------- Post-installation instructions ---------
-# After installing the requirements, you may need to:
-#
+# Post-installation steps:
 # 1. Download NLTK data:
 #    python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet'); nltk.download('omw-1.4')"
-#
-# 2. Download spaCy models (if using spaCy):
+# 
+# 2. Download spaCy models as needed:
 #    python -m spacy download en_core_web_sm  # English
 #    python -m spacy download fr_core_news_sm  # French
 #    python -m spacy download de_core_news_sm  # German
 #    python -m spacy download es_core_news_sm  # Spanish
-#    python -m spacy download pl_core_news_sm  # Polish
+#    # Add other models as needed based on your language requirements
 #
-# 3. Create a 'models' directory for sentence-transformers:
+# 3. Create a 'models' directory at the root of your project:
 #    mkdir -p ./models
-#
-# For a more streamlined installation experience, consider using pip with the extras:
-#    pip install -e ".[full]"  # Install all dependencies
-#    pip install -e ".[openai,export]"  # Install with OpenAI and export capabilities
+#    This will be used for caching SentenceTransformer models when downloading fails
