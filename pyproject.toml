@@ -74,7 +74,8 @@ full = [
 semantic-clustering = "semantic_clustering.app:main"
 
 [tool.setuptools]
-packages = ["semantic_clustering", "export"]
+packages = ["export"]
+py_modules = ["app", "export_pdf"]
 
 [tool.setuptools.package-data]
 semantic_clustering = ["py.typed"]
