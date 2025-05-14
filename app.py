@@ -163,43 +163,83 @@ SEARCH_INTENT_PATTERNS = {
 # Mapping for some known spaCy language models (if installed).
 # If these models are not installed, spaCy loading will fail and we'll fallback.
 SPACY_LANGUAGE_MODELS = {
-    "English": "en_core_web_sm",
-    "Spanish": "es_core_news_sm",
-    "French": "fr_core_news_sm",
-    "German": "de_core_news_sm",
-    "Dutch": "nl_core_news_sm",
-    "Italian": "it_core_news_sm",
-    "Portuguese": "pt_core_news_sm",
-    "Brazilian Portuguese": "pt_core_news_sm",  # same as Portuguese in spaCy
-    "Swedish": "sv_core_news_sm",
-    "Norwegian": "nb_core_news_sm",
-    "Danish": "da_core_news_sm",
-    "Greek": "el_core_news_sm",
-    "Romanian": "ro_core_news_sm",
-    "Polish": "pl_core_news_sm",
-    # The following languages often have partial or community models, which might not be installed by default
-    # For now, we will rely on fallback if not installed.
-    "Korean": None,
-    "Japanese": None,
-    "Icelandic": None,
-    "Lithuanian": None
+    # Core models that come with standard spaCy installations
+    "English": {"model": "en_core_web_sm", "fallback": True},
+    "Spanish": {"model": "es_core_news_sm", "fallback": True},
+    "French": {"model": "fr_core_news_sm", "fallback": True},
+    "German": {"model": "de_core_news_sm", "fallback": True},
+    "Italian": {"model": "it_core_news_sm", "fallback": True},
+    "Portuguese": {"model": "pt_core_news_sm", "fallback": True},
+    "Dutch": {"model": "nl_core_news_sm", "fallback": True},
+    "Polish": {"model": "pl_core_news_sm", "fallback": True},
+    
+    # Models that need separate installation
+    "Swedish": {"model": "sv_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download sv_core_news_sm"},
+    "Norwegian": {"model": "nb_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download nb_core_news_sm"},
+    "Danish": {"model": "da_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download da_core_news_sm"},
+    "Greek": {"model": "el_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download el_core_news_sm"},
+    "Romanian": {"model": "ro_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download ro_core_news_sm"},
+    
+    # Languages with specific community models
+    "Japanese": {"model": "ja_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download ja_core_news_sm"},
+    "Korean": {"model": "ko_core_news_sm", "fallback": False, "install_cmd": "python -m spacy download ko_core_news_sm"},
+    
+    # Languages without specific models - using multi-language fallback
+    "Icelandic": {"model": None, "fallback": True, "alt_model": "xx_ent_wiki_sm"},
+    "Lithuanian": {"model": None, "fallback": True, "alt_model": "xx_ent_wiki_sm"},
+    "Brazilian Portuguese": {"model": "pt_core_news_sm", "fallback": True}  # Same as Portuguese
 }
 
 def load_spacy_model_by_language(selected_language):
     """
-    Try to load a spaCy model for the given language. If it fails or doesn't exist, returns None.
+    Try to load a spaCy model for the given language with improved fallback and user guidance.
+    Returns a tuple (model, status_message) where model is the loaded model or None, and
+    status_message provides information about what happened.
     """
     if not spacy_base_available:
-        return None
+        return None, "spaCy is not available. Install it with: pip install spacy"
 
-    model_name = SPACY_LANGUAGE_MODELS.get(selected_language, None)
-    if model_name is None:
-        return None
-
-    try:
-        return spacy.load(model_name)
-    except:
-        return None
+    # Get language config
+    lang_config = SPACY_LANGUAGE_MODELS.get(selected_language)
+    if lang_config is None:
+        return None, f"No spaCy configuration for {selected_language}. Using fallback processing."
+    
+    model_name = lang_config.get("model")
+    allows_fallback = lang_config.get("fallback", False)
+    alt_model = lang_config.get("alt_model")
+    install_cmd = lang_config.get("install_cmd", f"python -m spacy download {model_name}" if model_name else "")
+    
+    # Case 1: Language has a specific model
+    if model_name:
+        try:
+            model = spacy.load(model_name)
+            return model, f"✅ Loaded spaCy model for {selected_language}: {model_name}"
+        except OSError:
+            # Model not installed
+            if allows_fallback:
+                message = f"spaCy model for {selected_language} not installed. Using fallback processing."
+                if install_cmd:
+                    message += f" To improve results, install: {install_cmd}"
+                return None, message
+            else:
+                return None, f"spaCy model for {selected_language} is required but not installed. Install with: {install_cmd}"
+        except Exception as e:
+            if allows_fallback:
+                return None, f"Error loading spaCy model: {str(e)}. Using fallback processing."
+            else:
+                return None, f"Error loading spaCy model: {str(e)}"
+    
+    # Case 2: Language uses alternative model
+    elif alt_model:
+        try:
+            model = spacy.load(alt_model)
+            return model, f"Using alternative spaCy model for {selected_language}: {alt_model}"
+        except Exception as e:
+            return None, f"Error loading alternative model: {str(e)}. Using fallback processing."
+    
+    # Case 3: No model available
+    else:
+        return None, f"No spaCy model available for {selected_language}. Using fallback processing."
 
 ################################################################
 #          COST CALCULATION AND SUPPORT FUNCTIONS
