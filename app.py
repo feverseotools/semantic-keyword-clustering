@@ -51,6 +51,24 @@ try:
 except ImportError:
     hdbscan_available = False
 
+try:
+    from html_export import add_html_export_button
+    html_export_available = True
+except ImportError:
+    html_export_available = False
+
+try:
+    from excel_export import add_excel_export_button
+    excel_export_available = True
+except ImportError:
+    excel_export_available = False
+
+try:
+    from export_pdf import add_pdf_export_button
+    pdf_export_available = True
+except ImportError:
+    pdf_export_available = False
+
 # Download NLTK resources at startup
 try:
     nltk.download('stopwords', quiet=True)
