@@ -63,6 +63,7 @@ try:
 except ImportError:
     excel_export_available = False
 
+# PDF export
 try:
     from export_pdf import add_pdf_export_button
     pdf_export_available = True
