@@ -2844,7 +2844,12 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             else:
                 st.dataframe(cluster_df[['keyword']], use_container_width=True)
     
-    with st.expander("Download Results"):
+with st.expander("Export Results"):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### Standard Export")
+        
         csv_data = df.to_csv(index=False)
         st.download_button(
             label="Download Full Results (CSV)",
@@ -2853,6 +2858,96 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             mime="text/csv",
             use_container_width=True
         )
+        
+        st.subheader("Clusters Summary")
+        summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
+        summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
+        
+        # Add search volume if it exists
+        if 'search_volume' in df.columns:
+            volume_df = df.groupby('cluster_id')['search_volume'].sum().reset_index()
+            summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id')
+            summary_df.drop('cluster_id', axis=1, inplace=True)
+            summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
+        
+        # Merge coherence
+        coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
+        summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id')
+        summary_df.drop('cluster_id', axis=1, inplace=True)
+        summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
+        
+        # Representative keywords
+        def get_rep_keywords(cid):
+            reps = df[(df['cluster_id'] == cid) & (df['representative'] == True)]['keyword'].tolist()
+            return ', '.join(reps[:5])
+        summary_df['Representative Keywords'] = summary_df['ID'].apply(get_rep_keywords)
+        
+        # AI evaluation info
+        if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
+            evaluated_ids = st.session_state.cluster_evaluation.keys()
+            summary_df['AI Evaluation?'] = summary_df['ID'].apply(lambda x: "Yes" if x in evaluated_ids else "No")
+            
+            # Add primary search intent
+            def get_search_intent(cid):
+                if cid in st.session_state.cluster_evaluation:
+                    intent_data = st.session_state.cluster_evaluation[cid].get('intent_classification', {})
+                    return intent_data.get('primary_intent', 'Unknown')
+                return 'Unknown'
+            
+            summary_df['Primary Intent'] = summary_df['ID'].apply(get_search_intent)
+            
+            # Add journey phase if available
+            def get_journey_phase(cid):
+                if cid in st.session_state.cluster_evaluation and 'intent_flow' in st.session_state.cluster_evaluation[cid]:
+                    return st.session_state.cluster_evaluation[cid]['intent_flow'].get('journey_phase', 'Unknown')
+                return 'Unknown'
+            
+            summary_df['Customer Journey Phase'] = summary_df['ID'].apply(get_journey_phase)
+        else:
+            summary_df['AI Evaluation?'] = "No"
+            summary_df['Primary Intent'] = "Unknown"
+            summary_df['Customer Journey Phase'] = "Unknown"
+        
+        st.dataframe(summary_df, use_container_width=True)
+        
+        csv_summary = summary_df.to_csv(index=False)
+        st.download_button(
+            label="Download Clusters Summary",
+            data=csv_summary,
+            file_name="semantic_clusters_summary.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    with col2:
+        st.markdown("### Advanced Export Options")
+        
+        # Prepare cluster evaluation data for export functions
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        
+        # Add Excel export button if available
+        if excel_export_available:
+            st.markdown("#### Excel Report")
+            st.markdown("Generate a comprehensive Excel report with multiple sheets including cluster details, keywords, search intent analysis, and recommendations.")
+            add_excel_export_button(df, cluster_evaluation)
+        else:
+            st.warning("Excel export is not available. Make sure to install the excel_export.py module and required dependencies (openpyxl, xlsxwriter).")
+        
+        # Add HTML export button if available
+        if html_export_available:
+            st.markdown("#### Interactive HTML Report")
+            st.markdown("Generate an interactive HTML report with visualizations that can be viewed in any modern web browser.")
+            add_html_export_button(df, cluster_evaluation)
+        else:
+            st.warning("HTML export is not available. Make sure to install the html_export.py module.")
+        
+        # Add PDF export button if available
+        if pdf_export_available:
+            st.markdown("#### PDF Report")
+            st.markdown("Generate a PDF report with visualizations, search intent analysis and cluster details.")
+            add_pdf_export_button(df, cluster_evaluation)
+        else:
+            st.warning("PDF export is not available. Make sure to install the additional requirements: reportlab, pillow and kaleido.")
         
  # Add PDF export button if available
     if pdf_export_available:
