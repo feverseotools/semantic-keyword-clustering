@@ -56,7 +56,8 @@ def monitor_resources():
         if memory_mb > st.session_state.memory_monitor['peak_memory']:
             st.session_state.memory_monitor['peak_memory'] = memory_mb
         
-        if memory_mb > 800:  # Warning at 800MB (Streamlit Cloud limit ~1GB)
+        # Limit config
+        if memory_mb > MAX_MEMORY_WARNING:  
             st.warning(f"⚠️ High memory usage: {memory_mb:.1f}MB")
             logger.warning(f"High memory usage: {memory_mb:.1f}MB")
         
@@ -164,6 +165,13 @@ def download_nltk_resources():
 
 # Download NLTK resources
 NLTK_AVAILABLE = download_nltk_resources()
+
+# Config timeouts and limits 
+OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '60.0'))
+OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', '3'))
+MAX_KEYWORDS = int(os.getenv('MAX_KEYWORDS', '25000'))
+MAX_MEMORY_WARNING = int(os.getenv('MAX_MEMORY_MB', '800'))
+BATCH_SIZE = int(os.getenv('BATCH_SIZE', '100'))
 
 ################################################################
 #          SEARCH INTENT CLASSIFICATION PATTERNS
@@ -667,17 +675,21 @@ def create_openai_client_with_timeout(api_key):
             
         from openai import OpenAI
         
-        # Create client with timeout settings
+        # Config Timeout
+        OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '60.0'))
+        OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', '3'))
+        
+        # Create client with configurable timeout settings
         client = OpenAI(
             api_key=api_key,
-            timeout=60.0,  # 60 second timeout
-            max_retries=3
+            timeout=OPENAI_TIMEOUT, 
+            max_retries=OPENAI_MAX_RETRIES 
         )
         
         # Test connection with minimal request
         try:
             client.models.list()
-            logger.info("OpenAI client created and tested successfully")
+            logger.info(f"OpenAI client created successfully (timeout: {OPENAI_TIMEOUT}s, retries: {OPENAI_MAX_RETRIES})")
             return client
         except Exception as e:
             logger.error(f"OpenAI client test failed: {str(e)}")
