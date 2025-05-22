@@ -10,12 +10,13 @@ import logging
 import psutil
 import tempfile
 import hashlib
+import gc  
 from datetime import datetime, timedelta
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, IncrementalPCA  
 from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_similarity
 import plotly.express as px
