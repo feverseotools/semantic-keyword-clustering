@@ -7,7 +7,7 @@ import streamlit as st
 import nltk
 import re
 import logging
-# import psutil
+import psutil
 import tempfile
 import hashlib
 import gc  
