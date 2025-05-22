@@ -7,6 +7,9 @@ scipy>=1.10.0         # For hierarchical clustering components
 plotly>=5.18.0        # For visualizations
 matplotlib>=3.7.0     # Support for Plotly visualizations
 
+# System monitoring
+psutil>=5.9.0         # For memory and CPU monitoring
+
 # NLP libraries
 nltk>=3.8.1          # For tokenization, stopwords, lemmatization
 textblob>=0.17.1     # Alternative preprocessing fallback
