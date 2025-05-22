@@ -686,17 +686,30 @@ def create_openai_client_with_timeout(api_key):
             max_retries=OPENAI_MAX_RETRIES 
         )
         
-        # Test connection with minimal request
+# Test connection with minimal request
         try:
             client.models.list()
-            logger.info(f"OpenAI client created successfully (timeout: {OPENAI_TIMEOUT}s, retries: {OPENAI_MAX_RETRIES})")
+            logger.info("OpenAI client created and tested successfully")
             return client
         except Exception as e:
-            logger.error(f"OpenAI client test failed: {str(e)}")
+            try:
+                from openai import OpenAIError, APIError, RateLimitError, AuthenticationError
+                if isinstance(e, AuthenticationError):
+                    logger.error(f"OpenAI authentication error: Invalid API key")
+                elif isinstance(e, RateLimitError):
+                    logger.error(f"OpenAI rate limit error: {str(e)}")
+                elif isinstance(e, APIError):
+                    logger.error(f"OpenAI API error: {str(e)}")
+                elif isinstance(e, OpenAIError):
+                    logger.error(f"OpenAI specific error: {str(e)}")
+                else:
+                    logger.error(f"Unexpected error testing OpenAI client: {str(e)}")
+            except ImportError:
+                logger.error(f"OpenAI client test failed: {str(e)}")
             return None
             
     except Exception as e:
-        logger.error(f"Error creating OpenAI client: {str(e)}")
+        logger.error(f"Unexpected error creating OpenAI client: {str(e)}")
         return None
 
 def generate_embeddings_with_retry(df, openai_available, openai_api_key=None, max_retries=3):
@@ -762,10 +775,26 @@ def generate_openai_embeddings_direct(keywords, client, max_retries):
                 all_embeddings.extend(batch_embeddings)
                 break
                 
-            except Exception as e:
+        except Exception as e:
                 if attempt == max_retries - 1:
                     raise e
-                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+                
+                try:
+                    from openai import OpenAIError, APIError, RateLimitError, AuthenticationError
+                    if isinstance(e, RateLimitError):
+                        logger.warning(f"Rate limit hit on attempt {attempt + 1}, retrying in {2 ** attempt}s...")
+                    elif isinstance(e, AuthenticationError):
+                        logger.error(f"Authentication error: {str(e)}")
+                        raise e  # No retry for auth errors
+                    elif isinstance(e, APIError):
+                        logger.warning(f"OpenAI API error on attempt {attempt + 1}: {str(e)}, retrying...")
+                    elif isinstance(e, OpenAIError):
+                        logger.warning(f"OpenAI specific error on attempt {attempt + 1}: {str(e)}, retrying...")
+                    else:
+                        logger.warning(f"Unexpected error on attempt {attempt + 1}: {str(e)}, retrying...")
+                except ImportError:
+                    logger.warning(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+                
                 time.sleep(2 ** attempt)  # Exponential backoff
         
         progress = min(1.0, batch_end / len(keywords))
@@ -798,7 +827,24 @@ def generate_openai_embeddings_with_propagation(df, client, keywords, max_retrie
         except Exception as e:
             if attempt == max_retries - 1:
                 raise e
-            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+            
+            # 🆕 Logging específico mejorado
+            try:
+                from openai import OpenAIError, APIError, RateLimitError, AuthenticationError
+                if isinstance(e, RateLimitError):
+                    logger.warning(f"Rate limit hit during embedding generation, attempt {attempt + 1}, retrying in {2 ** attempt}s...")
+                elif isinstance(e, AuthenticationError):
+                    logger.error(f"Authentication error during embeddings: {str(e)}")
+                    raise e  # No retry for auth errors
+                elif isinstance(e, APIError):
+                    logger.warning(f"OpenAI API error during embeddings, attempt {attempt + 1}: {str(e)}, retrying...")
+                elif isinstance(e, OpenAIError):
+                    logger.warning(f"OpenAI specific error during embeddings, attempt {attempt + 1}: {str(e)}, retrying...")
+                else:
+                    logger.warning(f"Unexpected error during embeddings, attempt {attempt + 1}: {str(e)}, retrying...")
+            except ImportError:
+                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}, retrying...")
+            
             time.sleep(2 ** attempt)
     
     progress_bar.progress(0.5, text="Propagating embeddings via TF-IDF similarity...")
@@ -1130,7 +1176,22 @@ def generate_cluster_names_with_retry(
                             batch_results[cluster_id] = (c_name, c_desc)
                             
             except Exception as e:
-                logger.warning(f"API error in attempt {attempt+1}: {str(e)}")
+                try:
+                    from openai import OpenAIError, APIError, RateLimitError, AuthenticationError
+                    if isinstance(e, RateLimitError):
+                        logger.warning(f"Rate limit during cluster naming, attempt {attempt+1}")
+                    elif isinstance(e, AuthenticationError):
+                        logger.error(f"Authentication error during cluster naming: {str(e)}")
+                        break  # No point retrying auth errors
+                    elif isinstance(e, APIError):
+                        logger.warning(f"OpenAI API error during cluster naming, attempt {attempt+1}: {str(e)}")
+                    elif isinstance(e, OpenAIError):
+                        logger.warning(f"OpenAI specific error during cluster naming, attempt {attempt+1}: {str(e)}")
+                    else:
+                        logger.warning(f"Unexpected error during cluster naming, attempt {attempt+1}: {str(e)}")
+                except ImportError:
+                    logger.warning(f"API error in attempt {attempt+1}: {str(e)}")
+                
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)  # Exponential backoff
                 else:
