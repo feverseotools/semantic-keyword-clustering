@@ -7,7 +7,12 @@ import streamlit as st
 import nltk
 import re
 import logging
-import psutil
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 import tempfile
 import hashlib
 import gc  
@@ -48,6 +53,9 @@ if 'memory_monitor' not in st.session_state:
 # Resource monitoring
 def monitor_resources():
     """Monitor and log resource usage"""
+    if not PSUTIL_AVAILABLE:
+        return  # Skip monitoring if psutil is not available
+    
     try:
         process = psutil.Process()
         memory_mb = process.memory_info().rss / 1024 / 1024
