@@ -1098,7 +1098,7 @@ def generate_cluster_names_with_retry(
         )
 
     cluster_ids = list(clusters_with_representatives.keys())
-    batch_size = 3  # Smaller batch size for better reliability
+    batch_size = 2  # Smaller batch size for better reliability
     
     for batch_start in range(0, len(cluster_ids), batch_size):
         batch_end = min(batch_start + batch_size, len(cluster_ids))
@@ -1135,8 +1135,8 @@ def generate_cluster_names_with_retry(
                 response = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": batch_prompt}],
-                    temperature=0.3,
-                    max_tokens=1000,
+                    temperature=0.2,
+                    max_tokens=2000,
                     timeout=30  # 30 second timeout per request
                 )
                 
@@ -2068,7 +2068,53 @@ def run_clustering_with_monitoring(
             cluster_names = create_fallback_cluster_names(df)
         
         # Apply names with error handling
-        df = apply_cluster_names_safely(df, cluster_names, clusters_with_representatives)
+        def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives):
+            """Apply cluster names with comprehensive error handling"""
+            df['cluster_name'] = ''
+            df['cluster_description'] = ''
+            df['representative'] = False
+            
+            # New columns for GPT-4.1 data
+            if hasattr(st.session_state, 'enhanced_cluster_data'):
+                df['primary_intent'] = ''
+                df['business_value'] = ''
+                df['content_strategy'] = ''
+            
+            try:
+                for cnum, (name, desc) in cluster_names.items():
+                    # Safety check - ensure cluster exists in dataframe
+                    if cnum in df['cluster_id'].values:
+                        df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
+                        df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
+                        
+                        # Add improved data if are available
+                        if hasattr(st.session_state, 'enhanced_cluster_data'):
+                            enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
+                            df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
+                            df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
+                            df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
+                        
+                        # Mark representative keywords
+                        for kw in clusters_with_representatives.get(cnum, []):
+                            try:
+                                match_idx = df[(df['cluster_id'] == cnum) & (df['keyword'] == kw)].index
+                                if not match_idx.empty:
+                                    df.loc[match_idx, 'representative'] = True
+                            except Exception as e:
+                                logger.warning(f"Error marking representative keyword '{kw}': {str(e)}")
+                
+                st.success("✅ Cluster names and enhanced insights applied successfully!")
+                
+            except Exception as e:
+                logger.error(f"Error applying cluster names: {str(e)}")
+                st.warning(f"⚠️ Error applying cluster names: {str(e)}. Using fallback approach.")
+                
+                # Emergency fallback
+                for cnum in df['cluster_id'].unique():
+                    df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
+                    df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
+            
+            return df
         
         # Evaluate cluster quality
         df = evaluate_cluster_quality_with_monitoring(df, keyword_embeddings_reduced)
@@ -2616,18 +2662,31 @@ max_df = st.sidebar.slider(
 
 gpt_model = st.sidebar.selectbox(
     "🤖 GPT Model for naming clusters", 
-    options=["gpt-4o-mini", "gpt-4o"], 
-    index=0,
-    help="gpt-4o-mini is more cost-effective while gpt-4o provides higher quality"
+    options=["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini"], 
+    index=1,  # Por defecto GPT-4.1-mini
+    help="GPT-4.1 models offer improved performance. Nano is fastest/cheapest, Mini is balanced."
 )
 
 # Custom prompt section
 st.sidebar.markdown("### 📝 Custom Prompt for SEO Naming")
-default_prompt = (
-    "You are an expert in SEO and content marketing. Below you'll see several clusters "
-    "with a list of representative keywords. Your task is to assign each cluster a short, "
-    "clear name (3-6 words) and write a concise SEO meta description (1 or 2 sentences) "
-    "briefly explaining the topic and likely search intent."
+default_prompt = """You are an expert SEO strategist and semantic clustering specialist. Your task is to analyze keyword clusters and provide actionable insights for content strategy.
+
+For each cluster, provide:
+
+1. **CLUSTER NAME** (3-6 words): A clear, SEO-friendly name that captures the core theme
+2. **META DESCRIPTION** (1-2 sentences): Concise description explaining the search intent and content opportunity
+3. **SEARCH INTENT ANALYSIS**: Primary intent (Informational/Commercial/Transactional/Navigational) with confidence reasoning
+4. **CONTENT STRATEGY**: Specific content type recommendations
+5. **SEO OPPORTUNITY**: Difficulty assessment and ranking potential
+
+**IMPORTANT GUIDELINES:**
+- Focus on user search intent and business value
+- Consider keyword difficulty and search volume patterns
+- Suggest content that matches the user journey stage
+- Provide actionable, specific recommendations
+- Ensure cluster names are brandable and memorable
+
+**OUTPUT FORMAT:** Respond with valid JSON only, no additional text."""
 )
 
 user_prompt = st.sidebar.text_area(
@@ -2973,7 +3032,14 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                     if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
                         ai_eval = st.session_state.cluster_evaluation
                         if cid in ai_eval:
-                            analysis_tabs = st.tabs(["🔍 Search Intent", "🗺️ Customer Journey", "🤖 AI Insights", "💡 SEO Recommendations"])
+                            # Create new tabs including new one from GPT-4.1
+                            analysis_tabs = st.tabs([
+                                "🔍 Search Intent", 
+                                "🗺️ Customer Journey", 
+                                "🤖 AI Insights", 
+                                "💡 SEO Recommendations",
+                                "🚀 GPT-4.1 Strategy"
+                            ])
                             
                             with analysis_tabs[0]:
                                 display_search_intent_analysis(ai_eval[cid])
@@ -2986,6 +3052,12 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                             
                             with analysis_tabs[3]:
                                 display_seo_recommendations(ai_eval[cid], cluster_df)
+                            
+                            # New tab with improved analysis
+                            with analysis_tabs[4]:
+                                display_enhanced_cluster_insights(cid)
+                    else:
+                        st.info("🤖 Advanced AI analysis requires OpenAI API. Upload keywords and run clustering with an API key to see detailed insights.")
                     
                     # Keywords table
                     st.markdown("### 📝 All Keywords in this Cluster")
@@ -3284,6 +3356,103 @@ def get_intent_based_recommendations(primary_intent):
     - Content addressing multiple user needs
     - Topic hubs with various content types
     """)
+
+def display_enhanced_cluster_insights(cluster_id):
+    """Display enhanced cluster insights from GPT-4.1 analysis"""
+    if not hasattr(st.session_state, 'enhanced_cluster_data'):
+        st.info("🤖 Enhanced GPT-4.1 analysis not available. Run clustering with GPT-4.1 models to see strategic insights.")
+        return
+    
+    enhanced_data = st.session_state.enhanced_cluster_data.get(cluster_id)
+    if not enhanced_data:
+        st.info("🤖 No enhanced analysis available for this cluster.")
+        return
+    
+    st.markdown("### 🎯 GPT-4.1 Strategic Analysis")
+    st.markdown("Advanced AI-powered insights for strategic content planning and SEO optimization.")
+    
+    # Main metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        intent_color = {
+            "Informational": "🔵",
+            "Commercial": "🟣", 
+            "Transactional": "🟠",
+            "Navigational": "🟢",
+            "Unknown": "⚪"
+        }.get(enhanced_data.get('primary_intent', 'Unknown'), "⚪")
+        
+        st.metric(
+            label="🔍 Search Intent",
+            value=f"{intent_color} {enhanced_data.get('primary_intent', 'Unknown')}"
+        )
+    
+    with col2:
+        confidence_color = {
+            "High": "🟢",
+            "Medium": "🟡", 
+            "Low": "🔴"
+        }.get(enhanced_data.get('intent_confidence', 'Medium'), "🟡")
+        
+        st.metric(
+            label="📊 Confidence",
+            value=f"{confidence_color} {enhanced_data.get('intent_confidence', 'Medium')}"
+        )
+    
+    with col3:
+        value_color = {
+            "High": "🟢",
+            "Medium": "🟡",
+            "Low": "🔴"
+        }.get(enhanced_data.get('business_value', 'Medium'), "🟡")
+        
+        st.metric(
+            label="💼 Business Value",
+            value=f"{value_color} {enhanced_data.get('business_value', 'Medium')}"
+        )
+    
+    # Detailed analysis
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if enhanced_data.get('intent_reasoning'):
+            st.markdown("#### 🧠 Intent Analysis")
+            st.info(enhanced_data['intent_reasoning'])
+        
+        if enhanced_data.get('seo_opportunity'):
+            st.markdown("#### 🚀 SEO Opportunity")
+            st.warning(enhanced_data['seo_opportunity'])
+    
+    with col2:
+        if enhanced_data.get('content_strategy'):
+            st.markdown("#### 📝 Content Strategy")
+            st.success(enhanced_data['content_strategy'])
+    
+    # Additional Recommendations
+    if enhanced_data.get('recommended_actions'):
+        st.markdown("#### ✅ Recommended Actions")
+        st.markdown("Strategic next steps for this cluster:")
+        
+        for i, action in enumerate(enhanced_data['recommended_actions'], 1):
+            st.markdown(f"**{i}.** {action}")
+    
+    # Additional Insights expandible format
+    with st.expander("📊 Detailed Analysis", expanded=False):
+        st.markdown("**🎯 Strategic Positioning:**")
+        st.write(f"This cluster represents a **{enhanced_data.get('business_value', 'Medium').lower()}** business value opportunity with **{enhanced_data.get('intent_confidence', 'Medium').lower()}** confidence in our intent classification.")
+        
+        if enhanced_data.get('primary_intent') == 'Informational':
+            st.markdown("**💡 Content Focus:** Educational content, how-to guides, and comprehensive resources that establish authority and capture early-stage users.")
+        elif enhanced_data.get('primary_intent') == 'Commercial':
+            st.markdown("**💡 Content Focus:** Comparison content, reviews, and evaluative resources that help users make informed decisions.")
+        elif enhanced_data.get('primary_intent') == 'Transactional':
+            st.markdown("**💡 Content Focus:** Product pages, pricing information, and conversion-optimized content for ready-to-buy users.")
+        elif enhanced_data.get('primary_intent') == 'Navigational':
+            st.markdown("**💡 Content Focus:** Brand pages, specific product/service pages, and direct navigation content.")
+        
+        st.markdown("---")
+        st.markdown("*Analysis generated by GPT-4.1 with advanced semantic understanding and strategic insights.*")
 
 def create_cluster_summary(df):
     """Create a summary dataframe of clusters"""
