@@ -607,7 +607,7 @@ def preprocess_keywords(keywords, use_advanced, spacy_nlp=None):
     else:
         st.info("ℹ️ Using standard preprocessing with NLTK (advanced preprocessing disabled).")
     
-    batch_size = 100  # Process in batches to manage memory
+    batch_size = BATCH_SIZE
     for i in range(0, len(keywords), batch_size):
         batch_end = min(i + batch_size, len(keywords))
         batch = keywords[i:batch_end]
@@ -757,7 +757,7 @@ def generate_openai_embeddings(df, client, max_retries=3):
 def generate_openai_embeddings_direct(keywords, client, max_retries):
     """Direct OpenAI embeddings for smaller datasets"""
     all_embeddings = []
-    batch_size = 1000  # Smaller batch size for better memory management
+    batch_size = BATCH_SIZE * 10
     
     progress_bar = st.progress(0, text="Requesting embeddings from OpenAI...")
     
@@ -896,7 +896,7 @@ def generate_sentence_transformer_embeddings(df, model):
     st.success("🤖 Using SentenceTransformer (free alternative).")
     
     keywords = df['keyword_processed'].fillna('').tolist()
-    batch_size = 512  # Optimized batch size
+    batch_size = BATCH_SIZE * 5
     all_embeddings = []
     
     progress_bar = st.progress(0, text="Generating semantic embeddings...")
@@ -976,13 +976,13 @@ def improved_clustering_with_monitoring(embeddings, num_clusters=None, min_clust
             num_clusters = min(10, max(2, len(embeddings) // 100))  # Adaptive cluster count
         
         # Use mini-batch KMeans for large datasets
-        if len(embeddings) > 10000:
+        if len(embeddings) > MAX_KEYWORDS // 2.5:
             from sklearn.cluster import MiniBatchKMeans
             st.info(f"Using MiniBatch KMeans for {len(embeddings)} samples (memory optimization)")
             kmeans = MiniBatchKMeans(
                 n_clusters=num_clusters, 
                 random_state=42, 
-                batch_size=1000,
+                batch_size=BATCH_SIZE * 10
                 max_iter=100
             )
         else:
@@ -1837,8 +1837,8 @@ def validate_csv_content(df):
         if len(df) == 0:
             return False, "CSV file is empty"
         
-        if len(df) > 50000:
-            return False, f"CSV file too large ({len(df)} rows). Maximum 50,000 rows allowed for memory constraints."
+        if len(df) > MAX_KEYWORDS * 2:  
+            return False, f"CSV file too large ({len(df)} rows). Maximum {MAX_KEYWORDS * 2:,} rows allowed for memory constraints."
         
         # Check for required columns
         if 'keyword' not in df.columns:
@@ -1892,9 +1892,9 @@ def sanitize_csv_data(df):
             df['search_volume'] = df['search_volume'].fillna(0)
         
         # Limit dataset size for memory management
-        if len(df) > 25000:
-            st.warning(f"⚠️ Dataset reduced from {len(df)} to 25,000 rows for memory optimization")
-            df = df.head(25000)
+        if len(df) > MAX_KEYWORDS:  
+            st.warning(f"⚠️ Dataset reduced from {len(df)} to {MAX_KEYWORDS:,} rows for memory optimization")
+            df = df.head(MAX_KEYWORDS)
         
         return df
         
@@ -2145,7 +2145,7 @@ def find_representative_keywords_with_monitoring(df, keyword_embeddings_reduced)
         unique_cluster_ids = df['cluster_id'].unique()
         for i, cnum in enumerate(unique_cluster_ids):
             csize = len(df[df['cluster_id'] == cnum])
-            n_rep = min(15, csize)  # Reduced for memory
+            n_rep = min(max(5, BATCH_SIZE // 7), csize)
             indices = df[df['cluster_id'] == cnum].index.tolist()
             
             if len(indices) > 0:
