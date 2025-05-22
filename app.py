@@ -1917,6 +1917,10 @@ def run_clustering_with_monitoring(
         st.subheader("🧠 Generating Semantic Vectors (Embeddings)")
         keyword_embeddings = generate_embeddings_with_retry(df, LIBRARIES['openai_available'], openai_api_key)
         
+        # Memory cleanup after embeddings
+        gc.collect()
+        monitor_resources()
+
         # Monitor resources after embeddings
         monitor_resources()
         
@@ -1934,6 +1938,10 @@ def run_clustering_with_monitoring(
         else:
             keyword_embeddings_reduced = keyword_embeddings
             st.info(f"ℹ️ No PCA needed (dimension is {keyword_embeddings.shape[1]}).")
+
+        # Memory cleanup after PCA
+        gc.collect()
+        monitor_resources()
         
         # Clustering
         st.subheader("🔗 Advanced Semantic Clustering")
@@ -1941,6 +1949,10 @@ def run_clustering_with_monitoring(
         df["cluster_id"] = cluster_labels
         st.success(f"✅ {len(df['cluster_id'].unique())} clusters created successfully!")
         
+        # Memory cleanup after clustering
+        gc.collect()
+        monitor_resources()
+
         # Refinement
         st.subheader("🔧 Cluster Refinement")
         df = refine_clusters_with_monitoring(df, keyword_embeddings_reduced)
@@ -1990,7 +2002,8 @@ def run_clustering_with_monitoring(
                 st.warning(f"⚠️ AI evaluation failed: {str(e)}")
                 st.session_state.cluster_evaluation = create_default_semantic_analysis(clusters_with_representatives)
         
-        # Final resource check
+        # Final memory cleanup
+        gc.collect()        
         monitor_resources()
         
         return True, df
