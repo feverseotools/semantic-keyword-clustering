@@ -982,7 +982,7 @@ def improved_clustering_with_monitoring(embeddings, num_clusters=None, min_clust
             kmeans = MiniBatchKMeans(
                 n_clusters=num_clusters, 
                 random_state=42, 
-                batch_size=BATCH_SIZE * 10
+                batch_size=BATCH_SIZE * 10,
                 max_iter=100
             )
         else:
