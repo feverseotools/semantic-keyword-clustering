@@ -775,9 +775,9 @@ def generate_openai_embeddings_direct(keywords, client, max_retries):
                 all_embeddings.extend(batch_embeddings)
                 break
                 
-        except Exception as e:
-                if attempt == max_retries - 1:
-                    raise e
+            except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise e
                 
                 try:
                     from openai import OpenAIError, APIError, RateLimitError, AuthenticationError
