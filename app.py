@@ -899,6 +899,10 @@ def generate_tfidf_embeddings(texts, min_df=1, max_df=0.95):
         random_embeddings = np.random.rand(len(texts), 100)
         return random_embeddings
 
+def generate_embeddings(df, openai_available, openai_api_key=None):
+    """Wrapper function for backward compatibility"""
+    return generate_embeddings_with_retry(df, openai_available, openai_api_key)
+
 ################################################################
 #          CLUSTERING ALGORITHMS
 ################################################################
