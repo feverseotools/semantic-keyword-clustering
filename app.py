@@ -2069,52 +2069,62 @@ def run_clustering_with_monitoring(
         
         # Apply names with error handling
         def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives):
-            """Apply cluster names with comprehensive error handling"""
-            df['cluster_name'] = ''
-            df['cluster_description'] = ''
-            df['representative'] = False
+        """Apply cluster names with comprehensive error handling"""
+        try:
+            # Initialize columns if they don't exist
+            if 'cluster_name' not in df.columns:
+                df['cluster_name'] = ''
+            if 'cluster_description' not in df.columns:
+                df['cluster_description'] = ''
+            if 'representative' not in df.columns:
+                df['representative'] = False
             
             # New columns for GPT-4.1 data
             if hasattr(st.session_state, 'enhanced_cluster_data'):
-                df['primary_intent'] = ''
-                df['business_value'] = ''
-                df['content_strategy'] = ''
+                if 'primary_intent' not in df.columns:
+                    df['primary_intent'] = ''
+                if 'business_value' not in df.columns:
+                    df['business_value'] = ''
+                if 'content_strategy' not in df.columns:
+                    df['content_strategy'] = ''
             
+            for cnum, (name, desc) in cluster_names.items():
+                # Safety check - ensure cluster exists in dataframe
+                if cnum in df['cluster_id'].values:
+                    df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
+                    df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
+                    
+                    # Add enhanced data if available
+                    if hasattr(st.session_state, 'enhanced_cluster_data'):
+                        enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
+                        df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
+                        df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
+                        df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
+                    
+                    # Mark representative keywords
+                    for kw in clusters_with_representatives.get(cnum, []):
+                        try:
+                            match_idx = df[(df['cluster_id'] == cnum) & (df['keyword'] == kw)].index
+                            if not match_idx.empty:
+                                df.loc[match_idx, 'representative'] = True
+                        except Exception as e:
+                            logger.warning(f"Error marking representative keyword '{kw}': {str(e)}")
+            
+            st.success("✅ Cluster names and enhanced insights applied successfully!")
+            
+        except Exception as e:
+            logger.error(f"Error applying cluster names: {str(e)}")
+            st.warning(f"⚠️ Error applying cluster names: {str(e)}. Using fallback approach.")
+            
+            # Emergency fallback
             try:
-                for cnum, (name, desc) in cluster_names.items():
-                    # Safety check - ensure cluster exists in dataframe
-                    if cnum in df['cluster_id'].values:
-                        df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
-                        df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
-                        
-                        # Add improved data if are available
-                        if hasattr(st.session_state, 'enhanced_cluster_data'):
-                            enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
-                            df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
-                            df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
-                            df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
-                        
-                        # Mark representative keywords
-                        for kw in clusters_with_representatives.get(cnum, []):
-                            try:
-                                match_idx = df[(df['cluster_id'] == cnum) & (df['keyword'] == kw)].index
-                                if not match_idx.empty:
-                                    df.loc[match_idx, 'representative'] = True
-                            except Exception as e:
-                                logger.warning(f"Error marking representative keyword '{kw}': {str(e)}")
-                
-                st.success("✅ Cluster names and enhanced insights applied successfully!")
-                
-            except Exception as e:
-                logger.error(f"Error applying cluster names: {str(e)}")
-                st.warning(f"⚠️ Error applying cluster names: {str(e)}. Using fallback approach.")
-                
-                # Emergency fallback
                 for cnum in df['cluster_id'].unique():
                     df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
                     df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
-            
-            return df
+            except Exception as fallback_error:
+                logger.error(f"Even fallback failed: {str(fallback_error)}")
+        
+        return df
         
         # Evaluate cluster quality
         df = evaluate_cluster_quality_with_monitoring(df, keyword_embeddings_reduced)
@@ -2662,9 +2672,9 @@ max_df = st.sidebar.slider(
 
 gpt_model = st.sidebar.selectbox(
     "🤖 GPT Model for naming clusters", 
-    options=["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini"], 
+    options=["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4"], 
     index=1,  # Por defecto GPT-4.1-mini
-    help="GPT-4.1 models offer improved performance. Nano is fastest/cheapest, Mini is balanced."
+    help="GPT-4.1 models offer improved performance. Nano is fastest/cheapest, Mini is balanced, GPT-4 is legacy but reliable."
 )
 
 # Custom prompt section
@@ -2737,6 +2747,7 @@ def display_search_intent_analysis(cluster_data):
             
     except Exception as e:
         st.error(f"Error displaying search intent analysis: {str(e)}")
+        logger.error(f"Error in display_search_intent_analysis: {str(e)}")
 
 def display_customer_journey_analysis(cluster_data):
     """Display customer journey analysis for a cluster"""
@@ -2775,6 +2786,7 @@ def display_customer_journey_analysis(cluster_data):
             
     except Exception as e:
         st.error(f"Error displaying customer journey analysis: {str(e)}")
+        logger.error(f"Error in display_customer_journey_analysis: {str(e)}")
 
 def display_ai_insights(cluster_data):
     """Display AI-generated insights for a cluster"""
@@ -2807,6 +2819,7 @@ def display_ai_insights(cluster_data):
         
     except Exception as e:
         st.error(f"Error displaying AI insights: {str(e)}")
+        logger.error(f"Error in display_ai_insights: {str(e)}")
 
 def display_seo_recommendations(cluster_data, cluster_df):
     """Display SEO recommendations for a cluster"""
@@ -2823,6 +2836,7 @@ def display_seo_recommendations(cluster_data, cluster_df):
         
     except Exception as e:
         st.error(f"Error displaying SEO recommendations: {str(e)}")
+        logger.error(f"Error in display_seo_recommendations: {str(e)}")
 
 def get_intent_css_class(intent):
     """Get CSS class for intent styling"""
