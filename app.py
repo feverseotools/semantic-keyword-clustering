@@ -174,10 +174,10 @@ def download_nltk_resources():
 # Download NLTK resources
 NLTK_AVAILABLE = download_nltk_resources()
 
-# Config timeouts and limits 
+# Configuration constants
+MAX_KEYWORDS = int(os.getenv('MAX_KEYWORDS', '25000'))
 OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '60.0'))
 OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', '3'))
-MAX_KEYWORDS = int(os.getenv('MAX_KEYWORDS', '25000'))
 MAX_MEMORY_WARNING = int(os.getenv('MAX_MEMORY_MB', '800'))
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', '100'))
 
@@ -2067,65 +2067,6 @@ def run_clustering_with_monitoring(
             st.warning("⚠️ No OpenAI client available. Using generic cluster names.")
             cluster_names = create_fallback_cluster_names(df)
         
-        # Apply names with error handling
-        def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives):
-        """Apply cluster names with comprehensive error handling"""
-        try:
-            # Initialize columns if they don't exist
-            if 'cluster_name' not in df.columns:
-                df['cluster_name'] = ''
-            if 'cluster_description' not in df.columns:
-                df['cluster_description'] = ''
-            if 'representative' not in df.columns:
-                df['representative'] = False
-            
-            # New columns for GPT-4.1 data
-            if hasattr(st.session_state, 'enhanced_cluster_data'):
-                if 'primary_intent' not in df.columns:
-                    df['primary_intent'] = ''
-                if 'business_value' not in df.columns:
-                    df['business_value'] = ''
-                if 'content_strategy' not in df.columns:
-                    df['content_strategy'] = ''
-            
-            for cnum, (name, desc) in cluster_names.items():
-                # Safety check - ensure cluster exists in dataframe
-                if cnum in df['cluster_id'].values:
-                    df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
-                    df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
-                    
-                    # Add enhanced data if available
-                    if hasattr(st.session_state, 'enhanced_cluster_data'):
-                        enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
-                        df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
-                        df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
-                        df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
-                    
-                    # Mark representative keywords
-                    for kw in clusters_with_representatives.get(cnum, []):
-                        try:
-                            match_idx = df[(df['cluster_id'] == cnum) & (df['keyword'] == kw)].index
-                            if not match_idx.empty:
-                                df.loc[match_idx, 'representative'] = True
-                        except Exception as e:
-                            logger.warning(f"Error marking representative keyword '{kw}': {str(e)}")
-            
-            st.success("✅ Cluster names and enhanced insights applied successfully!")
-            
-        except Exception as e:
-            logger.error(f"Error applying cluster names: {str(e)}")
-            st.warning(f"⚠️ Error applying cluster names: {str(e)}. Using fallback approach.")
-            
-            # Emergency fallback
-            try:
-                for cnum in df['cluster_id'].unique():
-                    df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
-                    df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
-            except Exception as fallback_error:
-                logger.error(f"Even fallback failed: {str(fallback_error)}")
-        
-        return df
-        
         # Evaluate cluster quality
         df = evaluate_cluster_quality_with_monitoring(df, keyword_embeddings_reduced)
         
@@ -2256,16 +2197,37 @@ def create_fallback_cluster_names(df):
 
 def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives):
     """Apply cluster names with comprehensive error handling"""
-    df['cluster_name'] = ''
-    df['cluster_description'] = ''
-    df['representative'] = False
-    
     try:
+        # Initialize columns if they don't exist
+        if 'cluster_name' not in df.columns:
+            df['cluster_name'] = ''
+        if 'cluster_description' not in df.columns:
+            df['cluster_description'] = ''
+        if 'representative' not in df.columns:
+            df['representative'] = False
+        
+        # Enhanced data columns (if using GPT-4 enhanced analysis)
+        if hasattr(st.session_state, 'enhanced_cluster_data') and st.session_state.enhanced_cluster_data:
+            if 'primary_intent' not in df.columns:
+                df['primary_intent'] = ''
+            if 'business_value' not in df.columns:
+                df['business_value'] = ''
+            if 'content_strategy' not in df.columns:
+                df['content_strategy'] = ''
+        
         for cnum, (name, desc) in cluster_names.items():
             # Safety check - ensure cluster exists in dataframe
             if cnum in df['cluster_id'].values:
                 df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
                 df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
+                
+                # Add enhanced data if available
+                if hasattr(st.session_state, 'enhanced_cluster_data') and st.session_state.enhanced_cluster_data:
+                    enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
+                    if enhanced:
+                        df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
+                        df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
+                        df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
                 
                 # Mark representative keywords
                 for kw in clusters_with_representatives.get(cnum, []):
@@ -2283,9 +2245,12 @@ def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives)
         st.warning(f"⚠️ Error applying cluster names: {str(e)}. Using fallback approach.")
         
         # Emergency fallback
-        for cnum in df['cluster_id'].unique():
-            df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
-            df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
+        try:
+            for cnum in df['cluster_id'].unique():
+                df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
+                df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
+        except Exception as fallback_error:
+            logger.error(f"Even fallback failed: {str(fallback_error)}")
     
     return df
 
@@ -3071,6 +3036,10 @@ try:
         st.session_state.df_results = None
     if 'cluster_evaluation' not in st.session_state:
         st.session_state.cluster_evaluation = {}
+    if 'enhanced_cluster_data' not in st.session_state:
+        st.session_state.enhanced_cluster_data = {}
+    if 'memory_monitor' not in st.session_state:
+        st.session_state.memory_monitor = {'last_check': time.time(), 'peak_memory': 0}
 except Exception as e:
     logger.error(f"Error initializing session state: {str(e)}")
 
@@ -3438,80 +3407,79 @@ if st.session_state.process_complete and st.session_state.df_results is not None
 
     # Export Results Section
     with st.expander("📥 Export Results", expanded=False):
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📊 Standard Export")
         
-        with col1:
-            st.markdown("### 📊 Standard Export")
+        try:
+            # CSV Export
+            csv_data = df.to_csv(index=False)
+            st.download_button(
+                label="📄 Download Full Results (CSV)",
+                data=csv_data,
+                file_name=f"semantic_clustered_keywords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
             
+            # Summary Export
+            summary_df = create_cluster_summary(df)
+            csv_summary = summary_df.to_csv(index=False)
+            st.download_button(
+                label="📋 Download Clusters Summary",
+                data=csv_summary,
+                file_name=f"clusters_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+        except Exception as e:
+            st.error(f"Error creating standard exports: {str(e)}")
+    
+    with col2:
+        st.markdown("### 🚀 Advanced Export Options")
+        
+        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+        
+        # Excel Export
+        if LIBRARIES.get('excel_export_available', False):
+            st.markdown("#### 📊 Excel Report")
             try:
-                # CSV Export
-                csv_data = df.to_csv(index=False)
-                st.download_button(
-                    label="📄 Download Full Results (CSV)",
-                    data=csv_data,
-                    file_name=f"semantic_clustered_keywords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-                # Summary Export
-                summary_df = create_cluster_summary(df)
-                csv_summary = summary_df.to_csv(index=False)
-                st.download_button(
-                    label="📋 Download Clusters Summary",
-                    data=csv_summary,
-                    file_name=f"clusters_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-                # Display summary
-                st.subheader("📋 Clusters Summary")
-                st.dataframe(summary_df.head(10), use_container_width=True)
-                
+                from excel_export import add_excel_export_button
+                add_excel_export_button(df, cluster_evaluation)
+            except ImportError:
+                st.info("📊 Excel export module not found. Please ensure excel_export.py is in the same directory.")
             except Exception as e:
-                st.error(f"Error creating standard exports: {str(e)}")
+                st.error(f"Excel export error: {str(e)}")
+        else:
+            st.info("📊 Excel export not available. Install openpyxl to enable.")
         
-        with col2:
-            st.markdown("### 🚀 Advanced Export Options")
-            
-            cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
-            
-            # Excel Export
-            if LIBRARIES['excel_export_available']:
-                st.markdown("#### 📊 Excel Report")
-                st.markdown("Comprehensive Excel report with multiple sheets including cluster details, keywords, search intent analysis, and recommendations.")
-                try:
-                    from excel_export import add_excel_export_button
-                    add_excel_export_button(df, cluster_evaluation)
-                except Exception as e:
-                    st.error(f"Excel export error: {str(e)}")
-            else:
-                st.warning("📊 Excel export not available. Install required dependencies.")
-            
-            # HTML Export
-            if LIBRARIES['html_export_available']:
-                st.markdown("#### 🌐 Interactive HTML Report")
-                st.markdown("Interactive HTML report with visualizations viewable in any web browser.")
-                try:
-                    from html_export import add_html_export_button
-                    add_html_export_button(df, cluster_evaluation)
-                except Exception as e:
-                    st.error(f"HTML export error: {str(e)}")
-            else:
-                st.warning("🌐 HTML export not available. Install required dependencies.")
-            
-            # PDF Export
-            if LIBRARIES['pdf_export_available']:
-                st.markdown("#### 📑 PDF Report")
-                st.markdown("Professional PDF report with charts and detailed analysis.")
-                try:
-                    from export_pdf import add_pdf_export_button
-                    add_pdf_export_button(df, cluster_evaluation)
-                except Exception as e:
-                    st.error(f"PDF export error: {str(e)}")
-            else:
-                st.warning("📑 PDF export not available. Install required dependencies.")
+        # HTML Export
+        if LIBRARIES.get('html_export_available', False):
+            st.markdown("#### 🌐 Interactive HTML Report")
+            try:
+                from html_export import add_html_export_button
+                add_html_export_button(df, cluster_evaluation)
+            except ImportError:
+                st.info("🌐 HTML export module not found. Please ensure html_export.py is in the same directory.")
+            except Exception as e:
+                st.error(f"HTML export error: {str(e)}")
+        else:
+            st.info("🌐 HTML export not available.")
+        
+        # PDF Export
+        if LIBRARIES.get('pdf_export_available', False):
+            st.markdown("#### 📑 PDF Report")
+            try:
+                from export_pdf import add_pdf_export_button
+                add_pdf_export_button(df, cluster_evaluation)
+            except ImportError:
+                st.info("📑 PDF export module not found. Please ensure export_pdf.py is in the same directory.")
+            except Exception as e:
+                st.error(f"PDF export error: {str(e)}")
+        else:
+            st.info("📑 PDF export not available.")
 
 # Reset button
 if st.session_state.process_complete:
