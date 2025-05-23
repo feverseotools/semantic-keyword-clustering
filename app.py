@@ -2662,7 +2662,6 @@ For each cluster, provide:
 - Ensure cluster names are brandable and memorable
 
 **OUTPUT FORMAT:** Respond with valid JSON only, no additional text."""
-)
 
 user_prompt = st.sidebar.text_area(
     "✏️ Custom Prompt",
