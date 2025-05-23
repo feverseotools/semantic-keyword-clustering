@@ -2693,7 +2693,7 @@ add_cost_calculator()
 
 # Helper Functions for Cluster Analysis Display
 def display_search_intent_analysis(cluster_data):
-    """Display search intent analysis for a cluster"""
+    """Display search intent analysis for a cluster with enhanced error handling"""
     try:
         intent_classification = cluster_data.get('intent_classification', {})
         primary_intent = intent_classification.get('primary_intent', 'Unknown')
@@ -2708,143 +2708,216 @@ def display_search_intent_analysis(cluster_data):
         </div>
         """, unsafe_allow_html=True)
         
-        st.write(f"**📝 Search Intent Details:** {cluster_data.get('search_intent', 'N/A')}")
+        # Search intent details
+        search_intent_detail = cluster_data.get('search_intent', 'N/A')
+        st.write(f"**📝 Search Intent Details:** {search_intent_detail}")
         
-        # Evidence
+        # Evidence display with validation
         if evidence and primary_intent in evidence and evidence[primary_intent]:
             st.markdown("**🔍 Evidence for this classification:**")
-            for e in evidence[primary_intent][:5]:
-                st.markdown(f"• {e}")
+            evidence_items = evidence[primary_intent][:5]  # Limit to 5 items
+            for e in evidence_items:
+                if e and isinstance(e, str):  # Validate evidence item
+                    st.markdown(f"• {e}")
         
-        # Scores visualization
-        if scores:
-            fig_intent = px.bar(
-                x=list(scores.keys()), 
-                y=list(scores.values()),
-                labels={'x': 'Intent Type', 'y': 'Confidence Score (%)'},
-                title='Search Intent Distribution'
-            )
-            fig_intent.update_layout(yaxis_range=[0, 100], height=400)
-            st.plotly_chart(fig_intent, use_container_width=True)
+        # Scores visualization with validation
+        if scores and isinstance(scores, dict) and len(scores) > 0:
+            # Ensure all values are numeric
+            clean_scores = {k: float(v) for k, v in scores.items() if isinstance(v, (int, float))}
+            
+            if clean_scores:
+                fig_intent = px.bar(
+                    x=list(clean_scores.keys()), 
+                    y=list(clean_scores.values()),
+                    labels={'x': 'Intent Type', 'y': 'Confidence Score (%)'},
+                    title='Search Intent Distribution'
+                )
+                fig_intent.update_layout(
+                    yaxis_range=[0, 100], 
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig_intent, use_container_width=True)
             
     except Exception as e:
         st.error(f"Error displaying search intent analysis: {str(e)}")
-        logger.error(f"Error in display_search_intent_analysis: {str(e)}")
+        logger.error(f"Error in display_search_intent_analysis: {str(e)}", exc_info=True)
 
 def display_customer_journey_analysis(cluster_data):
-    """Display customer journey analysis for a cluster"""
+    """Display customer journey analysis for a cluster with improved structure"""
     try:
         intent_flow = cluster_data.get('intent_flow', None)
         
-        if intent_flow:
-            journey_phase = intent_flow.get('journey_phase', 'Unknown')
-            
-            # Journey phase display
-            journey_class = get_journey_css_class(journey_phase)
-            st.markdown(f"""
-            <div class="{journey_class}">
-                <strong>🗺️ Customer Journey Phase:</strong> {journey_phase}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Intent distribution
-            intent_dist = intent_flow.get('intent_distribution', {})
-            if intent_dist:
-                fig_dist = px.pie(
-                    names=list(intent_dist.keys()),
-                    values=list(intent_dist.values()),
-                    title='Keyword Intent Distribution in this Cluster'
-                )
-                st.plotly_chart(fig_dist, use_container_width=True)
-            
-            # Keyword samples
-            keyword_sample = intent_flow.get('keyword_sample', [])
-            if keyword_sample:
-                st.markdown("### 📝 Sample Keywords with Intent")
-                sample_df = pd.DataFrame(keyword_sample)
-                st.dataframe(sample_df, use_container_width=True)
-        else:
+        if not intent_flow:
             st.info("Customer journey analysis not available for this cluster.")
+            return
+        
+        journey_phase = intent_flow.get('journey_phase', 'Unknown')
+        
+        # Journey phase display
+        journey_class = get_journey_css_class(journey_phase)
+        st.markdown(f"""
+        <div class="{journey_class}">
+            <strong>🗺️ Customer Journey Phase:</strong> {journey_phase}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Intent distribution visualization
+        intent_dist = intent_flow.get('intent_distribution', {})
+        if intent_dist and isinstance(intent_dist, dict) and len(intent_dist) > 0:
+            # Clean and validate data
+            clean_dist = {k: v for k, v in intent_dist.items() if isinstance(v, (int, float)) and v > 0}
+            
+            if clean_dist:
+                fig_dist = px.pie(
+                    names=list(clean_dist.keys()),
+                    values=list(clean_dist.values()),
+                    title='Keyword Intent Distribution in this Cluster',
+                    hole=0.3  # Create donut chart for better visibility
+                )
+                fig_dist.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_dist, use_container_width=True)
+        
+        # Keyword samples display
+        keyword_sample = intent_flow.get('keyword_sample', [])
+        if keyword_sample and isinstance(keyword_sample, list) and len(keyword_sample) > 0:
+            st.markdown("### 📝 Sample Keywords with Intent")
+            
+            # Ensure it's a list of dicts for DataFrame creation
+            if all(isinstance(item, dict) for item in keyword_sample):
+                sample_df = pd.DataFrame(keyword_sample)
+                # Add styling to dataframe
+                st.dataframe(
+                    sample_df, 
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.warning("Keyword sample data format is invalid.")
             
     except Exception as e:
         st.error(f"Error displaying customer journey analysis: {str(e)}")
-        logger.error(f"Error in display_customer_journey_analysis: {str(e)}")
+        logger.error(f"Error in display_customer_journey_analysis: {str(e)}", exc_info=True)
 
 def display_ai_insights(cluster_data):
-    """Display AI-generated insights for a cluster"""
+    """Display AI-generated insights for a cluster with enhanced formatting"""
     try:
+        # Coherence score with validation
         coherence_score = cluster_data.get('coherence_score', 'N/A')
-        st.metric(label="🧠 AI Coherence Score (0-10)", value=coherence_score)
+        if isinstance(coherence_score, (int, float)):
+            score_color = "🟢" if coherence_score >= 7 else "🟡" if coherence_score >= 5 else "🔴"
+            st.metric(
+                label="🧠 AI Coherence Score (0-10)", 
+                value=f"{score_color} {coherence_score:.1f}"
+            )
+        else:
+            st.metric(label="🧠 AI Coherence Score", value="N/A")
         
+        # Split suggestion analysis
         split_suggestion = cluster_data.get('split_suggestion', '')
-        if split_suggestion.lower().startswith('yes'):
+        if not split_suggestion:
+            st.info("No split analysis available for this cluster.")
+            return
+            
+        # Determine if split is recommended
+        should_split = split_suggestion.lower().startswith('yes')
+        
+        if should_split:
             st.warning("💡 **Split Recommendation:** This cluster could be divided into more focused sub-clusters.")
             
+            # Display subclusters if available
             subclusters = cluster_data.get('subclusters', [])
-            if subclusters:
+            if subclusters and isinstance(subclusters, list):
                 st.markdown("### 🔄 Suggested Sub-clusters")
+                
                 for i, subcluster in enumerate(subclusters):
-                    subcluster_name = subcluster.get('name', f"Subcluster {i+1}")
-                    subcluster_keywords = subcluster.get('keywords', [])
-                    
-                    st.markdown(f"""
-                    <div class="subcluster-box">
-                        <h4>{subcluster_name}</h4>
-                        <p><strong>Sample Keywords:</strong> {', '.join(subcluster_keywords)}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    if isinstance(subcluster, dict):
+                        subcluster_name = subcluster.get('name', f"Subcluster {i+1}")
+                        subcluster_keywords = subcluster.get('keywords', [])
+                        
+                        # Ensure keywords is a list
+                        if isinstance(subcluster_keywords, list):
+                            keywords_display = ', '.join(str(kw) for kw in subcluster_keywords[:5])
+                            if len(subcluster_keywords) > 5:
+                                keywords_display += f" (+{len(subcluster_keywords) - 5} more)"
+                        else:
+                            keywords_display = "No keywords available"
+                        
+                        st.markdown(f"""
+                        <div class="subcluster-box">
+                            <h4>{subcluster_name}</h4>
+                            <p><strong>Sample Keywords:</strong> {keywords_display}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
         else:
             st.success("✅ **Split Recommendation:** This cluster appears to be coherent and focused.")
         
+        # Display full analysis
         st.markdown("**📊 Full Analysis:**")
-        st.markdown(f"{split_suggestion}")
+        st.markdown(split_suggestion)
         
     except Exception as e:
         st.error(f"Error displaying AI insights: {str(e)}")
-        logger.error(f"Error in display_ai_insights: {str(e)}")
+        logger.error(f"Error in display_ai_insights: {str(e)}", exc_info=True)
 
 def display_seo_recommendations(cluster_data, cluster_df):
-    """Display SEO recommendations for a cluster"""
+    """Display SEO recommendations for a cluster with structured content"""
     try:
-        additional_info = cluster_data.get('additional_info', 'No additional information available')
-        st.markdown(additional_info)
+        # Additional info section
+        additional_info = cluster_data.get('additional_info', '')
+        if additional_info:
+            st.markdown("### 📋 Cluster Analysis")
+            st.markdown(additional_info)
         
         # Intent-based recommendations
-        primary_intent = cluster_data.get('intent_classification', {}).get('primary_intent', 'Unknown')
+        intent_classification = cluster_data.get('intent_classification', {})
+        primary_intent = intent_classification.get('primary_intent', 'Unknown')
         
         recommendations = get_intent_based_recommendations(primary_intent)
         st.markdown("### 💡 Content Recommendations by Search Intent")
         st.markdown(recommendations)
         
+        # Add keyword-specific recommendations if available
+        if len(cluster_df) > 0 and 'search_volume' in cluster_df.columns:
+            high_volume_keywords = cluster_df.nlargest(5, 'search_volume')[['keyword', 'search_volume']]
+            if len(high_volume_keywords) > 0:
+                st.markdown("### 🎯 High-Priority Keywords")
+                st.markdown("Focus content creation on these high-volume keywords:")
+                st.dataframe(high_volume_keywords, hide_index=True, use_container_width=True)
+        
     except Exception as e:
         st.error(f"Error displaying SEO recommendations: {str(e)}")
-        logger.error(f"Error in display_seo_recommendations: {str(e)}")
+        logger.error(f"Error in display_seo_recommendations: {str(e)}", exc_info=True)
 
 def get_intent_css_class(intent):
-    """Get CSS class for intent styling"""
+    """Get CSS class for intent styling with safe fallback"""
     intent_classes = {
         "Informational": "intent-info",
         "Navigational": "intent-nav", 
         "Transactional": "intent-trans",
-        "Commercial": "intent-comm"
+        "Commercial": "intent-comm",
+        "Mixed Intent": "intent-mixed",
+        "Unknown": "intent-unknown"
     }
-    return intent_classes.get(intent, "intent-mixed")
+    return intent_classes.get(intent, "intent-unknown")
 
 def get_journey_css_class(journey_phase):
-    """Get CSS class for journey phase styling"""
-    if "Early" in journey_phase:
+    """Get CSS class for journey phase styling with comprehensive matching"""
+    journey_phase_lower = journey_phase.lower() if journey_phase else ""
+    
+    if "early" in journey_phase_lower or "research" in journey_phase_lower:
         return "journey-early"
-    elif "Middle" in journey_phase:
+    elif "middle" in journey_phase_lower or "consideration" in journey_phase_lower:
         return "journey-middle"
-    elif "Late" in journey_phase:
+    elif "late" in journey_phase_lower or "purchase" in journey_phase_lower:
         return "journey-late"
-    elif "Transition" in journey_phase:
+    elif "transition" in journey_phase_lower:
         return "journey-transition"
     else:
         return "journey-mixed"
 
 def get_intent_based_recommendations(primary_intent):
-    """Get content recommendations based on search intent"""
+    """Get content recommendations based on search intent with comprehensive coverage"""
     recommendations = {
         "Informational": """
         **📚 Recommended Content Types:**
@@ -2852,11 +2925,19 @@ def get_intent_based_recommendations(primary_intent):
         - Explanatory articles and blog posts
         - FAQ pages and knowledge bases
         - Educational videos and infographics
+        - Case studies and whitepapers
         
         **🎯 SEO Targets:**
         - Featured snippets
         - People Also Ask boxes
         - Knowledge panels
+        - Video carousels
+        
+        **💡 Best Practices:**
+        - Use clear headings and subheadings
+        - Include step-by-step instructions
+        - Add relevant images and diagrams
+        - Answer related questions comprehensively
         """,
         "Commercial": """
         **🛍️ Recommended Content Types:**
@@ -2864,11 +2945,19 @@ def get_intent_based_recommendations(primary_intent):
         - Best-of lists and buying guides
         - Expert roundups and opinions
         - Detailed feature breakdowns
+        - Alternative/competitor comparisons
         
         **🎯 SEO Targets:**
         - Rich results with ratings
         - Comparison tables in featured snippets
         - Product carousels
+        - Review snippets
+        
+        **💡 Best Practices:**
+        - Include pros and cons lists
+        - Add comparison tables
+        - Use schema markup for reviews
+        - Include authentic user testimonials
         """,
         "Transactional": """
         **💰 Recommended Content Types:**
@@ -2876,11 +2965,19 @@ def get_intent_based_recommendations(primary_intent):
         - Pricing and package pages
         - Special offers and deals
         - Local landing pages
+        - Category pages
         
         **🎯 SEO Targets:**
         - Shopping results
         - Local pack listings
         - Structured data for products
+        - Merchant listings
+        
+        **💡 Best Practices:**
+        - Clear CTAs above the fold
+        - Include trust signals
+        - Optimize for mobile conversions
+        - Use urgency and scarcity tactfully
         """,
         "Navigational": """
         **🧭 Recommended Content Types:**
@@ -2888,25 +2985,46 @@ def get_intent_based_recommendations(primary_intent):
         - Contact and location pages
         - Download and resource pages
         - Account and login pages
+        - Company information pages
         
         **🎯 SEO Targets:**
         - Brand SERP features
         - Site links
         - Knowledge panels
+        - Brand boxes
+        
+        **💡 Best Practices:**
+        - Ensure brand consistency
+        - Optimize page load speed
+        - Include clear navigation
+        - Implement proper redirects
+        """,
+        "Mixed Intent": """
+        **📝 Recommended Content Types:**
+        - Comprehensive topic hubs
+        - Multi-purpose landing pages
+        - Resource centers
+        - Content that addresses multiple user needs
+        
+        **🎯 SEO Targets:**
+        - Multiple SERP features
+        - Broad keyword coverage
+        - Various rich results
+        
+        **💡 Best Practices:**
+        - Create content clusters
+        - Use internal linking strategically
+        - Address different user intents in sections
+        - Implement clear content organization
         """
     }
     
-    return recommendations.get(primary_intent, """
-    **📝 Recommended Content Types:**
-    - Mix of informational and commercial content
-    - Content addressing multiple user needs
-    - Topic hubs with various content types
-    """)
+    return recommendations.get(primary_intent, recommendations["Mixed Intent"])
 
 def display_enhanced_cluster_insights(cluster_id):
-    """Display enhanced cluster insights from GPT-4.1 analysis"""
+    """Display enhanced cluster insights from GPT-4 analysis with rich formatting"""
     if not hasattr(st.session_state, 'enhanced_cluster_data'):
-        st.info("🤖 Enhanced GPT-4.1 analysis not available. Run clustering with GPT-4.1 models to see strategic insights.")
+        st.info("🤖 Enhanced GPT-4 analysis not available. Run clustering with GPT-4 models to see strategic insights.")
         return
     
     enhanced_data = st.session_state.enhanced_cluster_data.get(cluster_id)
@@ -2914,10 +3032,10 @@ def display_enhanced_cluster_insights(cluster_id):
         st.info("🤖 No enhanced analysis available for this cluster.")
         return
     
-    st.markdown("### 🎯 GPT-4.1 Strategic Analysis")
+    st.markdown("### 🎯 GPT-4 Strategic Analysis")
     st.markdown("Advanced AI-powered insights for strategic content planning and SEO optimization.")
     
-    # Main metrics
+    # Main metrics with enhanced display
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -2926,6 +3044,7 @@ def display_enhanced_cluster_insights(cluster_id):
             "Commercial": "🟣", 
             "Transactional": "🟠",
             "Navigational": "🟢",
+            "Mixed Intent": "⚪",
             "Unknown": "⚪"
         }.get(enhanced_data.get('primary_intent', 'Unknown'), "⚪")
         
@@ -2935,30 +3054,32 @@ def display_enhanced_cluster_insights(cluster_id):
         )
     
     with col2:
+        confidence = enhanced_data.get('intent_confidence', 'Medium')
         confidence_color = {
             "High": "🟢",
             "Medium": "🟡", 
             "Low": "🔴"
-        }.get(enhanced_data.get('intent_confidence', 'Medium'), "🟡")
+        }.get(confidence, "🟡")
         
         st.metric(
             label="📊 Confidence",
-            value=f"{confidence_color} {enhanced_data.get('intent_confidence', 'Medium')}"
+            value=f"{confidence_color} {confidence}"
         )
     
     with col3:
+        business_value = enhanced_data.get('business_value', 'Medium')
         value_color = {
             "High": "🟢",
             "Medium": "🟡",
             "Low": "🔴"
-        }.get(enhanced_data.get('business_value', 'Medium'), "🟡")
+        }.get(business_value, "🟡")
         
         st.metric(
             label="💼 Business Value",
-            value=f"{value_color} {enhanced_data.get('business_value', 'Medium')}"
+            value=f"{value_color} {business_value}"
         )
     
-    # Detailed analysis
+    # Detailed analysis in organized sections
     col1, col2 = st.columns(2)
     
     with col1:
@@ -2975,603 +3096,162 @@ def display_enhanced_cluster_insights(cluster_id):
             st.markdown("#### 📝 Content Strategy")
             st.success(enhanced_data['content_strategy'])
     
-    # Additional Recommendations
-    if enhanced_data.get('recommended_actions'):
+    # Recommended Actions
+    if enhanced_data.get('recommended_actions') and isinstance(enhanced_data['recommended_actions'], list):
         st.markdown("#### ✅ Recommended Actions")
         st.markdown("Strategic next steps for this cluster:")
         
         for i, action in enumerate(enhanced_data['recommended_actions'], 1):
-            st.markdown(f"**{i}.** {action}")
+            if action:  # Ensure action is not empty
+                st.markdown(f"**{i}.** {action}")
     
-    # Additional Insights expandible format
+    # Additional Insights in expandable format
     with st.expander("📊 Detailed Analysis", expanded=False):
         st.markdown("**🎯 Strategic Positioning:**")
-        st.write(f"This cluster represents a **{enhanced_data.get('business_value', 'Medium').lower()}** business value opportunity with **{enhanced_data.get('intent_confidence', 'Medium').lower()}** confidence in our intent classification.")
         
-        if enhanced_data.get('primary_intent') == 'Informational':
-            st.markdown("**💡 Content Focus:** Educational content, how-to guides, and comprehensive resources that establish authority and capture early-stage users.")
-        elif enhanced_data.get('primary_intent') == 'Commercial':
-            st.markdown("**💡 Content Focus:** Comparison content, reviews, and evaluative resources that help users make informed decisions.")
-        elif enhanced_data.get('primary_intent') == 'Transactional':
-            st.markdown("**💡 Content Focus:** Product pages, pricing information, and conversion-optimized content for ready-to-buy users.")
-        elif enhanced_data.get('primary_intent') == 'Navigational':
-            st.markdown("**💡 Content Focus:** Brand pages, specific product/service pages, and direct navigation content.")
+        business_value_text = enhanced_data.get('business_value', 'Medium').lower()
+        confidence_text = enhanced_data.get('intent_confidence', 'Medium').lower()
+        
+        st.write(f"This cluster represents a **{business_value_text}** business value opportunity "
+                f"with **{confidence_text}** confidence in our intent classification.")
+        
+        # Intent-specific guidance
+        intent_guidance = {
+            'Informational': "**💡 Content Focus:** Educational content, how-to guides, and comprehensive resources that establish authority and capture early-stage users.",
+            'Commercial': "**💡 Content Focus:** Comparison content, reviews, and evaluative resources that help users make informed decisions.",
+            'Transactional': "**💡 Content Focus:** Product pages, pricing information, and conversion-optimized content for ready-to-buy users.",
+            'Navigational': "**💡 Content Focus:** Brand pages, specific product/service pages, and direct navigation content.",
+            'Mixed Intent': "**💡 Content Focus:** Multi-purpose content that addresses various user intents within a single comprehensive resource."
+        }
+        
+        current_intent = enhanced_data.get('primary_intent', 'Mixed Intent')
+        st.markdown(intent_guidance.get(current_intent, intent_guidance['Mixed Intent']))
         
         st.markdown("---")
-        st.markdown("*Analysis generated by GPT-4.1 with advanced semantic understanding and strategic insights.*")
+        st.markdown("*Analysis generated by GPT-4 with advanced semantic understanding and strategic insights.*")
 
 def create_cluster_summary(df):
-    """Create a summary dataframe of clusters"""
+    """Create a comprehensive summary dataframe of clusters with error handling"""
     try:
+        # Validate input
+        if df is None or df.empty:
+            logger.warning("Empty dataframe provided to create_cluster_summary")
+            return pd.DataFrame()
+        
+        # Ensure required columns exist
+        required_cols = ['cluster_id', 'cluster_name', 'cluster_description', 'keyword']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"Missing required columns: {missing_cols}")
+            return pd.DataFrame()
+        
+        # Basic summary
         summary_df = df.groupby(['cluster_id', 'cluster_name', 'cluster_description'])['keyword'].count().reset_index()
         summary_df.columns = ['ID', 'Name', 'Description', 'Number of Keywords']
         
         # Add search volume if available
         if 'search_volume' in df.columns:
-            volume_df = df.groupby('cluster_id')['search_volume'].sum().reset_index()
+            volume_df = df.groupby('cluster_id')['search_volume'].agg(['sum', 'mean']).reset_index()
+            volume_df.columns = ['cluster_id', 'Total Search Volume', 'Avg Search Volume']
             summary_df = summary_df.merge(volume_df, left_on='ID', right_on='cluster_id', how='left')
             summary_df.drop('cluster_id', axis=1, inplace=True)
-            summary_df.rename(columns={'search_volume': 'Total Search Volume'}, inplace=True)
+            
+            # Format volume columns
+            summary_df['Total Search Volume'] = summary_df['Total Search Volume'].fillna(0).astype(int)
+            summary_df['Avg Search Volume'] = summary_df['Avg Search Volume'].fillna(0).round(0).astype(int)
         
-        # Add coherence
-        coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
-        summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id', how='left')
-        summary_df.drop('cluster_id', axis=1, inplace=True)
-        summary_df.rename(columns={'cluster_coherence': 'Coherence'}, inplace=True)
+        # Add coherence score
+        if 'cluster_coherence' in df.columns:
+            coherence_df = df.groupby('cluster_id')['cluster_coherence'].mean().reset_index()
+            coherence_df.columns = ['cluster_id', 'Coherence']
+            summary_df = summary_df.merge(coherence_df, left_on='ID', right_on='cluster_id', how='left')
+            summary_df.drop('cluster_id', axis=1, inplace=True)
+            summary_df['Coherence'] = summary_df['Coherence'].round(3)
         
-        # Representative keywords
+        # Add representative keywords
         def get_rep_keywords(cid):
-            reps = df[(df['cluster_id'] == cid) & (df['representative'] == True)]['keyword'].tolist()
-            return ', '.join(reps[:5]) if reps else 'None'
+            try:
+                cluster_data = df[df['cluster_id'] == cid]
+                if 'representative' in df.columns:
+                    reps = cluster_data[cluster_data['representative'] == True]['keyword'].tolist()
+                else:
+                    # Fallback: get top keywords by search volume or first few
+                    if 'search_volume' in df.columns:
+                        reps = cluster_data.nlargest(5, 'search_volume')['keyword'].tolist()
+                    else:
+                        reps = cluster_data['keyword'].head(5).tolist()
+                
+                return ', '.join(str(kw) for kw in reps[:5]) if reps else 'None'
+            except Exception as e:
+                logger.error(f"Error getting representative keywords for cluster {cid}: {str(e)}")
+                return 'Error'
         
         summary_df['Representative Keywords'] = summary_df['ID'].apply(get_rep_keywords)
         
-        # AI evaluation info
-        if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
-            evaluated_ids = st.session_state.cluster_evaluation.keys()
-            summary_df['AI Analysis'] = summary_df['ID'].apply(lambda x: "✅ Complete" if x in evaluated_ids else "❌ Unavailable")
+        # Add AI evaluation info if available
+        if hasattr(st.session_state, 'cluster_evaluation') and st.session_state.cluster_evaluation:
+            evaluated_ids = set(st.session_state.cluster_evaluation.keys())
+            summary_df['AI Analysis'] = summary_df['ID'].apply(
+                lambda x: "✅ Complete" if x in evaluated_ids else "❌ Not Available"
+            )
             
             def get_search_intent(cid):
-                if cid in st.session_state.cluster_evaluation:
-                    intent_data = st.session_state.cluster_evaluation[cid].get('intent_classification', {})
-                    return intent_data.get('primary_intent', 'Unknown')
-                return 'Unknown'
+                try:
+                    if cid in st.session_state.cluster_evaluation:
+                        intent_data = st.session_state.cluster_evaluation[cid].get('intent_classification', {})
+                        return intent_data.get('primary_intent', 'Unknown')
+                    return 'Not Analyzed'
+                except Exception:
+                    return 'Error'
             
             summary_df['Primary Intent'] = summary_df['ID'].apply(get_search_intent)
         
-        return summary_df.sort_values('Number of Keywords', ascending=False)
+        # Sort by number of keywords (largest clusters first)
+        summary_df = summary_df.sort_values('Number of Keywords', ascending=False)
+        
+        # Truncate long descriptions for display
+        summary_df['Description'] = summary_df['Description'].apply(
+            lambda x: x[:100] + '...' if len(str(x)) > 100 else x
+        )
+        
+        return summary_df
         
     except Exception as e:
-        logger.error(f"Error creating cluster summary: {str(e)}")
+        logger.error(f"Error creating cluster summary: {str(e)}", exc_info=True)
         return pd.DataFrame()
 
-# Session state initialization with error handling
-try:
-    if 'process_complete' not in st.session_state:
-        st.session_state.process_complete = False
-    if 'df_results' not in st.session_state:
-        st.session_state.df_results = None
-    if 'cluster_evaluation' not in st.session_state:
-        st.session_state.cluster_evaluation = {}
-    if 'enhanced_cluster_data' not in st.session_state:
-        st.session_state.enhanced_cluster_data = {}
-    if 'memory_monitor' not in st.session_state:
-        st.session_state.memory_monitor = {'last_check': time.time(), 'peak_memory': 0}
-except Exception as e:
-    logger.error(f"Error initializing session state: {str(e)}")
-
-# Main processing trigger
-if uploaded_file is not None and not st.session_state.process_complete:
-    # Show file info
+# Initialize session state with comprehensive error handling
+def initialize_session_state():
+    """Initialize all required session state variables with safe defaults"""
     try:
-        file_info = pd.read_csv(uploaded_file, nrows=0)
-        file_size = uploaded_file.size / (1024 * 1024)  # MB
-        st.info(f"📁 File uploaded: {uploaded_file.name} ({file_size:.2f}MB)")
+        defaults = {
+            'process_complete': False,
+            'df_results': None,
+            'cluster_evaluation': {},
+            'enhanced_cluster_data': {},
+            'memory_monitor': {
+                'last_check': time.time(), 
+                'peak_memory': 0,
+                'warnings_shown': 0
+            },
+            'export_history': [],
+            'user_preferences': {
+                'theme': 'light',
+                'auto_export': False
+            }
+        }
         
-        # Reset file pointer
-        uploaded_file.seek(0)
+        for key, default_value in defaults.items():
+            if key not in st.session_state:
+                st.session_state[key] = default_value
+                
+        return True
+        
     except Exception as e:
-        st.warning(f"⚠️ Could not analyze file: {str(e)}")
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🚀 Start Advanced Semantic Clustering", type="primary", use_container_width=True):
-            try:
-                with st.spinner("🔄 Processing your keywords..."):
-                    success, results = run_clustering_with_monitoring(
-                        uploaded_file=uploaded_file,
-                        openai_api_key=openai_api_key,
-                        num_clusters=num_clusters,
-                        pca_variance=pca_variance,
-                        max_pca_components=max_pca_components,
-                        min_df=min_df,
-                        max_df=max_df,
-                        gpt_model=gpt_model,
-                        user_prompt=user_prompt,
-                        csv_format=csv_format,
-                        selected_language=selected_language
-                    )
-                    
-                if success and results is not None:
-                    st.session_state.df_results = results
-                    st.session_state.process_complete = True
-                    st.markdown("<div class='success-box'>🎉 Semantic clustering completed successfully!</div>", unsafe_allow_html=True)
-                    st.balloons()
-                else:
-                    st.error("❌ Clustering failed. Please check your data and try again.")
-                    
-            except Exception as e:
-                logger.error(f"Critical error in main processing: {str(e)}")
-                st.error(f"❌ An unexpected error occurred: {str(e)}")
+        logger.error(f"Error initializing session state: {str(e)}", exc_info=True)
+        st.error("Failed to initialize application state. Please refresh the page.")
+        return False
 
-# Results display section
-if st.session_state.process_complete and st.session_state.df_results is not None:
-    st.markdown("<div class='main-header'>📊 Clustering Results</div>", unsafe_allow_html=True)
-    df = st.session_state.df_results
-    
-    # Results summary
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("📝 Total Keywords", f"{len(df):,}")
-    with col2:
-        st.metric("🎯 Clusters Created", f"{len(df['cluster_id'].unique()):,}")
-    with col3:
-        if 'search_volume' in df.columns:
-            total_volume = df['search_volume'].sum()
-            st.metric("📈 Total Search Volume", f"{int(total_volume):,}")
-        else:
-            st.metric("📊 Avg. Coherence", f"{df['cluster_coherence'].mean():.3f}")
-    with col4:
-        if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
-            st.metric("🤖 AI Analysis", "✅ Complete")
-        else:
-            st.metric("🤖 AI Analysis", "❌ Unavailable")
-
-    # Visualizations section
-    with st.expander("📊 Visualizations & Analytics", expanded=True):
-        viz_tabs = st.tabs(["📊 Cluster Distribution", "🧠 Semantic Coherence", "🔍 Search Intent & Journey"])
-        
-        with viz_tabs[0]:
-            st.subheader("📊 Cluster Size Distribution")
-            try:
-                cluster_sizes = df.groupby(['cluster_id', 'cluster_name']).size().reset_index(name='count')
-                cluster_sizes['label'] = cluster_sizes.apply(
-                    lambda x: f"{x['cluster_name'][:30]}{'...' if len(x['cluster_name']) > 30 else ''} (ID: {x['cluster_id']})", 
-                    axis=1
-                )
-                
-                fig = px.bar(
-                    cluster_sizes.head(20),  # Show top 20 for readability
-                    x='label',
-                    y='count',
-                    color='count',
-                    labels={'count': 'Number of Keywords', 'label': 'Cluster'},
-                    title='Size of Each Cluster (Top 20)',
-                    color_continuous_scale=px.colors.sequential.Blues
-                )
-                fig.update_layout(xaxis_tickangle=-45, height=600)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                if len(cluster_sizes) > 20:
-                    st.info(f"ℹ️ Showing top 20 clusters. Total clusters: {len(cluster_sizes)}")
-                    
-            except Exception as e:
-                st.error(f"Error creating cluster distribution chart: {str(e)}")
-        
-        with viz_tabs[1]:
-            st.subheader("🧠 Semantic Coherence Analysis")
-            st.markdown("""
-            This visualization shows how semantically related the keywords within each cluster are. 
-            Higher coherence scores (closer to 1.0) indicate clusters with more closely related keywords.
-            """)
-            
-            try:
-                coherence_data = df.groupby(['cluster_id', 'cluster_name'])['cluster_coherence'].mean().reset_index()
-                coherence_data['label'] = coherence_data.apply(
-                    lambda x: f"{x['cluster_name'][:30]}{'...' if len(x['cluster_name']) > 30 else ''} (ID: {x['cluster_id']})", 
-                    axis=1
-                )
-                
-                fig2 = px.bar(
-                    coherence_data.head(20),
-                    x='label',
-                    y='cluster_coherence',
-                    color='cluster_coherence',
-                    labels={'cluster_coherence': 'Coherence Score', 'label': 'Cluster'},
-                    title='Semantic Coherence by Cluster (Top 20)',
-                    color_continuous_scale=px.colors.sequential.Greens
-                )
-                fig2.update_layout(xaxis_tickangle=-45, height=600)
-                st.plotly_chart(fig2, use_container_width=True)
-                
-                # Coherence statistics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("📊 Average Coherence", f"{df['cluster_coherence'].mean():.3f}")
-                with col2:
-                    st.metric("🏆 Best Coherence", f"{df['cluster_coherence'].max():.3f}")
-                with col3:
-                    high_coherence = len(df[df['cluster_coherence'] > 0.7]['cluster_id'].unique())
-                    st.metric("🎯 High Coherence Clusters", f"{high_coherence}")
-                    
-            except Exception as e:
-                st.error(f"Error creating coherence chart: {str(e)}")
-        
-        with viz_tabs[2]:
-            # Advanced visualizations based on AI analysis
-            if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
-                try:
-                    eval_data = st.session_state.cluster_evaluation
-                    ai_viz_data = []
-                    
-                    for c_id, data in eval_data.items():
-                        cluster_rows = df[df['cluster_id'] == c_id]
-                        if not cluster_rows.empty:
-                            cluster_name = cluster_rows['cluster_name'].iloc[0]
-                            count = len(cluster_rows)
-                            coherence_score = data.get('coherence_score', 5)
-                            primary_intent = data.get('intent_classification', {}).get('primary_intent', 'Unknown')
-                            
-                            if 'search_volume' in df.columns:
-                                search_volume = cluster_rows['search_volume'].sum()
-                            else:
-                                search_volume = count * 100
-                            
-                            journey_phase = "Unknown"
-                            if 'intent_flow' in data:
-                                journey_phase = data['intent_flow'].get('journey_phase', 'Unknown')
-                            
-                            ai_viz_data.append({
-                                'cluster_id': c_id,
-                                'cluster_name': cluster_name,
-                                'coherence_score': coherence_score,
-                                'count': count,
-                                'search_volume': search_volume,
-                                'primary_intent': primary_intent,
-                                'journey_phase': journey_phase
-                            })
-                    
-                    if ai_viz_data:
-                        ai_df = pd.DataFrame(ai_viz_data)
-                        
-                        # Intent & Coherence scatter plot
-                        st.subheader("🔍 Clusters by Search Intent & Coherence")
-                        
-                        intent_colors = {
-                            'Informational': '#2196f3',
-                            'Navigational': '#4caf50', 
-                            'Transactional': '#ff9800',
-                            'Commercial': '#9c27b0',
-                            'Mixed Intent': '#9e9e9e',
-                            'Unknown': '#9e9e9e'
-                        }
-                        
-                        ai_df['search_volume'] = pd.to_numeric(ai_df['search_volume'], errors='coerce')
-                        ai_df['short_name'] = ai_df['cluster_name'].apply(lambda x: x[:30] + '...' if len(x) > 30 else x)
-                        
-                        fig3 = px.scatter(
-                            ai_df,
-                            x='coherence_score',
-                            y='count',
-                            color='primary_intent',
-                            size='search_volume',
-                            hover_name='short_name',
-                            labels={
-                                'coherence_score': 'AI Coherence Score (0-10)',
-                                'count': 'Number of Keywords',
-                                'primary_intent': 'Search Intent',
-                                'search_volume': 'Search Volume'
-                            },
-                            title='Clusters by Coherence, Size, and Search Intent',
-                            color_discrete_map=intent_colors
-                        )
-                        
-                        fig3.update_layout(xaxis=dict(range=[0, 10]), height=600)
-                        st.plotly_chart(fig3, use_container_width=True)
-                        
-                        st.markdown("""
-                        **📖 Chart Guide:**
-                        - **X-Axis**: AI-evaluated semantic coherence (0-10)
-                        - **Y-Axis**: Number of keywords in cluster
-                        - **Bubble Size**: Search volume (larger = higher volume)
-                        - **Color**: Primary search intent
-
-                        🎯 **Best clusters**: High coherence (right side) + substantial volume (larger bubbles)
-                        """)
-                        
-                        # Customer Journey Distribution
-                        st.subheader("🗺️ Customer Journey Distribution")
-                        
-                        journey_counts = Counter(ai_df['journey_phase'])
-                        journey_df = pd.DataFrame({
-                            'phase': list(journey_counts.keys()),
-                            'count': list(journey_counts.values())
-                        })
-                        
-                        phase_colors = {
-                            "Early (Research Phase)": "#43a047",
-                            "Research-to-Consideration Transition": "#26a69a", 
-                            "Middle (Consideration Phase)": "#1e88e5",
-                            "Consideration-to-Purchase Transition": "#7b1fa2",
-                            "Late (Purchase Phase)": "#ff9800",
-                            "Mixed Journey Stages": "#757575",
-                            "Unknown": "#9e9e9e"
-                        }
-                        
-                        fig_journey = px.bar(
-                            journey_df,
-                            x='phase',
-                            y='count',
-                            color='phase',
-                            labels={'phase': 'Customer Journey Phase', 'count': 'Number of Clusters'},
-                            title='Distribution of Clusters Across Customer Journey Phases',
-                            color_discrete_map=phase_colors
-                        )
-                        fig_journey.update_layout(xaxis_tickangle=-45, height=500)
-                        st.plotly_chart(fig_journey, use_container_width=True)
-                        
-                        # Search Intent Pie Chart
-                        st.subheader("🎯 Search Intent Distribution")
-                        
-                        intent_counts = Counter(ai_df['primary_intent'])
-                        intent_df = pd.DataFrame({
-                            'intent': list(intent_counts.keys()),
-                            'count': list(intent_counts.values())
-                        })
-                        
-                        fig_pie = px.pie(
-                            intent_df,
-                            names='intent',
-                            values='count',
-                            title='Distribution of Search Intent Across Clusters',
-                            color='intent',
-                            color_discrete_map=intent_colors
-                        )
-                        st.plotly_chart(fig_pie, use_container_width=True)
-                        
-                except Exception as e:
-                    st.error(f"Error creating advanced visualizations: {str(e)}")
-                    logger.error(f"Visualization error: {str(e)}")
-            else:
-                st.info("🤖 Advanced visualizations require OpenAI API analysis. Upload a file and run clustering with an API key to see detailed search intent and customer journey analysis.")
-
-# Cluster Explorer Section
-with st.expander("🔍 Explore Individual Clusters", expanded=True):
-    st.subheader("🔍 Detailed Cluster Analysis")
-    st.markdown("""
-    Select a cluster to explore its keywords, search intent, customer journey mapping, and AI-generated insights.
-    """)
-    
-    try:
-        # Ensure we have the required columns
-        if 'cluster_name' not in df.columns:
-            df['cluster_name'] = df['cluster_id'].apply(lambda x: f"Cluster {x}")
-        
-        # Create cluster options safely
-        unique_clusters = df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].copy()
-        unique_clusters = unique_clusters.sort_values('cluster_id')
-        
-        cluster_options = []
-        for _, row in unique_clusters.iterrows():
-            cluster_name = str(row['cluster_name']) if pd.notna(row['cluster_name']) else f"Cluster {row['cluster_id']}"
-            option = f"{cluster_name} (ID: {row['cluster_id']})"
-            cluster_options.append(option)
-        
-        if cluster_options:
-            selected_cluster = st.selectbox("📁 Select a cluster to explore:", cluster_options)
-            
-            if selected_cluster:
-                # Extract cluster ID safely
-                try:
-                    cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
-                except (IndexError, ValueError) as e:
-                    st.error(f"Error parsing cluster ID from selection: {str(e)}")
-                    st.stop()
-                
-                cluster_df = df[df['cluster_id'] == cid].copy()
-                
-                # CORRECTED LOGIC: Show content when we HAVE data
-                if len(cluster_df) > 0:
-                    # Cluster Overview
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown(f"### 📂 {cluster_df['cluster_name'].iloc[0]}")
-                        st.markdown(f"**📝 Description:** {cluster_df['cluster_description'].iloc[0]}")
-                        st.markdown(f"**📊 Total Keywords:** {len(cluster_df):,}")
-                        
-                        if 'search_volume' in cluster_df.columns:
-                            total_search_volume = cluster_df['search_volume'].sum()
-                            st.markdown(f"**📈 Total Search Volume:** {total_search_volume:,}")
-                    
-                    with col2:
-                        st.markdown(f"**🧠 Semantic Coherence:** {cluster_df['cluster_coherence'].iloc[0]:.3f}")
-                        
-                        # Representative keywords
-                        if 'representative' in cluster_df.columns:
-                            reps = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
-                            if reps:
-                                st.markdown("**⭐ Representative Keywords:**")
-                                for i, kw in enumerate(reps[:8]):  # Limit display
-                                    st.markdown(f"• {kw}")
-                                if len(reps) > 8:
-                                    st.markdown(f"... and {len(reps) - 8} more")
-                    
-                    # AI Analysis tabs if available
-                    if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
-                        ai_eval = st.session_state.cluster_evaluation
-                        if cid in ai_eval:
-                            # Create new tabs including new one from GPT-4.1
-                            analysis_tabs = st.tabs([
-                                "🔍 Search Intent", 
-                                "🗺️ Customer Journey", 
-                                "🤖 AI Insights", 
-                                "💡 SEO Recommendations",
-                                "🚀 GPT-4.1 Strategy"
-                            ])
-                            
-                            with analysis_tabs[0]:
-                                display_search_intent_analysis(ai_eval[cid])
-                            
-                            with analysis_tabs[1]:
-                                display_customer_journey_analysis(ai_eval[cid])
-                            
-                            with analysis_tabs[2]:
-                                display_ai_insights(ai_eval[cid])
-                            
-                            with analysis_tabs[3]:
-                                display_seo_recommendations(ai_eval[cid], cluster_df)
-                            
-                            # New tab with improved analysis
-                            with analysis_tabs[4]:
-                                display_enhanced_cluster_insights(cid)
-                    else:
-                        st.info("🤖 Advanced AI analysis requires OpenAI API. Upload keywords and run clustering with an API key to see detailed insights.")
-                    
-                    # Keywords table
-                    st.markdown("### 📝 All Keywords in this Cluster")
-                    if 'search_volume' in cluster_df.columns:
-                        display_df = cluster_df[['keyword', 'search_volume', 'representative']].sort_values(by='search_volume', ascending=False)
-                    else:
-                        display_df = cluster_df[['keyword', 'representative']]
-                    
-                    st.dataframe(display_df, use_container_width=True, height=300)
-                else:
-                    st.error(f"No data found for cluster {cid}")
-        else:
-            st.warning("No clusters available for exploration.")
-            
-    except Exception as e:
-        st.error(f"Error in cluster explorer: {str(e)}")
-        logger.error(f"Cluster explorer error: {str(e)}")
-
-# Export Results Section
-    with st.expander("📥 Export Results", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 📊 Standard Export")
-            
-            try:
-                # CSV Export
-                csv_data = df.to_csv(index=False)
-                st.download_button(
-                    label="📄 Download Full Results (CSV)",
-                    data=csv_data,
-                    file_name=f"semantic_clustered_keywords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-                # Summary Export
-                summary_df = create_cluster_summary(df)
-                csv_summary = summary_df.to_csv(index=False)
-                st.download_button(
-                    label="📋 Download Clusters Summary",
-                    data=csv_summary,
-                    file_name=f"clusters_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-                
-            except Exception as e:
-                st.error(f"Error creating standard exports: {str(e)}")
-        
-        with col2:
-            st.markdown("### 🚀 Advanced Export Options")
-            
-            cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
-            
-            # Excel Export
-            try:
-                if LIBRARIES.get('excel_export_available', False):
-                    st.markdown("#### 📊 Excel Report")
-                    from excel_export import add_excel_export_button
-                    add_excel_export_button(df, cluster_evaluation)
-                else:
-                    st.info("📊 Excel export not available. Install openpyxl to enable.")
-            except Exception as e:
-                st.error(f"Excel export error: {str(e)}")
-                logger.error(f"Excel export failed: {str(e)}")
-            
-            # HTML Export
-            try:
-                if LIBRARIES.get('html_export_available', False):
-                    st.markdown("#### 🌐 Interactive HTML Report")
-                    from html_export import add_html_export_button
-                    add_html_export_button(df, cluster_evaluation)
-                else:
-                    st.info("🌐 HTML export not available.")
-            except Exception as e:
-                st.error(f"HTML export error: {str(e)}")
-                logger.error(f"HTML export failed: {str(e)}")
-            
-            # PDF Export
-            try:
-                if LIBRARIES.get('pdf_export_available', False):
-                    st.markdown("#### 📑 PDF Report")
-                    from export_pdf import add_pdf_export_button
-                    add_pdf_export_button(df, cluster_evaluation)
-                else:
-                    st.info("📑 PDF export not available. Install reportlab and kaleido to enable.")
-            except Exception as e:
-                st.error(f"PDF export error: {str(e)}")
-                logger.error(f"PDF export failed: {str(e)}")
-
-# Reset button
-if st.session_state.process_complete:
-    st.markdown("---")
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("🔄 Reset and Start Over", use_container_width=True, type="secondary"):
-            try:
-                # Clear all session state
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                
-                # Trigger garbage collection
-                gc.collect()
-                
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error resetting application: {str(e)}")
-
-# Footer with additional information
-with st.expander("ℹ️ More Information about Advanced Semantic Clustering", expanded=False):
-    st.markdown("""
-    ### 🔧 How does it work?
-    1. **🔤 Linguistic Preprocessing** using spaCy/TextBlob/NLTK
-    2. **🧠 Semantic Embeddings** (OpenAI → SentenceTransformers → TF-IDF fallback)
-    3. **📉 Dimensionality Reduction** with PCA optimization
-    4. **🎯 Advanced Clustering** using K-Means with refinement
-    5. **🤖 AI-Powered Analysis** for search intent and naming
-    6. **📊 Quality Evaluation** with coherence scoring
-    
-    ### 📁 CSV Format Support
-    - **No Header**: Simple keyword list (one per line)
-    - **With Header**: Keyword Planner format with additional columns
-    
-    ### 🔍 Search Intent Categories
-    - **Informational**: Users seeking information ("how to", "what is")
-    - **Navigational**: Users looking for specific sites (brand names)
-    - **Commercial**: Users comparing options ("best", "reviews", "vs")
-    - **Transactional**: Users ready to buy ("buy", "price", "discount")
-    
-    ### 🗺️ Customer Journey Mapping
-    - **Research Phase**: Information gathering (mostly informational)
-    - **Consideration Phase**: Option evaluation (mostly commercial)
-    - **Purchase Phase**: Ready to buy (mostly transactional)
-    
-    ### 🚀 Performance Optimizations
-    - **Memory monitoring** with automatic warnings
-    - **Batch processing** for large datasets
-    - **Resource caching** for repeated operations
-    - **Fallback mechanisms** for robust operation
-    """)
-
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; color: #888; font-size: 0.9em;">
-    🔍 Advanced Semantic Keyword Clustering Tool v2.0<br>
-    Optimized for production use with comprehensive monitoring and error handling
-</div>
-""", unsafe_allow_html=True)
+# Call initialization
+if not initialize_session_state():
+    st.stop()
