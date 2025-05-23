@@ -91,7 +91,7 @@ def load_optional_libraries():
     
     # OpenAI
     try:
-        from openai import OpenAI
+        import openai
         libraries['openai_available'] = True
         logger.info("OpenAI library loaded successfully")
     except ImportError:
@@ -99,7 +99,7 @@ def load_optional_libraries():
     
     # SentenceTransformers
     try:
-        from sentence_transformers import SentenceTransformer
+        import sentence_transformers
         libraries['sentence_transformers_available'] = True
         logger.info("SentenceTransformers library loaded successfully")
     except ImportError:
@@ -115,7 +115,7 @@ def load_optional_libraries():
     
     # TextBlob
     try:
-        from textblob import TextBlob
+        import textblob
         libraries['textblob_available'] = True
         logger.info("TextBlob library loaded successfully")
     except ImportError:
@@ -129,27 +129,27 @@ def load_optional_libraries():
     except ImportError:
         logger.warning("HDBSCAN library not available")
     
-    # Export modules
-    try:
-        from html_export import add_html_export_button
-        libraries['html_export_available'] = True
-        logger.info("HTML export module loaded successfully")
-    except ImportError:
-        logger.warning("HTML export module not available")
+    # Export modules - Check if files exist instead of trying to import
+    export_modules = {
+        'html_export': 'html_export_available',
+        'excel_export': 'excel_export_available', 
+        'export_pdf': 'pdf_export_available'
+    }
     
-    try:
-        from excel_export import add_excel_export_button
-        libraries['excel_export_available'] = True
-        logger.info("Excel export module loaded successfully")
-    except ImportError:
-        logger.warning("Excel export module not available")
-    
-    try:
-        from export_pdf import add_pdf_export_button
-        libraries['pdf_export_available'] = True
-        logger.info("PDF export module loaded successfully")
-    except ImportError:
-        logger.warning("PDF export module not available")
+    for module_name, lib_key in export_modules.items():
+        try:
+            # Check if file exists first
+            import os
+            if os.path.exists(f"{module_name}.py"):
+                __import__(module_name)
+                libraries[lib_key] = True
+                logger.info(f"{module_name} module loaded successfully")
+            else:
+                logger.warning(f"{module_name}.py file not found")
+        except ImportError as e:
+            logger.warning(f"{module_name} module not available: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error loading {module_name}: {str(e)}")
     
     return libraries
 
@@ -3442,44 +3442,41 @@ if st.session_state.process_complete and st.session_state.df_results is not None
         
         cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
         
-        # Excel Export
-        if LIBRARIES.get('excel_export_available', False):
-            st.markdown("#### 📊 Excel Report")
-            try:
+# Excel Export
+        try:
+            if LIBRARIES.get('excel_export_available', False):
+                st.markdown("#### 📊 Excel Report")
                 from excel_export import add_excel_export_button
                 add_excel_export_button(df, cluster_evaluation)
-            except ImportError:
-                st.info("📊 Excel export module not found. Please ensure excel_export.py is in the same directory.")
-            except Exception as e:
-                st.error(f"Excel export error: {str(e)}")
-        else:
-            st.info("📊 Excel export not available. Install openpyxl to enable.")
+            else:
+                st.info("📊 Excel export not available. Install openpyxl to enable.")
+        except Exception as e:
+            st.error(f"Excel export error: {str(e)}")
+            logger.error(f"Excel export failed: {str(e)}")
         
         # HTML Export
-        if LIBRARIES.get('html_export_available', False):
-            st.markdown("#### 🌐 Interactive HTML Report")
-            try:
+        try:
+            if LIBRARIES.get('html_export_available', False):
+                st.markdown("#### 🌐 Interactive HTML Report")
                 from html_export import add_html_export_button
                 add_html_export_button(df, cluster_evaluation)
-            except ImportError:
-                st.info("🌐 HTML export module not found. Please ensure html_export.py is in the same directory.")
-            except Exception as e:
-                st.error(f"HTML export error: {str(e)}")
-        else:
-            st.info("🌐 HTML export not available.")
+            else:
+                st.info("🌐 HTML export not available.")
+        except Exception as e:
+            st.error(f"HTML export error: {str(e)}")
+            logger.error(f"HTML export failed: {str(e)}")
         
         # PDF Export
-        if LIBRARIES.get('pdf_export_available', False):
-            st.markdown("#### 📑 PDF Report")
-            try:
+        try:
+            if LIBRARIES.get('pdf_export_available', False):
+                st.markdown("#### 📑 PDF Report")
                 from export_pdf import add_pdf_export_button
                 add_pdf_export_button(df, cluster_evaluation)
-            except ImportError:
-                st.info("📑 PDF export module not found. Please ensure export_pdf.py is in the same directory.")
-            except Exception as e:
-                st.error(f"PDF export error: {str(e)}")
-        else:
-            st.info("📑 PDF export not available.")
+            else:
+                st.info("📑 PDF export not available. Install reportlab and kaleido to enable.")
+        except Exception as e:
+            st.error(f"PDF export error: {str(e)}")
+            logger.error(f"PDF export failed: {str(e)}")
 
 # Reset button
 if st.session_state.process_complete:
