@@ -3405,78 +3405,78 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             st.error(f"Error in cluster explorer: {str(e)}")
             logger.error(f"Cluster explorer error: {str(e)}")
 
-    # Export Results Section
+# Export Results Section
     with st.expander("📥 Export Results", expanded=False):
         col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 📊 Standard Export")
         
-        try:
-            # CSV Export
-            csv_data = df.to_csv(index=False)
-            st.download_button(
-                label="📄 Download Full Results (CSV)",
-                data=csv_data,
-                file_name=f"semantic_clustered_keywords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+        with col1:
+            st.markdown("### 📊 Standard Export")
             
-            # Summary Export
-            summary_df = create_cluster_summary(df)
-            csv_summary = summary_df.to_csv(index=False)
-            st.download_button(
-                label="📋 Download Clusters Summary",
-                data=csv_summary,
-                file_name=f"clusters_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
+            try:
+                # CSV Export
+                csv_data = df.to_csv(index=False)
+                st.download_button(
+                    label="📄 Download Full Results (CSV)",
+                    data=csv_data,
+                    file_name=f"semantic_clustered_keywords_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+                # Summary Export
+                summary_df = create_cluster_summary(df)
+                csv_summary = summary_df.to_csv(index=False)
+                st.download_button(
+                    label="📋 Download Clusters Summary",
+                    data=csv_summary,
+                    file_name=f"clusters_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+                
+            except Exception as e:
+                st.error(f"Error creating standard exports: {str(e)}")
+        
+        with col2:
+            st.markdown("### 🚀 Advanced Export Options")
             
-        except Exception as e:
-            st.error(f"Error creating standard exports: {str(e)}")
-    
-    with col2:
-        st.markdown("### 🚀 Advanced Export Options")
-        
-        cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
-        
-# Excel Export
-        try:
-            if LIBRARIES.get('excel_export_available', False):
-                st.markdown("#### 📊 Excel Report")
-                from excel_export import add_excel_export_button
-                add_excel_export_button(df, cluster_evaluation)
-            else:
-                st.info("📊 Excel export not available. Install openpyxl to enable.")
-        except Exception as e:
-            st.error(f"Excel export error: {str(e)}")
-            logger.error(f"Excel export failed: {str(e)}")
-        
-        # HTML Export
-        try:
-            if LIBRARIES.get('html_export_available', False):
-                st.markdown("#### 🌐 Interactive HTML Report")
-                from html_export import add_html_export_button
-                add_html_export_button(df, cluster_evaluation)
-            else:
-                st.info("🌐 HTML export not available.")
-        except Exception as e:
-            st.error(f"HTML export error: {str(e)}")
-            logger.error(f"HTML export failed: {str(e)}")
-        
-        # PDF Export
-        try:
-            if LIBRARIES.get('pdf_export_available', False):
-                st.markdown("#### 📑 PDF Report")
-                from export_pdf import add_pdf_export_button
-                add_pdf_export_button(df, cluster_evaluation)
-            else:
-                st.info("📑 PDF export not available. Install reportlab and kaleido to enable.")
-        except Exception as e:
-            st.error(f"PDF export error: {str(e)}")
-            logger.error(f"PDF export failed: {str(e)}")
+            cluster_evaluation = st.session_state.cluster_evaluation if 'cluster_evaluation' in st.session_state else None
+            
+            # Excel Export
+            try:
+                if LIBRARIES.get('excel_export_available', False):
+                    st.markdown("#### 📊 Excel Report")
+                    from excel_export import add_excel_export_button
+                    add_excel_export_button(df, cluster_evaluation)
+                else:
+                    st.info("📊 Excel export not available. Install openpyxl to enable.")
+            except Exception as e:
+                st.error(f"Excel export error: {str(e)}")
+                logger.error(f"Excel export failed: {str(e)}")
+            
+            # HTML Export
+            try:
+                if LIBRARIES.get('html_export_available', False):
+                    st.markdown("#### 🌐 Interactive HTML Report")
+                    from html_export import add_html_export_button
+                    add_html_export_button(df, cluster_evaluation)
+                else:
+                    st.info("🌐 HTML export not available.")
+            except Exception as e:
+                st.error(f"HTML export error: {str(e)}")
+                logger.error(f"HTML export failed: {str(e)}")
+            
+            # PDF Export
+            try:
+                if LIBRARIES.get('pdf_export_available', False):
+                    st.markdown("#### 📑 PDF Report")
+                    from export_pdf import add_pdf_export_button
+                    add_pdf_export_button(df, cluster_evaluation)
+                else:
+                    st.info("📑 PDF export not available. Install reportlab and kaleido to enable.")
+            except Exception as e:
+                st.error(f"PDF export error: {str(e)}")
+                logger.error(f"PDF export failed: {str(e)}")
 
 # Reset button
 if st.session_state.process_complete:
