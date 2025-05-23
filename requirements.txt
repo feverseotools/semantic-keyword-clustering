@@ -2,41 +2,33 @@
 streamlit>=1.29.0
 pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0  # For TF-IDF, PCA, KMeans, NearestNeighbors, Cosine Similarity
-scipy>=1.10.0         # For hierarchical clustering components
-plotly>=5.18.0        # For visualizations
-matplotlib>=3.7.0     # Support for Plotly visualizations
+scikit-learn>=1.3.0
+scipy>=1.10.0
+plotly>=5.18.0
+matplotlib>=3.7.0
 
 # System monitoring
-psutil>=5.9.0         # For memory and CPU monitoring
+psutil>=5.9.0
 
 # NLP libraries
-nltk>=3.8.1          # For tokenization, stopwords, lemmatization
-textblob>=0.17.1     # Alternative preprocessing fallback
+nltk>=3.8.1
+textblob>=0.17.1
 
 # Semantic embeddings
-sentence-transformers==2.2.2  # Pinned to a specific version for stability
+sentence-transformers>=2.2.2
 
-# OpenAI and advanced preprocessing (optional, install as needed)
-openai>=1.6.0           # For OpenAI embeddings and cluster naming
-spacy>=3.7.0            # For advanced language preprocessing
+# OpenAI and advanced preprocessing (optional)
+openai>=1.6.0
+spacy>=3.7.0
+
+# Excel export
+xlsxwriter>=3.0.0
+openpyxl>=3.1.0
 
 # PDF generation
-reportlab>=3.6.12     # For PDF generation
-pillow>=9.3.0         # For image handling
-kaleido>=0.2.1        # For static Plotly image export
+reportlab>=3.6.12
+pillow>=9.3.0
+kaleido>=0.2.1
 
-# Post-installation steps:
-# 1. Download NLTK data:
-#    python -c "import nltk; nltk.download('stopwords'); nltk.download('punkt'); nltk.download('wordnet'); nltk.download('omw-1.4')"
-# 
-# 2. Download spaCy models as needed:
-#    python -m spacy download en_core_web_sm  # English
-#    python -m spacy download fr_core_news_sm  # French
-#    python -m spacy download de_core_news_sm  # German
-#    python -m spacy download es_core_news_sm  # Spanish
-#    # Add other models as needed based on your language requirements
-#
-# 3. Create a 'models' directory at the root of your project:
-#    mkdir -p ./models
-#    This will be used for caching SentenceTransformer models when downloading fails
+# Web scraping and HTTP requests
+requests>=2.31.0
