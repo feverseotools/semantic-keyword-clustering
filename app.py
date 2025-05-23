@@ -2637,9 +2637,9 @@ max_df = st.sidebar.slider(
 
 gpt_model = st.sidebar.selectbox(
     "🤖 GPT Model for naming clusters", 
-    options=["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4"], 
-    index=1,  # Por defecto GPT-4.1-mini
-    help="GPT-4.1 models offer improved performance. Nano is fastest/cheapest, Mini is balanced, GPT-4 is legacy but reliable."
+    options=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"], 
+    index=0,  # Default to gpt-4o-mini
+    help="gpt-4o-mini is most cost-effective, gpt-4o offers better quality, gpt-4-turbo provides enhanced capabilities."
 )
 
 # Custom prompt section
@@ -3407,7 +3407,7 @@ if st.session_state.process_complete and st.session_state.df_results is not None
 
     # Export Results Section
     with st.expander("📥 Export Results", expanded=False):
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("### 📊 Standard Export")
