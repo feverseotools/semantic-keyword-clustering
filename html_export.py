@@ -17,6 +17,7 @@ import os
 import logging
 import json
 from datetime import datetime
+from collections import Counter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
