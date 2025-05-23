@@ -52,9 +52,9 @@ if 'memory_monitor' not in st.session_state:
 
 # Resource monitoring
 def monitor_resources():
-    """Monitor and log resource usage"""
+    """Monitor and log resource usage with improved thresholds"""
     if not PSUTIL_AVAILABLE:
-        return  # Skip monitoring if psutil is not available
+        return
     
     try:
         process = psutil.Process()
@@ -64,10 +64,17 @@ def monitor_resources():
         if memory_mb > st.session_state.memory_monitor['peak_memory']:
             st.session_state.memory_monitor['peak_memory'] = memory_mb
         
-        # Limit config
-        if memory_mb > MAX_MEMORY_WARNING:  
+        # Adjusted thresholds for Streamlit Cloud
+        if memory_mb > 800:  # Warning at 800MB
             st.warning(f"⚠️ High memory usage: {memory_mb:.1f}MB")
             logger.warning(f"High memory usage: {memory_mb:.1f}MB")
+            
+            # Suggest memory optimization
+            if memory_mb > 900:  # Critical threshold
+                st.error(f"🚨 Critical memory usage: {memory_mb:.1f}MB. Consider reducing dataset size.")
+                # Trigger garbage collection
+                import gc
+                gc.collect()
         
         st.session_state.memory_monitor['last_check'] = time.time()
         
@@ -178,7 +185,7 @@ NLTK_AVAILABLE = download_nltk_resources()
 MAX_KEYWORDS = int(os.getenv('MAX_KEYWORDS', '25000'))
 OPENAI_TIMEOUT = float(os.getenv('OPENAI_TIMEOUT', '60.0'))
 OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', '3'))
-MAX_MEMORY_WARNING = int(os.getenv('MAX_MEMORY_MB', '800'))
+MAX_MEMORY_WARNING = int(os.getenv('MAX_MEMORY_MB', '800')) 
 BATCH_SIZE = int(os.getenv('BATCH_SIZE', '100'))
 
 ################################################################
@@ -2218,23 +2225,25 @@ def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives)
         for cnum, (name, desc) in cluster_names.items():
             # Safety check - ensure cluster exists in dataframe
             if cnum in df['cluster_id'].values:
-                df.loc[df['cluster_id'] == cnum, 'cluster_name'] = name
-                df.loc[df['cluster_id'] == cnum, 'cluster_description'] = desc
+                mask = df['cluster_id'] == cnum
+                df.loc[mask, 'cluster_name'] = name
+                df.loc[mask, 'cluster_description'] = desc
                 
                 # Add enhanced data if available
                 if hasattr(st.session_state, 'enhanced_cluster_data') and st.session_state.enhanced_cluster_data:
                     enhanced = st.session_state.enhanced_cluster_data.get(cnum, {})
                     if enhanced:
-                        df.loc[df['cluster_id'] == cnum, 'primary_intent'] = enhanced.get('primary_intent', '')
-                        df.loc[df['cluster_id'] == cnum, 'business_value'] = enhanced.get('business_value', '')
-                        df.loc[df['cluster_id'] == cnum, 'content_strategy'] = enhanced.get('content_strategy', '')
+                        df.loc[mask, 'primary_intent'] = enhanced.get('primary_intent', '')
+                        df.loc[mask, 'business_value'] = enhanced.get('business_value', '')
+                        df.loc[mask, 'content_strategy'] = enhanced.get('content_strategy', '')
                 
-                # Mark representative keywords
-                for kw in clusters_with_representatives.get(cnum, []):
+                # Mark representative keywords safely
+                representative_keywords = clusters_with_representatives.get(cnum, [])
+                for kw in representative_keywords:
                     try:
-                        match_idx = df[(df['cluster_id'] == cnum) & (df['keyword'] == kw)].index
-                        if not match_idx.empty:
-                            df.loc[match_idx, 'representative'] = True
+                        # Create boolean mask for matching keywords in this cluster
+                        keyword_mask = (df['cluster_id'] == cnum) & (df['keyword'] == kw)
+                        df.loc[keyword_mask, 'representative'] = True
                     except Exception as e:
                         logger.warning(f"Error marking representative keyword '{kw}': {str(e)}")
         
@@ -2246,9 +2255,18 @@ def apply_cluster_names_safely(df, cluster_names, clusters_with_representatives)
         
         # Emergency fallback
         try:
+            # Ensure required columns exist
+            for col in ['cluster_name', 'cluster_description', 'representative']:
+                if col not in df.columns:
+                    if col == 'representative':
+                        df[col] = False
+                    else:
+                        df[col] = ''
+            
             for cnum in df['cluster_id'].unique():
-                df.loc[df['cluster_id'] == cnum, 'cluster_name'] = f"Cluster {cnum}"
-                df.loc[df['cluster_id'] == cnum, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
+                mask = df['cluster_id'] == cnum
+                df.loc[mask, 'cluster_name'] = f"Cluster {cnum}"
+                df.loc[mask, 'cluster_description'] = f"Group of related keywords (cluster {cnum})"
         except Exception as fallback_error:
             logger.error(f"Even fallback failed: {str(fallback_error)}")
     
@@ -2637,9 +2655,9 @@ max_df = st.sidebar.slider(
 
 gpt_model = st.sidebar.selectbox(
     "🤖 GPT Model for naming clusters", 
-    options=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"], 
-    index=0,  # Default to gpt-4o-mini
-    help="gpt-4o-mini is most cost-effective, gpt-4o offers better quality, gpt-4-turbo provides enhanced capabilities."
+    options=["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4"], 
+    index=1,  # Default to gpt-4.1-mini
+    help="gpt-4.1-nano is fastest/cheapest, gpt-4.1-mini offers balanced performance, gpt-4 is the legacy stable option."
 )
 
 # Custom prompt section
@@ -3317,26 +3335,43 @@ if st.session_state.process_complete and st.session_state.df_results is not None
             else:
                 st.info("🤖 Advanced visualizations require OpenAI API analysis. Upload a file and run clustering with an API key to see detailed search intent and customer journey analysis.")
 
-    # Cluster Explorer Section
-    with st.expander("🔍 Explore Individual Clusters", expanded=True):
-        st.subheader("🔍 Detailed Cluster Analysis")
-        st.markdown("""
-        Select a cluster to explore its keywords, search intent, customer journey mapping, and AI-generated insights.
-        """)
+# Cluster Explorer Section
+with st.expander("🔍 Explore Individual Clusters", expanded=True):
+    st.subheader("🔍 Detailed Cluster Analysis")
+    st.markdown("""
+    Select a cluster to explore its keywords, search intent, customer journey mapping, and AI-generated insights.
+    """)
+    
+    try:
+        # Ensure we have the required columns
+        if 'cluster_name' not in df.columns:
+            df['cluster_name'] = df['cluster_id'].apply(lambda x: f"Cluster {x}")
         
-        try:
-            cluster_options = [
-                f"{row['cluster_name']} (ID: {row['cluster_id']})"
-                for _, row in df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].iterrows()
-            ]
+        # Create cluster options safely
+        unique_clusters = df.drop_duplicates(['cluster_id', 'cluster_name'])[['cluster_id', 'cluster_name']].copy()
+        unique_clusters = unique_clusters.sort_values('cluster_id')
+        
+        cluster_options = []
+        for _, row in unique_clusters.iterrows():
+            cluster_name = str(row['cluster_name']) if pd.notna(row['cluster_name']) else f"Cluster {row['cluster_id']}"
+            option = f"{cluster_name} (ID: {row['cluster_id']})"
+            cluster_options.append(option)
+        
+        if cluster_options:
+            selected_cluster = st.selectbox("📁 Select a cluster to explore:", cluster_options)
             
-            if cluster_options:
-                selected_cluster = st.selectbox("📁 Select a cluster to explore:", cluster_options)
-                
-                if selected_cluster:
+            if selected_cluster:
+                # Extract cluster ID safely
+                try:
                     cid = int(selected_cluster.split("ID: ")[1].split(")")[0])
-                    cluster_df = df[df['cluster_id'] == cid].copy()
-                    
+                except (IndexError, ValueError) as e:
+                    st.error(f"Error parsing cluster ID from selection: {str(e)}")
+                    st.stop()
+                
+                cluster_df = df[df['cluster_id'] == cid].copy()
+                
+                # CORRECTED LOGIC: Show content when we HAVE data
+                if len(cluster_df) > 0:
                     # Cluster Overview
                     col1, col2 = st.columns(2)
                     with col1:
@@ -3352,13 +3387,14 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                         st.markdown(f"**🧠 Semantic Coherence:** {cluster_df['cluster_coherence'].iloc[0]:.3f}")
                         
                         # Representative keywords
-                        reps = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
-                        if reps:
-                            st.markdown("**⭐ Representative Keywords:**")
-                            for i, kw in enumerate(reps[:8]):  # Limit display
-                                st.markdown(f"• {kw}")
-                            if len(reps) > 8:
-                                st.markdown(f"... and {len(reps) - 8} more")
+                        if 'representative' in cluster_df.columns:
+                            reps = cluster_df[cluster_df['representative'] == True]['keyword'].tolist()
+                            if reps:
+                                st.markdown("**⭐ Representative Keywords:**")
+                                for i, kw in enumerate(reps[:8]):  # Limit display
+                                    st.markdown(f"• {kw}")
+                                if len(reps) > 8:
+                                    st.markdown(f"... and {len(reps) - 8} more")
                     
                     # AI Analysis tabs if available
                     if 'cluster_evaluation' in st.session_state and st.session_state.cluster_evaluation:
@@ -3399,10 +3435,14 @@ if st.session_state.process_complete and st.session_state.df_results is not None
                         display_df = cluster_df[['keyword', 'representative']]
                     
                     st.dataframe(display_df, use_container_width=True, height=300)
-                    
-        except Exception as e:
-            st.error(f"Error in cluster explorer: {str(e)}")
-            logger.error(f"Cluster explorer error: {str(e)}")
+                else:
+                    st.error(f"No data found for cluster {cid}")
+        else:
+            st.warning("No clusters available for exploration.")
+            
+    except Exception as e:
+        st.error(f"Error in cluster explorer: {str(e)}")
+        logger.error(f"Cluster explorer error: {str(e)}")
 
 # Export Results Section
     with st.expander("📥 Export Results", expanded=False):
