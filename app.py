@@ -5049,7 +5049,7 @@ def create_cluster_explorer(df):
             with export_col2:
                 # Representatives only export
                 if not rep_keywords.empty:
-rep_csv = rep_keywords.to_csv(index=False)
+                    rep_csv = rep_keywords.to_csv(index=False)
                     st.download_button(
                         label="⭐ Download Representatives Only",
                         data=rep_csv,
