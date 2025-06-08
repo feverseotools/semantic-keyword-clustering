@@ -5361,3 +5361,1275 @@ def show_data_analysis_tab(df, config):
     except Exception as e:
         log_error(e, "data_analysis_tab")
         st.error(f"Data analysis error: {str(e)}")
+"""
+Block 12: Export and Report Functions
+"""
+
+def show_export_options(df):
+    """Show comprehensive export options with download buttons"""
+    try:
+        if df is None or df.empty:
+            st.error("❌ No data available for export")
+            return False
+        
+        st.header("📥 Export Results")
+        
+        # Export statistics
+        export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+        
+        with export_col1:
+            st.metric("Total Keywords", format_number(len(df)))
+        with export_col2:
+            st.metric("Total Clusters", df['cluster_id'].nunique())
+        with export_col3:
+            if 'search_volume' in df.columns:
+                st.metric("Total Volume", format_number(df['search_volume'].sum()))
+            else:
+                st.metric("Representative Keywords", df['is_representative'].sum())
+        with export_col4:
+            st.metric("Avg Coherence", f"{df['cluster_coherence'].mean():.3f}")
+        
+        # Main export options
+        st.subheader("📊 Main Export Options")
+        
+        main_col1, main_col2 = st.columns(2)
+        
+        with main_col1:
+            st.markdown("#### 📄 Standard Formats")
+            
+            # CSV export (full dataset)
+            try:
+                csv_data, csv_filename = export_results_to_csv(df)
+                st.download_button(
+                    label="📄 Download Full Results (CSV)",
+                    data=csv_data,
+                    file_name=csv_filename,
+                    mime="text/csv",
+                    help="Complete dataset with all columns and metadata",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.error(f"CSV export failed: {str(e)}")
+            
+            # Summary CSV
+            try:
+                summary_df = create_cluster_summary_dataframe(df)
+                if not summary_df.empty:
+                    summary_csv = summary_df.to_csv(index=False)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    st.download_button(
+                        label="📋 Download Cluster Summary (CSV)",
+                        data=summary_csv,
+                        file_name=f"cluster_summary_{timestamp}.csv",
+                        mime="text/csv",
+                        help="Condensed summary with key metrics per cluster",
+                        use_container_width=True
+                    )
+            except Exception as e:
+                st.error(f"Summary export failed: {str(e)}")
+        
+        with main_col2:
+            st.markdown("#### 📊 Advanced Formats")
+            
+            # Excel export
+            try:
+                excel_data, excel_filename, excel_mime = prepare_download_data(df, "excel")
+                st.download_button(
+                    label="📊 Download Excel Report (Multi-sheet)",
+                    data=excel_data,
+                    file_name=excel_filename,
+                    mime=excel_mime,
+                    help="Excel file with multiple analysis sheets",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.warning(f"Excel export not available: {str(e)}")
+            
+            # JSON export
+            try:
+                json_data, json_filename, json_mime = prepare_download_data(df, "json")
+                st.download_button(
+                    label="🔗 Download JSON Data",
+                    data=json_data,
+                    file_name=json_filename,
+                    mime=json_mime,
+                    help="Structured JSON format for API integration",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.warning(f"JSON export not available: {str(e)}")
+        
+        # Specialized exports
+        st.subheader("🎯 Specialized Exports")
+        
+        specialized_col1, specialized_col2, specialized_col3 = st.columns(3)
+        
+        with specialized_col1:
+            st.markdown("#### ⭐ Representative Keywords")
+            
+            rep_keywords = df[df['is_representative'] == True]
+            if not rep_keywords.empty:
+                # Representatives only
+                rep_csv = rep_keywords[['keyword', 'cluster_id', 'cluster_name', 'search_volume' if 'search_volume' in df.columns else 'cluster_coherence']].to_csv(index=False)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                
+                st.download_button(
+                    label=f"⭐ Representatives Only ({len(rep_keywords)} keywords)",
+                    data=rep_csv,
+                    file_name=f"representative_keywords_{timestamp}.csv",
+                    mime="text/csv",
+                    help="Only the most representative keywords from each cluster",
+                    use_container_width=True
+                )
+                
+                # Top representatives by volume/coherence
+                if 'search_volume' in rep_keywords.columns:
+                    top_rep = rep_keywords.nlargest(100, 'search_volume')
+                    sort_column = 'search_volume'
+                    sort_label = "Volume"
+                else:
+                    top_rep = rep_keywords.nlargest(100, 'cluster_coherence')
+                    sort_column = 'cluster_coherence'
+                    sort_label = "Coherence"
+                
+                if len(top_rep) > 0:
+                    top_rep_csv = top_rep.to_csv(index=False)
+                    st.download_button(
+                        label=f"🏆 Top 100 by {sort_label}",
+                        data=top_rep_csv,
+                        file_name=f"top_representatives_{timestamp}.csv",
+                        mime="text/csv",
+                        help=f"Top 100 representative keywords sorted by {sort_label.lower()}",
+                        use_container_width=True
+                    )
+            else:
+                st.info("No representative keywords marked")
+        
+        with specialized_col2:
+            st.markdown("#### 🔍 By Search Intent")
+            
+            if 'search_intent' in df.columns:
+                intent_counts = df['search_intent'].value_counts()
+                
+                for intent in intent_counts.index[:4]:  # Top 4 intents
+                    intent_data = df[df['search_intent'] == intent]
+                    intent_csv = intent_data.to_csv(index=False)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    
+                    st.download_button(
+                        label=f"🎯 {intent} ({len(intent_data)} keywords)",
+                        data=intent_csv,
+                        file_name=f"{intent.lower()}_keywords_{timestamp}.csv",
+                        mime="text/csv",
+                        help=f"Keywords with {intent} search intent",
+                        use_container_width=True
+                    )
+            else:
+                st.info("No search intent data available")
+        
+        with specialized_col3:
+            st.markdown("#### 📈 By Search Volume")
+            
+            if 'search_volume' in df.columns and df['search_volume'].sum() > 0:
+                # High volume keywords
+                high_volume = df[df['search_volume'] >= df['search_volume'].quantile(0.8)]
+                if not high_volume.empty:
+                    high_vol_csv = high_volume.to_csv(index=False)
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    
+                    st.download_button(
+                        label=f"📈 High Volume (Top 20%, {len(high_volume)} keywords)",
+                        data=high_vol_csv,
+                        file_name=f"high_volume_keywords_{timestamp}.csv",
+                        mime="text/csv",
+                        help="Keywords in the top 20% by search volume",
+                        use_container_width=True
+                    )
+                
+                # Zero volume keywords
+                zero_volume = df[df['search_volume'] == 0]
+                if not zero_volume.empty:
+                    zero_vol_csv = zero_volume.to_csv(index=False)
+                    
+                    st.download_button(
+                        label=f"📉 Zero Volume ({len(zero_volume)} keywords)",
+                        data=zero_vol_csv,
+                        file_name=f"zero_volume_keywords_{timestamp}.csv",
+                        mime="text/csv",
+                        help="Keywords with no recorded search volume",
+                        use_container_width=True
+                    )
+            else:
+                st.info("No search volume data available")
+        
+        # Custom export builder
+        st.subheader("🛠️ Custom Export Builder")
+        
+        with st.expander("Build Custom Export", expanded=False):
+            custom_col1, custom_col2 = st.columns(2)
+            
+            with custom_col1:
+                st.markdown("#### Select Columns")
+                
+                available_columns = df.columns.tolist()
+                essential_columns = ['keyword', 'cluster_id', 'cluster_name']
+                optional_columns = [col for col in available_columns if col not in essential_columns]
+                
+                selected_columns = st.multiselect(
+                    "Additional columns to include:",
+                    options=optional_columns,
+                    default=[col for col in ['is_representative', 'cluster_coherence', 'search_volume', 'search_intent'] if col in optional_columns],
+                    help="Essential columns (keyword, cluster_id, cluster_name) are always included"
+                )
+                
+                final_columns = essential_columns + selected_columns
+            
+            with custom_col2:
+                st.markdown("#### Apply Filters")
+                
+                # Cluster size filter
+                min_cluster_size = st.slider(
+                    "Minimum cluster size:",
+                    min_value=1,
+                    max_value=df['cluster_id'].value_counts().max(),
+                    value=1,
+                    help="Only include clusters with at least this many keywords"
+                )
+                
+                # Coherence filter
+                min_coherence = st.slider(
+                    "Minimum coherence:",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.0,
+                    step=0.1,
+                    help="Only include keywords from clusters with this coherence or higher"
+                )
+                
+                # Representative only
+                rep_only = st.checkbox(
+                    "Representative keywords only",
+                    value=False,
+                    help="Export only representative keywords"
+                )
+            
+            # Generate custom export
+            if st.button("🎯 Generate Custom Export", use_container_width=True):
+                try:
+                    # Apply filters
+                    filtered_df = df.copy()
+                    
+                    # Filter by cluster size
+                    if min_cluster_size > 1:
+                        cluster_sizes = filtered_df['cluster_id'].value_counts()
+                        valid_clusters = cluster_sizes[cluster_sizes >= min_cluster_size].index
+                        filtered_df = filtered_df[filtered_df['cluster_id'].isin(valid_clusters)]
+                    
+                    # Filter by coherence
+                    if min_coherence > 0:
+                        filtered_df = filtered_df[filtered_df['cluster_coherence'] >= min_coherence]
+                    
+                    # Filter representatives
+                    if rep_only:
+                        filtered_df = filtered_df[filtered_df['is_representative'] == True]
+                    
+                    # Select columns
+                    if not filtered_df.empty:
+                        export_df = filtered_df[final_columns]
+                        custom_csv = export_df.to_csv(index=False)
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        
+                        st.success(f"✅ Custom export ready: {len(export_df):,} keywords")
+                        
+                        st.download_button(
+                            label=f"📥 Download Custom Export ({len(export_df)} keywords)",
+                            data=custom_csv,
+                            file_name=f"custom_export_{timestamp}.csv",
+                            mime="text/csv",
+                            help="Your custom filtered and configured export",
+                            use_container_width=True
+                        )
+                    else:
+                        st.warning("⚠️ No data matches your filter criteria")
+                        
+                except Exception as e:
+                    st.error(f"Custom export failed: {str(e)}")
+        
+        # Export preview
+        st.subheader("👀 Export Preview")
+        
+        preview_options = ["Full Dataset", "Cluster Summary", "Representative Keywords Only"]
+        if 'search_intent' in df.columns:
+            preview_options.append("Intent Distribution")
+        if 'search_volume' in df.columns:
+            preview_options.append("Volume Analysis")
+        
+        preview_selection = st.selectbox(
+            "Select preview type:",
+            options=preview_options,
+            help="Preview different export formats"
+        )
+        
+        if preview_selection == "Full Dataset":
+            st.markdown("#### Full Dataset Preview (First 20 rows)")
+            st.dataframe(df.head(20), use_container_width=True)
+            
+        elif preview_selection == "Cluster Summary":
+            st.markdown("#### Cluster Summary Preview")
+            summary_df = create_cluster_summary_dataframe(df)
+            if not summary_df.empty:
+                st.dataframe(summary_df.head(10), use_container_width=True)
+            else:
+                st.info("No summary data available")
+                
+        elif preview_selection == "Representative Keywords Only":
+            st.markdown("#### Representative Keywords Preview")
+            rep_preview = df[df['is_representative'] == True]
+            if not rep_preview.empty:
+                display_cols = ['keyword', 'cluster_name', 'cluster_coherence']
+                if 'search_volume' in rep_preview.columns:
+                    display_cols.append('search_volume')
+                st.dataframe(rep_preview[display_cols].head(20), use_container_width=True)
+            else:
+                st.info("No representative keywords marked")
+                
+        elif preview_selection == "Intent Distribution":
+            st.markdown("#### Intent Distribution Preview")
+            intent_summary = df.groupby(['search_intent', 'cluster_name']).size().reset_index(name='keyword_count')
+            intent_summary = intent_summary.sort_values('keyword_count', ascending=False)
+            st.dataframe(intent_summary.head(20), use_container_width=True)
+            
+        elif preview_selection == "Volume Analysis":
+            st.markdown("#### Volume Analysis Preview")
+            volume_summary = df.groupby('cluster_name').agg({
+                'search_volume': ['sum', 'mean', 'count'],
+                'keyword': 'count'
+            }).reset_index()
+            volume_summary.columns = ['cluster_name', 'total_volume', 'avg_volume', 'volume_keywords', 'total_keywords']
+            volume_summary = volume_summary.sort_values('total_volume', ascending=False)
+            st.dataframe(volume_summary.head(15), use_container_width=True)
+        
+        # Export tips
+        with st.expander("💡 Export Tips & Best Practices", expanded=False):
+            st.markdown("""
+            #### 📋 Export Best Practices
+            
+            **For SEO Content Planning:**
+            - Use **Representative Keywords** export for content creation priorities
+            - Filter by **High Volume** keywords for traffic opportunities
+            - Export by **Search Intent** to align content with user needs
+            
+            **For Technical Analysis:**
+            - Use **Full Dataset** for comprehensive analysis in Excel/Python
+            - **JSON format** for integration with other tools and APIs
+            - **Excel Multi-sheet** for stakeholder presentations
+            
+            **For Team Collaboration:**
+            - **Cluster Summary** provides executive overview
+            - **Custom Export** for specific team requirements
+            - Include coherence scores to indicate cluster quality
+            
+            #### 🔍 File Format Guide
+            
+            - **CSV**: Best for Excel, Google Sheets, most analytics tools
+            - **Excel**: Professional reports, multiple data views, stakeholder presentations  
+            - **JSON**: API integration, custom applications, data pipelines
+            
+            #### ⚡ Performance Tips
+            
+            - Large datasets (>10k keywords): Use filtered exports
+            - Multiple team members: Share summary first, then detailed data
+            - Regular updates: Use timestamped filenames for version control
+            """)
+        
+        return True
+        
+    except Exception as e:
+        log_error(e, "export_options")
+        st.error(f"Export options error: {str(e)}")
+        return False
+
+def prepare_download_data(df, format_type="csv"):
+    """Prepare data for download in various formats with enhanced options"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        if format_type.lower() == "csv":
+            data, filename = export_results_to_csv(df, f"keyword_clusters_{timestamp}.csv")
+            mime_type = "text/csv"
+            
+        elif format_type.lower() == "excel":
+            # Create Excel with multiple sheets
+            output = BytesIO()
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Main results sheet
+                export_df = prepare_excel_export_dataframe(df)
+                export_df.to_excel(writer, sheet_name='Clustering Results', index=False)
+                
+                # Cluster summary sheet
+                summary_df = create_cluster_summary_dataframe(df)
+                if not summary_df.empty:
+                    summary_df.to_excel(writer, sheet_name='Cluster Summary', index=False)
+                
+                # Intent analysis sheet
+                if 'search_intent' in df.columns:
+                    intent_summary = create_intent_analysis_sheet(df)
+                    intent_summary.to_excel(writer, sheet_name='Intent Analysis', index=False)
+                
+                # Volume analysis sheet
+                if 'search_volume' in df.columns:
+                    volume_summary = create_volume_analysis_sheet(df)
+                    volume_summary.to_excel(writer, sheet_name='Volume Analysis', index=False)
+                
+                # Representative keywords sheet
+                rep_keywords = df[df['is_representative'] == True][['keyword', 'cluster_id', 'cluster_name']]
+                if not rep_keywords.empty:
+                    rep_keywords.to_excel(writer, sheet_name='Representative Keywords', index=False)
+            
+            data = output.getvalue()
+            filename = f"keyword_clusters_{timestamp}.xlsx"
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            
+        elif format_type.lower() == "json":
+            # Create JSON export
+            json_data = create_json_export(df)
+            data = json.dumps(json_data, indent=2, ensure_ascii=False)
+            filename = f"keyword_clusters_{timestamp}.json"
+            mime_type = "application/json"
+            
+        else:
+            raise ValueError(f"Unsupported format: {format_type}")
+        
+        return data, filename, mime_type
+        
+    except Exception as e:
+        log_error(e, "download_preparation", {"format": format_type})
+        # Fallback to CSV
+        try:
+            data, filename = export_results_to_csv(df)
+            return data, filename, "text/csv"
+        except Exception as fallback_error:
+            log_error(fallback_error, "csv_fallback")
+            raise e
+
+def prepare_excel_export_dataframe(df):
+    """Prepare DataFrame specifically for Excel export"""
+    try:
+        export_df = df.copy()
+        
+        # Format numeric columns for Excel
+        if 'search_volume' in export_df.columns:
+            export_df['search_volume'] = export_df['search_volume'].astype(int)
+        
+        if 'cluster_coherence' in export_df.columns:
+            export_df['cluster_coherence'] = export_df['cluster_coherence'].round(3)
+        
+        if 'quality_score' in export_df.columns:
+            export_df['quality_score'] = export_df['quality_score'].round(1)
+        
+        # Convert boolean to text for better Excel compatibility
+        bool_columns = export_df.select_dtypes(include=[bool]).columns
+        for col in bool_columns:
+            export_df[col] = export_df[col].map({True: 'Yes', False: 'No'})
+        
+        return export_df
+        
+    except Exception as e:
+        log_error(e, "excel_dataframe_preparation")
+        return df
+
+def create_intent_analysis_sheet(df):
+    """Create intent analysis data for Excel export"""
+    try:
+        intent_analysis = df.groupby(['cluster_id', 'cluster_name', 'search_intent']).agg({
+            'keyword': 'count',
+            'search_volume': 'sum' if 'search_volume' in df.columns else 'count'
+        }).reset_index()
+        
+        intent_analysis.columns = ['cluster_id', 'cluster_name', 'search_intent', 'keyword_count', 'total_volume']
+        
+        # Add percentage within cluster
+        cluster_totals = intent_analysis.groupby('cluster_id')['keyword_count'].sum()
+        intent_analysis['percentage_in_cluster'] = intent_analysis.apply(
+            lambda row: (row['keyword_count'] / cluster_totals[row['cluster_id']]) * 100,
+            axis=1
+        ).round(1)
+        
+        return intent_analysis
+        
+    except Exception as e:
+        log_error(e, "intent_analysis_sheet")
+        return pd.DataFrame()
+
+def create_volume_analysis_sheet(df):
+    """Create volume analysis data for Excel export"""
+    try:
+        volume_analysis = df.groupby(['cluster_id', 'cluster_name']).agg({
+            'search_volume': ['sum', 'mean', 'median', 'max', 'min', 'std'],
+            'keyword': 'count'
+        }).reset_index()
+        
+        # Flatten column names
+        volume_analysis.columns = [
+            'cluster_id', 'cluster_name', 'total_volume', 'avg_volume',
+            'median_volume', 'max_volume', 'min_volume', 'std_volume', 'keyword_count'
+        ]
+        
+        # Calculate volume efficiency
+        volume_analysis['volume_per_keyword'] = (
+            volume_analysis['total_volume'] / volume_analysis['keyword_count']
+        ).round(0)
+        
+        # Sort by total volume
+        volume_analysis = volume_analysis.sort_values('total_volume', ascending=False)
+        
+        return volume_analysis
+        
+    except Exception as e:
+        log_error(e, "volume_analysis_sheet")
+        return pd.DataFrame()
+
+def create_json_export(df):
+    """Create structured JSON export"""
+    try:
+        export_data = {
+            "metadata": {
+                "export_timestamp": datetime.now().isoformat(),
+                "total_keywords": len(df),
+                "total_clusters": df['cluster_id'].nunique(),
+                "avg_cluster_size": len(df) / df['cluster_id'].nunique(),
+                "avg_coherence": float(df['cluster_coherence'].mean()),
+            },
+            "clusters": []
+        }
+        
+        # Add summary statistics if available
+        if 'search_volume' in df.columns:
+            export_data["metadata"]["total_search_volume"] = int(df['search_volume'].sum())
+            export_data["metadata"]["avg_search_volume"] = float(df['search_volume'].mean())
+        
+        # Process each cluster
+        for cluster_id in sorted(df['cluster_id'].unique()):
+            cluster_data = df[df['cluster_id'] == cluster_id]
+            
+            cluster_info = {
+                "cluster_id": int(cluster_id),
+                "cluster_name": cluster_data['cluster_name'].iloc[0],
+                "cluster_description": cluster_data['cluster_description'].iloc[0],
+                "keyword_count": len(cluster_data),
+                "avg_coherence": float(cluster_data['cluster_coherence'].mean()),
+                "keywords": []
+            }
+            
+            # Add representative keywords
+            rep_keywords = cluster_data[cluster_data['is_representative'] == True]['keyword'].tolist()
+            cluster_info["representative_keywords"] = rep_keywords
+            
+            # Add search volume info if available
+            if 'search_volume' in df.columns:
+                cluster_info["total_search_volume"] = int(cluster_data['search_volume'].sum())
+                cluster_info["avg_search_volume"] = float(cluster_data['search_volume'].mean())
+            
+            # Add intent info if available
+            if 'search_intent' in df.columns:
+                intent_dist = cluster_data['search_intent'].value_counts().to_dict()
+                cluster_info["intent_distribution"] = intent_dist
+            
+            # Add all keywords with details
+            for _, row in cluster_data.iterrows():
+                keyword_info = {
+                    "keyword": row['keyword'],
+                    "is_representative": bool(row['is_representative']),
+                    "coherence": float(row['cluster_coherence'])
+                }
+                
+                if 'search_volume' in row:
+                    keyword_info["search_volume"] = int(row['search_volume'])
+                
+                if 'search_intent' in row:
+                    keyword_info["search_intent"] = row['search_intent']
+                
+                if 'quality_score' in row:
+                    keyword_info["quality_score"] = float(row['quality_score'])
+                
+                cluster_info["keywords"].append(keyword_info)
+            
+            export_data["clusters"].append(cluster_info)
+        
+        return export_data
+        
+    except Exception as e:
+        log_error(e, "json_export_creation")
+        return {"error": f"Failed to create JSON export: {str(e)}"}
+"""
+Block 13: Report Generation and Settings Management
+"""
+
+def generate_comprehensive_report(df, config):
+    """Generate comprehensive analysis report"""
+    try:
+        if df is None or df.empty:
+            st.error("❌ No data available for report generation")
+            return
+        
+        st.info("📊 Generating comprehensive report...")
+        
+        # Calculate comprehensive metrics
+        report_data = {
+            'executive_summary': generate_executive_summary(df, config),
+            'detailed_metrics': calculate_detailed_metrics(df),
+            'cluster_analysis': generate_cluster_analysis_report(df),
+            'recommendations': generate_detailed_recommendations(df, config),
+            'methodology': generate_methodology_section(config)
+        }
+        
+        # Create report document
+        report_content = create_report_document(report_data)
+        
+        # Offer download
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        st.download_button(
+            label="📊 Download Comprehensive Report",
+            data=report_content,
+            file_name=f"keyword_clustering_report_{timestamp}.md",
+            mime="text/markdown",
+            help="Download detailed analysis report in Markdown format"
+        )
+        
+        # Show preview
+        with st.expander("👀 Report Preview", expanded=False):
+            st.markdown(report_content[:2000] + "..." if len(report_content) > 2000 else report_content)
+        
+        st.success("✅ Report generated successfully!")
+        
+    except Exception as e:
+        log_error(e, "generate_report")
+        st.error(f"Report generation failed: {str(e)}")
+
+def generate_executive_summary(df, config):
+    """Generate executive summary for report"""
+    try:
+        summary = f"""
+## Executive Summary
+
+This keyword clustering analysis processed **{len(df):,} keywords** using {config['embedding_method']} embeddings 
+and {config['clustering_method']} clustering algorithm, resulting in **{df['cluster_id'].nunique()} distinct clusters**.
+
+### Key Findings:
+- Average semantic coherence: **{df['cluster_coherence'].mean():.3f}**
+- Representative keywords identified: **{df['is_representative'].sum():,}** ({df['is_representative'].mean()*100:.1f}%)
+- Largest cluster contains: **{df['cluster_id'].value_counts().max()} keywords**
+- Processing method: **{config['embedding_method']}** embeddings with **{config['clustering_method']}** clustering
+"""
+        
+        if 'search_volume' in df.columns:
+            total_volume = df['search_volume'].sum()
+            summary += f"- Total search volume: **{format_number(total_volume)}**\n"
+        
+        if 'search_intent' in df.columns:
+            primary_intent = df['search_intent'].value_counts().index[0]
+            summary += f"- Primary search intent: **{primary_intent}**\n"
+        
+        return summary
+        
+    except Exception as e:
+        log_error(e, "executive_summary")
+        return "## Executive Summary\n\nError generating summary."
+
+def calculate_detailed_metrics(df):
+    """Calculate detailed metrics for report"""
+    try:
+        metrics = create_clustering_summary_metrics(df)
+        
+        # Format metrics for report
+        formatted_metrics = f"""
+## Detailed Metrics
+
+### Cluster Distribution
+- Total clusters: {metrics.get('total_clusters', 'Unknown')}
+- Average cluster size: {metrics.get('avg_cluster_size', 0):.1f}
+- Largest cluster: {metrics.get('largest_cluster_size', 'Unknown')} keywords
+- Smallest cluster: {metrics.get('smallest_cluster_size', 'Unknown')} keywords
+- Size coefficient of variation: {metrics.get('size_cv', 0):.2f}
+
+### Quality Metrics
+- Average coherence: {metrics.get('avg_coherence', 0):.3f}
+- Coherence standard deviation: {metrics.get('coherence_std', 0):.3f}
+- High coherence clusters (>0.7): {metrics.get('high_coherence_clusters', 0)}
+"""
+        
+        if 'total_search_volume' in metrics:
+            formatted_metrics += f"""
+### Search Volume Analysis
+- Total search volume: {format_number(metrics['total_search_volume'])}
+- Average search volume: {format_number(metrics['avg_search_volume'])}
+- Volume concentration (top 20%): {metrics.get('volume_concentration_20', 0):.1f}%
+"""
+        
+        return formatted_metrics
+        
+    except Exception as e:
+        log_error(e, "detailed_metrics")
+        return "## Detailed Metrics\n\nError calculating metrics."
+
+def generate_cluster_analysis_report(df):
+    """Generate cluster-by-cluster analysis"""
+    try:
+        analysis = "## Cluster Analysis\n\n"
+        
+        # Get top 10 clusters by size
+        top_clusters = df['cluster_id'].value_counts().head(10)
+        
+        for cluster_id in top_clusters.index:
+            cluster_data = df[df['cluster_id'] == cluster_id]
+            cluster_name = cluster_data['cluster_name'].iloc[0]
+            
+            analysis += f"### {cluster_name} (ID: {cluster_id})\n"
+            analysis += f"- Keywords: {len(cluster_data)}\n"
+            analysis += f"- Coherence: {cluster_data['cluster_coherence'].mean():.3f}\n"
+            
+            # Representative keywords
+            rep_keywords = cluster_data[cluster_data['is_representative'] == True]['keyword'].tolist()
+            if rep_keywords:
+                analysis += f"- Representative keywords: {', '.join(rep_keywords[:5])}\n"
+            
+            if 'search_volume' in cluster_data.columns:
+                total_volume = cluster_data['search_volume'].sum()
+                analysis += f"- Total search volume: {format_number(total_volume)}\n"
+            
+            if 'search_intent' in cluster_data.columns:
+                primary_intent = cluster_data['search_intent'].value_counts().index[0]
+                analysis += f"- Primary intent: {primary_intent}\n"
+            
+            analysis += "\n"
+        
+        return analysis
+        
+    except Exception as e:
+        log_error(e, "cluster_analysis_report")
+        return "## Cluster Analysis\n\nError generating cluster analysis."
+
+def generate_detailed_recommendations(df, config):
+    """Generate detailed recommendations"""
+    try:
+        recommendations = "## Recommendations\n\n"
+        
+        # Get basic recommendations
+        basic_recs = generate_dashboard_recommendations(create_clustering_summary_metrics(df), df)
+        
+        for i, rec in enumerate(basic_recs, 1):
+            recommendations += f"{i}. {rec}\n\n"
+        
+        # Add strategic recommendations
+        recommendations += "### Strategic Recommendations\n\n"
+        
+        if 'search_volume' in df.columns:
+            high_volume_clusters = df.groupby('cluster_id')['search_volume'].sum().nlargest(5)
+            recommendations += f"- Focus content strategy on top 5 volume clusters: {', '.join(map(str, high_volume_clusters.index))}\n"
+        
+        if 'search_intent' in df.columns:
+            intent_dist = df['search_intent'].value_counts(normalize=True)
+            recommendations += f"- Develop content for underrepresented intents beyond {intent_dist.index[0]}\n"
+        
+        recommendations += "- Regularly review and refine cluster assignments for optimal performance\n"
+        recommendations += "- Consider A/B testing content strategies for high-value clusters\n"
+        
+        return recommendations
+        
+    except Exception as e:
+        log_error(e, "detailed_recommendations")
+        return "## Recommendations\n\nError generating recommendations."
+
+def generate_methodology_section(config):
+    """Generate methodology section for report"""
+    try:
+        methodology = f"""
+## Methodology
+
+### Data Processing
+- **Preprocessing method**: {config['preprocessing_method']}
+- **Language**: {config['language']}
+- **Maximum keywords processed**: {format_number(config['max_keywords'])}
+
+### Clustering Configuration
+- **Embedding method**: {config['embedding_method']}
+- **Clustering algorithm**: {config['clustering_method']}
+- **Minimum cluster size**: {config['min_cluster_size']}
+- **Target clusters**: {config['num_clusters'] or 'Auto-detected'}
+
+### AI Enhancement
+- **OpenAI integration**: {'Enabled' if config['openai_api_key'] else 'Disabled'}
+- **AI model**: {config['ai_model']}
+- **Search intent analysis**: {'Enabled' if config['enable_intent_analysis'] else 'Disabled'}
+- **Quality analysis**: {'Enabled' if config['enable_quality_analysis'] else 'Disabled'}
+
+### Quality Metrics
+- **Coherence scoring**: Cosine similarity within clusters
+- **Representative selection**: Top keywords by search volume or coherence
+- **Intent classification**: Rule-based pattern matching with ML validation
+"""
+        
+        return methodology
+        
+    except Exception as e:
+        log_error(e, "methodology_section")
+        return "## Methodology\n\nError generating methodology section."
+
+def create_report_document(report_data):
+    """Create final report document"""
+    try:
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        report = f"""# Keyword Clustering Analysis Report
+
+**Generated on**: {timestamp}  
+**Tool**: Semantic Keyword Clustering Platform v1.0
+
+---
+
+{report_data['executive_summary']}
+
+---
+
+{report_data['detailed_metrics']}
+
+---
+
+{report_data['cluster_analysis']}
+
+---
+
+{report_data['recommendations']}
+
+---
+
+{report_data['methodology']}
+
+---
+
+## Appendix
+
+This report was generated automatically by the Semantic Keyword Clustering Platform.
+For questions or support, please refer to the application documentation.
+
+**Disclaimer**: This analysis is based on the provided data and selected configuration.
+Results may vary with different settings or datasets.
+"""
+        
+        return report
+        
+    except Exception as e:
+        log_error(e, "create_report_document")
+        return f"# Report Generation Error\n\nFailed to create report: {str(e)}"
+
+def show_settings_actions_tab(df, config):
+    """Show settings and actions tab"""
+    try:
+        settings_col1, settings_col2 = st.columns(2)
+        
+        with settings_col1:
+            st.subheader("🔧 Post-Processing Actions")
+            
+            # Cluster refinement options
+            st.markdown("#### Cluster Refinement")
+            
+            if st.button("🔄 Refine Small Clusters", use_container_width=True):
+                refined_df = refine_small_clusters(df)
+                if refined_df is not None:
+                    st.session_state.results_df = refined_df
+                    st.success("✅ Small clusters refined successfully!")
+                    st.rerun()
+            
+            if st.button("🎯 Recalculate Representatives", use_container_width=True):
+                updated_df = recalculate_representatives(df)
+                if updated_df is not None:
+                    st.session_state.results_df = updated_df
+                    st.success("✅ Representative keywords recalculated!")
+                    st.rerun()
+            
+            # Data filtering options
+            st.markdown("#### Data Filtering")
+            
+            min_coherence_filter = st.slider(
+                "Filter by minimum coherence:",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.1,
+                help="Remove keywords from clusters below this coherence threshold"
+            )
+            
+            if st.button("🔍 Apply Coherence Filter", use_container_width=True):
+                if min_coherence_filter > 0:
+                    filtered_df = df[df['cluster_coherence'] >= min_coherence_filter]
+                    if len(filtered_df) > 0:
+                        st.session_state.results_df = filtered_df
+                        st.success(f"✅ Filtered to {len(filtered_df):,} keywords with coherence ≥ {min_coherence_filter}")
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ No keywords meet the coherence criteria")
+                else:
+                    st.info("ℹ️ Set minimum coherence > 0 to apply filter")
+        
+        with settings_col2:
+            st.subheader("💾 Session Management")
+            
+            # Session info
+            st.markdown("#### Current Session")
+            session_info = get_session_info(df, config)
+            
+            for key, value in session_info.items():
+                st.write(f"**{key}:** {value}")
+            
+            # Session actions
+            st.markdown("#### Session Actions")
+            
+            if st.button("💾 Save Session State", use_container_width=True):
+                save_success = save_session_state(df, config)
+                if save_success:
+                    st.success("✅ Session saved successfully!")
+                else:
+                    st.error("❌ Failed to save session")
+            
+            if st.button("🔄 Reset All Data", use_container_width=True):
+                if st.checkbox("⚠️ Confirm reset (this will clear all results)", key="confirm_reset"):
+                    clear_all_session_data()
+                    st.success("✅ Session reset! Please refresh the page.")
+                    time.sleep(2)
+                    st.rerun()
+        
+        # Advanced configuration
+        st.subheader("⚙️ Advanced Configuration")
+        
+        with st.expander("🔧 Runtime Settings", expanded=False):
+            config_col1, config_col2 = st.columns(2)
+            
+            with config_col1:
+                st.markdown("#### Display Settings")
+                
+                # Results per page
+                results_per_page = st.selectbox(
+                    "Results per page:",
+                    options=[10, 25, 50, 100, 250],
+                    index=2,
+                    help="Number of results to show in tables"
+                )
+                
+                # Chart theme
+                chart_theme = st.selectbox(
+                    "Chart theme:",
+                    options=["plotly_white", "plotly", "plotly_dark", "ggplot2"],
+                    index=0,
+                    help="Visual theme for charts and graphs"
+                )
+                
+                # Number format
+                number_format = st.selectbox(
+                    "Number format:",
+                    options=["Auto", "Full", "Abbreviated"],
+                    index=0,
+                    help="How to display large numbers"
+                )
+            
+            with config_col2:
+                st.markdown("#### Performance Settings")
+                
+                # Cache settings
+                enable_caching = st.checkbox(
+                    "Enable result caching",
+                    value=True,
+                    help="Cache results to improve performance"
+                )
+                
+                # Memory optimization
+                memory_optimization = st.checkbox(
+                    "Optimize memory usage",
+                    value=True,
+                    help="Use memory optimization techniques"
+                )
+                
+                # Auto-refresh
+                auto_refresh = st.checkbox(
+                    "Auto-refresh charts",
+                    value=False,
+                    help="Automatically refresh charts when data changes"
+                )
+            
+            # Apply settings
+            if st.button("💾 Apply Settings", use_container_width=True):
+                new_settings = {
+                    'results_per_page': results_per_page,
+                    'chart_theme': chart_theme,
+                    'number_format': number_format,
+                    'enable_caching': enable_caching,
+                    'memory_optimization': memory_optimization,
+                    'auto_refresh': auto_refresh
+                }
+                
+                st.session_state.app_settings = new_settings
+                st.success("✅ Settings applied successfully!")
+        
+        # Debug information
+        with st.expander("🐛 Debug Information", expanded=False):
+            debug_col1, debug_col2 = st.columns(2)
+            
+            with debug_col1:
+                st.markdown("#### Data Information")
+                st.json({
+                    "dataframe_shape": df.shape,
+                    "dataframe_columns": list(df.columns),
+                    "memory_usage_mb": round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2),
+                    "null_values": df.isnull().sum().to_dict(),
+                    "data_types": df.dtypes.astype(str).to_dict()
+                })
+            
+            with debug_col2:
+                st.markdown("#### Processing Information")
+                st.json({
+                    "config": {k: str(v) for k, v in config.items() if k != 'openai_api_key'},
+                    "session_state_keys": list(st.session_state.keys()),
+                    "processing_timestamp": st.session_state.get('processing_timestamp', 'Unknown'),
+                    "system_info": get_system_status()
+                })
+        
+    except Exception as e:
+        log_error(e, "settings_actions_tab")
+        st.error(f"Settings tab error: {str(e)}")
+
+def refine_small_clusters(df, min_size=3):
+    """Refine small clusters by merging with similar ones"""
+    try:
+        if df is None or df.empty:
+            return None
+        
+        # Identify small clusters
+        cluster_sizes = df['cluster_id'].value_counts()
+        small_clusters = cluster_sizes[cluster_sizes < min_size].index.tolist()
+        
+        if not small_clusters:
+            st.info("ℹ️ No small clusters found to refine")
+            return df
+        
+        st.info(f"🔄 Refining {len(small_clusters)} small clusters...")
+        
+        # For simplicity, merge small clusters with the most coherent large cluster
+        large_clusters = cluster_sizes[cluster_sizes >= min_size].index.tolist()
+        
+        if not large_clusters:
+            st.warning("⚠️ No large clusters available for merging")
+            return df
+        
+        # Find the most coherent large cluster
+        large_cluster_coherence = df[df['cluster_id'].isin(large_clusters)].groupby('cluster_id')['cluster_coherence'].mean()
+        target_cluster = large_cluster_coherence.idxmax()
+        
+        # Merge small clusters
+        df_refined = df.copy()
+        for small_cluster in small_clusters:
+            df_refined.loc[df_refined['cluster_id'] == small_cluster, 'cluster_id'] = target_cluster
+        
+        # Update cluster names and sizes
+        df_refined = update_cluster_metadata(df_refined)
+        
+        st.success(f"✅ Merged {len(small_clusters)} small clusters into cluster {target_cluster}")
+        return df_refined
+        
+    except Exception as e:
+        log_error(e, "refine_small_clusters")
+        st.error(f"Cluster refinement failed: {str(e)}")
+        return None
+
+def recalculate_representatives(df, top_k=5):
+    """Recalculate representative keywords based on current clustering"""
+    try:
+        if df is None or df.empty:
+            return None
+        
+        st.info("🔄 Recalculating representative keywords...")
+        
+        df_updated = df.copy()
+        df_updated['is_representative'] = False
+        
+        # For each cluster, mark top keywords as representatives
+        for cluster_id in df_updated['cluster_id'].unique():
+            cluster_data = df_updated[df_updated['cluster_id'] == cluster_id]
+            
+            # Sort by search volume if available, otherwise by coherence
+            if 'search_volume' in cluster_data.columns:
+                top_keywords = cluster_data.nlargest(top_k, 'search_volume')
+            else:
+                top_keywords = cluster_data.nlargest(top_k, 'cluster_coherence')
+            
+            # Mark as representatives
+            df_updated.loc[top_keywords.index, 'is_representative'] = True
+        
+        total_representatives = df_updated['is_representative'].sum()
+        st.success(f"✅ Identified {total_representatives} representative keywords")
+        
+        return df_updated
+        
+    except Exception as e:
+        log_error(e, "recalculate_representatives")
+        st.error(f"Representative recalculation failed: {str(e)}")
+        return None
+
+def update_cluster_metadata(df):
+    """Update cluster metadata after modifications"""
+    try:
+        # Recalculate cluster sizes
+        cluster_sizes = df['cluster_id'].value_counts().to_dict()
+        df['cluster_size'] = df['cluster_id'].map(cluster_sizes)
+        
+        # Update cluster names for merged clusters
+        for cluster_id in df['cluster_id'].unique():
+            cluster_data = df[df['cluster_id'] == cluster_id]
+            if len(cluster_data) > 0:
+                # Use the most common cluster name, or generate a new one
+                existing_names = cluster_data['cluster_name'].value_counts()
+                if len(existing_names) > 0:
+                    most_common_name = existing_names.index[0]
+                    df.loc[df['cluster_id'] == cluster_id, 'cluster_name'] = most_common_name
+        
+        return df
+        
+    except Exception as e:
+        log_error(e, "update_cluster_metadata")
+        return df
+
+def get_session_info(df, config):
+    """Get current session information"""
+    try:
+        info = {
+            "Processing Time": st.session_state.get('processing_time', 'Unknown'),
+            "Keywords Processed": format_number(len(df)) if df is not None else "0",
+            "Clusters Created": df['cluster_id'].nunique() if df is not None else "0",
+            "Embedding Method": config.get('embedding_method', 'Unknown'),
+            "AI Features": "Enabled" if config.get('openai_api_key') else "Disabled",
+            "Session Start": st.session_state.get('session_start', 'Unknown'),
+            "Data Size (MB)": round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2) if df is not None else "0"
+        }
+        
+        return info
+        
+    except Exception as e:
+        log_error(e, "session_info")
+        return {"Error": "Could not retrieve session info"}
+
+def save_session_state(df, config):
+    """Save current session state"""
+    try:
+        session_data = {
+            'timestamp': datetime.now().isoformat(),
+            'config': {k: v for k, v in config.items() if k != 'openai_api_key'},
+            'results_summary': {
+                'total_keywords': len(df) if df is not None else 0,
+                'total_clusters': df['cluster_id'].nunique() if df is not None else 0,
+                'avg_coherence': df['cluster_coherence'].mean() if df is not None else 0,
+            },
+            'session_id': hashlib.md5(str(datetime.now()).encode()).hexdigest()[:8]
+        }
+        
+        # Store in session state
+        st.session_state.saved_session = session_data
+        
+        return True
+        
+    except Exception as e:
+        log_error(e, "save_session_state")
+        return False
+
+def clear_all_session_data():
+    """Clear all session data"""
+    try:
+        # Keys to preserve
+        preserve_keys = {'app_settings'}
+        
+        # Clear all other keys
+        keys_to_remove = [key for key in st.session_state.keys() if key not in preserve_keys]
+        
+        for key in keys_to_remove:
+            del st.session_state[key]
+        
+        return True
+        
+    except Exception as e:
+        log_error(e, "clear_session_data")
+        return False
+
+def save_session_data(df, config):
+    """Save session data with download option"""
+    try:
+        # Create session backup
+        session_backup = {
+            'metadata': {
+                'timestamp': datetime.now().isoformat(),
+                'app_version': '1.0',
+                'total_keywords': len(df) if df is not None else 0,
+                'total_clusters': df['cluster_id'].nunique() if df is not None else 0
+            },
+            'config': {k: v for k, v in config.items() if k != 'openai_api_key'},
+            'data_columns': list(df.columns) if df is not None else [],
+            'summary_stats': {
+                'avg_coherence': float(df['cluster_coherence'].mean()) if df is not None else 0,
+                'cluster_sizes': df['cluster_id'].value_counts().to_dict() if df is not None else {}
+            }
+        }
+        
+        # Convert to JSON
+        backup_json = json.dumps(session_backup, indent=2, default=str)
+        
+        # Offer download
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        st.download_button(
+            label="💾 Download Session Backup",
+            data=backup_json,
+            file_name=f"clustering_session_{timestamp}.json",
+            mime="application/json",
+            help="Download session configuration and summary for future reference"
+        )
+        
+        st.success("✅ Session backup created successfully!")
+        
+    except Exception as e:
+        log_error(e, "save_session_data")
+        st.error(f"Failed to save session data: {str(e)}")
+
+def get_system_status():
+    """Get system library status"""
+    try:
+        status = {
+            "OpenAI": {
+                "available": OPENAI_AVAILABLE,
+                "version": "Available" if OPENAI_AVAILABLE else "Not installed",
+                "message": "" if OPENAI_AVAILABLE else "pip install openai"
+            },
+            "SentenceTransformers": {
+                "available": SENTENCE_TRANSFORMERS_AVAILABLE,
+                "version": "Available" if SENTENCE_TRANSFORMERS_AVAILABLE else "Not installed",
+                "message": "" if SENTENCE_TRANSFORMERS_AVAILABLE else "pip install sentence-transformers"
+            },
+            "spaCy": {
+                "available": SPACY_AVAILABLE,
+                "version": "Available" if SPACY_AVAILABLE else "Not installed",
+                "message": "" if SPACY_AVAILABLE else "pip install spacy"
+            },
+            "TextBlob": {
+                "available": TEXTBLOB_AVAILABLE,
+                "version": "Available" if TEXTBLOB_AVAILABLE else "Not installed",
+                "message": "" if TEXTBLOB_AVAILABLE else "pip install textblob"
+            },
+            "psutil": {
+                "available": PSUTIL_AVAILABLE,
+                "version": "Available" if PSUTIL_AVAILABLE else "Not installed",
+                "message": "" if PSUTIL_AVAILABLE else "pip install psutil"
+            }
+        }
+        
+        return status
+        
+    except Exception as e:
+        log_error(e, "system_status")
+        return {}
