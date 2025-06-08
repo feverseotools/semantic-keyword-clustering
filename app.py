@@ -7037,15 +7037,15 @@ def main():
                             # Process data
                             process_keywords(df_input, config)
             
-            # Show sample data option
-            else:
-                st.info("💡 No file uploaded yet. You can start by uploading a CSV file with keywords.")
-                
-                if st.button("📋 Load Sample Data", help="Load a sample dataset to explore the tool"):
-                    sample_df = create_sample_dataset()
-                    st.session_state.original_df = sample_df
-                    st.success("✅ Sample data loaded! Configure settings and click 'Start Clustering Analysis'")
-                    st.rerun()
+                # Show sample data option
+                else:
+                    st.info("💡 No file uploaded yet. You can start by uploading a CSV file with keywords.")
+
+                    if st.button("📋 Load Sample Data", help="Load a sample dataset to explore the tool"):
+                        sample_df = create_sample_dataset()
+                        st.session_state.original_df = sample_df
+                        st.success("✅ Sample data loaded! Configure settings and click 'Start Clustering Analysis'")
+                        st.rerun()
         
         # Footer
         st.markdown("---")
