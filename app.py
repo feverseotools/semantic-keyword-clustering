@@ -6633,3 +6633,690 @@ def get_system_status():
     except Exception as e:
         log_error(e, "system_status")
         return {}
+"""
+Block 13: Report Generation and Settings Management (Continued)
+"""
+
+def show_system_requirements():
+    """Display system requirements and library status"""
+    try:
+        st.subheader("📋 System Requirements")
+        
+        req_col1, req_col2 = st.columns(2)
+        
+        with req_col1:
+            st.markdown("#### Core Requirements")
+            st.markdown("""
+            **Essential Libraries:**
+            - streamlit >= 1.28.0
+            - pandas >= 1.5.0
+            - numpy >= 1.23.0
+            - scikit-learn >= 1.0.0
+            - plotly >= 5.0.0
+            - nltk >= 3.8.0
+            """)
+            
+        with req_col2:
+            st.markdown("#### Optional Libraries")
+            st.markdown("""
+            **For Enhanced Features:**
+            - openai >= 1.0.0 (AI features)
+            - sentence-transformers >= 2.2.0 (Better embeddings)
+            - spacy >= 3.0.0 (Advanced NLP)
+            - textblob >= 0.17.0 (Sentiment analysis)
+            - psutil >= 5.9.0 (Resource monitoring)
+            - openpyxl >= 3.0.0 (Excel export)
+            """)
+        
+        # System status
+        st.subheader("🔍 Current System Status")
+        
+        system_status = get_system_status()
+        
+        status_data = []
+        for lib, info in system_status.items():
+            status_data.append({
+                "Library": lib,
+                "Status": "✅ Available" if info["available"] else "❌ Not Installed",
+                "Installation": info["message"] if not info["available"] else "Installed"
+            })
+        
+        status_df = pd.DataFrame(status_data)
+        st.dataframe(status_df, use_container_width=True, hide_index=True)
+        
+        # Installation instructions
+        with st.expander("📦 Installation Instructions", expanded=False):
+            st.markdown("""
+            #### Quick Installation
+            
+            **Install all optional libraries:**
+            ```bash
+            pip install openai sentence-transformers spacy textblob psutil openpyxl
+            ```
+            
+            **Install spaCy language models:**
+            ```bash
+            python -m spacy download en_core_web_sm
+            python -m spacy download es_core_news_sm
+            python -m spacy download fr_core_news_sm
+            ```
+            
+            **Download NLTK data:**
+            ```python
+            import nltk
+            nltk.download('punkt')
+            nltk.download('stopwords')
+            nltk.download('wordnet')
+            nltk.download('averaged_perceptron_tagger')
+            ```
+            
+            #### Troubleshooting
+            
+            - **Memory issues**: Use a smaller embedding model or reduce batch size
+            - **OpenAI errors**: Check API key and quota limits
+            - **spaCy errors**: Ensure language models are downloaded
+            - **Performance issues**: Enable memory optimization in settings
+            """)
+        
+    except Exception as e:
+        log_error(e, "show_system_requirements")
+        st.error(f"Error displaying system requirements: {str(e)}")
+
+"""
+Block 14: Main Application Function
+"""
+
+def main():
+    """Main application function"""
+    try:
+        # Initialize session state
+        initialize_session_state()
+        
+        # App header
+        st.markdown('<h1 class="main-header">🔍 Semantic Keyword Clustering</h1>', unsafe_allow_html=True)
+        
+        # Show system status if needed
+        if not all([NLTK_AVAILABLE]):
+            with st.expander("⚠️ System Status Warning", expanded=True):
+                st.warning("Some optional libraries are not available. Features may be limited.")
+                show_system_requirements()
+        
+        # Main tabs
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Dashboard", 
+            "🔍 Cluster Explorer", 
+            "📈 Data Analysis",
+            "📥 Export Results",
+            "⚙️ Settings & Actions"
+        ])
+        
+        # Check if results are available
+        if st.session_state.get('results_df') is not None:
+            df = st.session_state.results_df
+            config = st.session_state.get('processing_metadata', {})
+            
+            with tab1:
+                display_clustering_dashboard(df)
+            
+            with tab2:
+                create_cluster_explorer(df)
+            
+            with tab3:
+                show_data_analysis_tab(df, config)
+            
+            with tab4:
+                show_export_options(df)
+                
+                # Generate report option
+                if st.button("📊 Generate Comprehensive Report", use_container_width=True):
+                    generate_comprehensive_report(df, config)
+            
+            with tab5:
+                show_settings_actions_tab(df, config)
+        
+        else:
+            # Show input interface
+            st.info("👋 Welcome! Start by uploading your keyword data and configuring the clustering parameters.")
+            
+            # File upload and configuration
+            with st.container():
+                st.header("📁 Data Input")
+                
+                uploaded_file = st.file_uploader(
+                    "Upload your keyword CSV file",
+                    type=['csv'],
+                    help="CSV file should contain a 'keyword' column. Optional columns: search_volume, competition, cpc"
+                )
+                
+                if uploaded_file:
+                    # Check if file has changed
+                    file_hash = hashlib.md5(uploaded_file.read()).hexdigest()
+                    uploaded_file.seek(0)  # Reset file pointer
+                    
+                    if st.session_state.get('last_uploaded_file') != file_hash:
+                        st.session_state.last_uploaded_file = file_hash
+                        st.session_state.original_df = None
+                        st.session_state.results_df = None
+                    
+                    # CSV format options
+                    csv_col1, csv_col2 = st.columns(2)
+                    
+                    with csv_col1:
+                        csv_format = st.selectbox(
+                            "CSV format:",
+                            options=["auto", "with_header", "no_header"],
+                            help="Auto-detect or specify if your CSV has headers"
+                        )
+                    
+                    with csv_col2:
+                        preview_rows = st.slider(
+                            "Preview rows:",
+                            min_value=5,
+                            max_value=50,
+                            value=10,
+                            help="Number of rows to show in preview"
+                        )
+                    
+                    # Load and preview data
+                    df_input = load_csv_file(uploaded_file, csv_format)
+                    
+                    if df_input is not None:
+                        st.session_state.original_df = df_input
+                        
+                        # Data preview
+                        st.subheader("📋 Data Preview")
+                        st.dataframe(df_input.head(preview_rows), use_container_width=True)
+                        
+                        # Data statistics
+                        stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+                        
+                        with stat_col1:
+                            st.metric("Total Keywords", format_number(len(df_input)))
+                        
+                        with stat_col2:
+                            st.metric("Unique Keywords", format_number(df_input['keyword'].nunique()))
+                        
+                        with stat_col3:
+                            if 'search_volume' in df_input.columns:
+                                st.metric("Total Volume", format_number(df_input['search_volume'].sum()))
+                            else:
+                                st.metric("Avg Length", f"{df_input['keyword'].str.len().mean():.1f}")
+                        
+                        with stat_col4:
+                            duplicate_count = len(df_input) - df_input['keyword'].nunique()
+                            st.metric("Duplicates", format_number(duplicate_count))
+                        
+                        # Configuration section
+                        st.header("⚙️ Clustering Configuration")
+                        
+                        config_col1, config_col2 = st.columns(2)
+                        
+                        with config_col1:
+                            st.subheader("🧠 Embedding Settings")
+                            
+                            embedding_method = st.selectbox(
+                                "Embedding method:",
+                                options=["auto", "openai", "sentence_transformers", "tfidf"],
+                                help="Choose how to convert keywords into numerical representations"
+                            )
+                            
+                            if embedding_method in ["auto", "openai"]:
+                                openai_api_key = st.text_input(
+                                    "OpenAI API Key (optional):",
+                                    type="password",
+                                    help="Required for OpenAI embeddings and AI features"
+                                )
+                            else:
+                                openai_api_key = ""
+                            
+                            preprocessing_method = st.selectbox(
+                                "Preprocessing method:",
+                                options=["auto", "basic", "spacy", "textblob"],
+                                help="Text preprocessing approach"
+                            )
+                            
+                            language = st.selectbox(
+                                "Language:",
+                                options=["English", "Spanish", "French", "German", "Portuguese", "Italian", "Dutch"],
+                                help="Language of your keywords"
+                            )
+                        
+                        with config_col2:
+                            st.subheader("🔗 Clustering Settings")
+                            
+                            clustering_method = st.selectbox(
+                                "Clustering algorithm:",
+                                options=["auto", "kmeans", "hierarchical"],
+                                help="Algorithm to group similar keywords"
+                            )
+                            
+                            cluster_option = st.radio(
+                                "Number of clusters:",
+                                options=["Auto-detect", "Manual"],
+                                help="Let the algorithm decide or specify manually"
+                            )
+                            
+                            if cluster_option == "Manual":
+                                num_clusters = st.slider(
+                                    "Target clusters:",
+                                    min_value=2,
+                                    max_value=min(50, len(df_input) // 5),
+                                    value=min(10, len(df_input) // 20),
+                                    help="Number of clusters to create"
+                                )
+                            else:
+                                num_clusters = None
+                            
+                            min_cluster_size = st.slider(
+                                "Minimum cluster size:",
+                                min_value=1,
+                                max_value=10,
+                                value=2,
+                                help="Minimum keywords per cluster"
+                            )
+                        
+                        # Advanced options
+                        with st.expander("🔧 Advanced Options", expanded=False):
+                            adv_col1, adv_col2 = st.columns(2)
+                            
+                            with adv_col1:
+                                st.markdown("#### AI Enhancement")
+                                
+                                if openai_api_key:
+                                    ai_model = st.selectbox(
+                                        "AI Model:",
+                                        options=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+                                        help="Model for AI-powered features"
+                                    )
+                                    
+                                    enable_intent_analysis = st.checkbox(
+                                        "Enable search intent analysis",
+                                        value=True,
+                                        help="Classify keywords by search intent"
+                                    )
+                                    
+                                    enable_quality_analysis = st.checkbox(
+                                        "Enable AI quality analysis",
+                                        value=True,
+                                        help="AI-powered cluster quality assessment"
+                                    )
+                                else:
+                                    ai_model = "gpt-4o-mini"
+                                    enable_intent_analysis = True
+                                    enable_quality_analysis = False
+                                    st.info("Add OpenAI API key for AI features")
+                            
+                            with adv_col2:
+                                st.markdown("#### Processing Options")
+                                
+                                max_keywords = st.number_input(
+                                    "Max keywords to process:",
+                                    min_value=100,
+                                    max_value=MAX_KEYWORDS,
+                                    value=min(5000, len(df_input)),
+                                    step=100,
+                                    help="Limit for memory efficiency"
+                                )
+                                
+                                reduce_dimensions = st.checkbox(
+                                    "Reduce embedding dimensions",
+                                    value=True,
+                                    help="Use PCA to reduce memory usage"
+                                )
+                                
+                                if reduce_dimensions:
+                                    target_dimensions = st.slider(
+                                        "Target dimensions:",
+                                        min_value=10,
+                                        max_value=300,
+                                        value=100,
+                                        help="Reduced dimension count"
+                                    )
+                                else:
+                                    target_dimensions = None
+                        
+                        # Cost estimation for OpenAI
+                        if openai_api_key and embedding_method in ["auto", "openai"]:
+                            st.info("💰 Cost Estimation")
+                            cost_col1, cost_col2, cost_col3, cost_col4 = st.columns(4)
+                            
+                            cost_estimate = calculate_estimated_cost(
+                                min(len(df_input), max_keywords),
+                                ai_model,
+                                num_clusters or 10
+                            )
+                            
+                            with cost_col1:
+                                st.metric(
+                                    "Keywords for Embeddings",
+                                    format_number(cost_estimate['processed_keywords'])
+                                )
+                            
+                            with cost_col2:
+                                st.metric(
+                                    "Embedding Cost",
+                                    f"${cost_estimate['embedding_cost']:.4f}"
+                                )
+                            
+                            with cost_col3:
+                                st.metric(
+                                    "AI Naming Cost",
+                                    f"${cost_estimate['naming_cost']:.4f}"
+                                )
+                            
+                            with cost_col4:
+                                st.metric(
+                                    "Total Estimated Cost",
+                                    f"${cost_estimate['total_cost']:.4f}"
+                                )
+                        
+                        # Process button
+                        st.markdown("---")
+                        
+                        if st.button("🚀 Start Clustering Analysis", type="primary", use_container_width=True):
+                            # Store configuration
+                            config = {
+                                'embedding_method': embedding_method,
+                                'openai_api_key': openai_api_key,
+                                'preprocessing_method': preprocessing_method,
+                                'language': language,
+                                'clustering_method': clustering_method,
+                                'num_clusters': num_clusters,
+                                'min_cluster_size': min_cluster_size,
+                                'ai_model': ai_model,
+                                'enable_intent_analysis': enable_intent_analysis,
+                                'enable_quality_analysis': enable_quality_analysis,
+                                'max_keywords': max_keywords,
+                                'reduce_dimensions': reduce_dimensions,
+                                'target_dimensions': target_dimensions
+                            }
+                            
+                            st.session_state.processing_metadata = config
+                            st.session_state.processing_started = True
+                            
+                            # Process data
+                            process_keywords(df_input, config)
+            
+            # Show sample data option
+            else:
+                st.info("💡 No file uploaded yet. You can start by uploading a CSV file with keywords.")
+                
+                if st.button("📋 Load Sample Data", help="Load a sample dataset to explore the tool"):
+                    sample_df = create_sample_dataset()
+                    st.session_state.original_df = sample_df
+                    st.success("✅ Sample data loaded! Configure settings and click 'Start Clustering Analysis'")
+                    st.rerun()
+        
+        # Footer
+        st.markdown("---")
+        st.markdown(
+            """
+            <div style='text-align: center; color: #666; padding: 20px;'>
+                <p>Semantic Keyword Clustering Platform v1.0 | Built with Streamlit</p>
+                <p>For support and documentation, visit the project repository</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    except Exception as e:
+        log_error(e, "main_application")
+        st.error(f"Application error: {str(e)}")
+        st.info("Try refreshing the page or clearing browser cache if the issue persists.")
+
+"""
+Block 15: Processing Pipeline Functions
+"""
+
+def process_keywords(df_input, config):
+    """Main processing pipeline for keyword clustering"""
+    try:
+        start_time = time.time()
+        
+        st.header("🔄 Processing Keywords...")
+        
+        # Create progress tracker
+        progress_steps = [
+            "Validating data",
+            "Preprocessing keywords", 
+            "Generating embeddings",
+            "Performing clustering",
+            "Finding representatives",
+            "Analyzing clusters",
+            "Finalizing results"
+        ]
+        
+        progress_tracker = create_progress_tracker(len(progress_steps), progress_steps)
+        
+        # Step 1: Validate data
+        progress_tracker.update("Validating data...")
+        
+        is_valid, validation_message = validate_dataframe(df_input, ['keyword'])
+        if not is_valid:
+            st.error(f"❌ Data validation failed: {validation_message}")
+            return
+        
+        # Limit keywords if needed
+        if len(df_input) > config['max_keywords']:
+            st.warning(f"⚠️ Limiting to {config['max_keywords']:,} keywords for processing")
+            df_input = df_input.head(config['max_keywords'])
+        
+        keywords_list = df_input['keyword'].tolist()
+        
+        # Step 2: Preprocess keywords
+        progress_tracker.update("Preprocessing keywords...")
+        
+        processed_keywords = preprocess_keywords(
+            keywords_list,
+            language=config['language'],
+            method=config['preprocessing_method']
+        )
+        
+        # Step 3: Generate embeddings
+        progress_tracker.update("Generating embeddings...")
+        
+        # Create OpenAI client if needed
+        client = None
+        if config['openai_api_key'] and config['embedding_method'] in ['auto', 'openai']:
+            client = create_openai_client(config['openai_api_key'])
+        
+        embeddings = generate_embeddings(
+            keywords_list,
+            client=client,
+            method=config['embedding_method']
+        )
+        
+        if embeddings is None:
+            st.error("❌ Failed to generate embeddings")
+            return
+        
+        # Reduce dimensions if requested
+        if config['reduce_dimensions'] and config['target_dimensions']:
+            embeddings = reduce_embedding_dimensions(
+                embeddings,
+                target_dim=config['target_dimensions']
+            )
+        
+        # Step 4: Perform clustering
+        progress_tracker.update("Performing clustering...")
+        
+        cluster_results = cluster_keywords(
+            keywords_list,
+            embeddings,
+            n_clusters=config['num_clusters'],
+            method=config['clustering_method'],
+            min_cluster_size=config['min_cluster_size']
+        )
+        
+        if cluster_results is None:
+            st.error("❌ Clustering failed")
+            return
+        
+        # Step 5: Find representatives
+        progress_tracker.update("Finding representative keywords...")
+        
+        # Already done in cluster_keywords, but ensure it's there
+        if 'representatives' not in cluster_results:
+            representatives = find_representative_keywords(
+                embeddings,
+                keywords_list,
+                cluster_results['labels']
+            )
+            cluster_results['representatives'] = representatives
+        
+        # Step 6: Analyze clusters
+        progress_tracker.update("Analyzing clusters...")
+        
+        # Search intent analysis
+        intent_results = None
+        if config['enable_intent_analysis']:
+            intent_results, intent_distribution = analyze_search_intent_bulk(keywords_list)
+        
+        # Generate cluster names
+        cluster_names = {}
+        quality_analysis = {}
+        
+        if client and config['openai_api_key']:
+            # AI-powered naming
+            cluster_names = generate_cluster_names_openai(
+                cluster_results['representatives'],
+                client,
+                model=config['ai_model']
+            )
+            
+            # AI quality analysis
+            if config['enable_quality_analysis']:
+                quality_analysis = analyze_cluster_quality_ai(
+                    cluster_results['representatives'],
+                    cluster_results['coherence_scores'],
+                    client,
+                    model=config['ai_model']
+                )
+        else:
+            # Fallback naming
+            cluster_names = create_fallback_cluster_names(cluster_results['representatives'])
+        
+        # Step 7: Create results DataFrame
+        progress_tracker.update("Finalizing results...")
+        
+        results_df = create_results_dataframe(
+            keywords_list,
+            cluster_results,
+            cluster_names,
+            cluster_results['coherence_scores'],
+            intent_results,
+            quality_analysis
+        )
+        
+        if results_df is None:
+            st.error("❌ Failed to create results")
+            return
+        
+        # Merge with original data
+        if 'search_volume' in df_input.columns or len(df_input.columns) > 1:
+            results_df = merge_original_data(results_df, df_input)
+            
+            # Add search volume analysis
+            if 'search_volume' in results_df.columns:
+                results_df = add_search_volume_data(results_df)
+        
+        # Calculate final metrics
+        cluster_metrics = calculate_cluster_metrics(results_df)
+        
+        # Complete processing
+        progress_tracker.complete("Processing complete!")
+        
+        processing_time = time.time() - start_time
+        st.session_state.processing_time = f"{processing_time:.1f} seconds"
+        
+        # Store results
+        st.session_state.results_df = results_df
+        st.session_state.cluster_evaluation = {
+            'metrics': cluster_metrics,
+            'quality_analysis': quality_analysis,
+            'intent_distribution': intent_distribution if 'intent_distribution' in locals() else None
+        }
+        st.session_state.process_complete = True
+        st.session_state.processing_timestamp = datetime.now().isoformat()
+        
+        # Show success message
+        st.success(f"""
+        ✅ **Clustering Complete!**
+        - Processed {len(results_df):,} keywords
+        - Created {results_df['cluster_id'].nunique()} clusters
+        - Average coherence: {results_df['cluster_coherence'].mean():.3f}
+        - Processing time: {processing_time:.1f} seconds
+        """)
+        
+        # Memory cleanup
+        clean_memory()
+        
+        # Redirect to dashboard
+        time.sleep(2)
+        st.rerun()
+        
+    except Exception as e:
+        log_error(e, "process_keywords", {
+            "num_keywords": len(df_input) if 'df_input' in locals() else 0,
+            "config": {k: v for k, v in config.items() if k != 'openai_api_key'}
+        })
+        st.error(f"❌ Processing failed: {str(e)}")
+        st.info("Please check your configuration and try again.")
+
+def create_sample_dataset():
+    """Create a sample dataset for demonstration"""
+    try:
+        sample_keywords = [
+            # SEO/Marketing keywords
+            "seo tools", "best seo tools", "free seo tools", "seo software", "seo analysis tools",
+            "keyword research", "keyword research tools", "keyword analysis", "keyword planner",
+            "content marketing", "content marketing strategy", "content creation tools",
+            "digital marketing", "digital marketing tools", "online marketing",
+            
+            # E-commerce keywords
+            "buy shoes online", "best running shoes", "cheap shoes online", "shoe store near me",
+            "nike shoes", "adidas shoes", "sports shoes", "comfortable walking shoes",
+            "online shopping", "best online shopping sites", "shopping deals", "discount shopping",
+            
+            # Technology keywords
+            "artificial intelligence", "machine learning", "deep learning", "ai tools",
+            "python programming", "learn python", "python tutorial", "python for beginners",
+            "web development", "web design", "responsive web design", "website builder",
+            
+            # Health/Fitness keywords
+            "weight loss tips", "how to lose weight", "best diet plan", "healthy recipes",
+            "workout routine", "home workout", "gym exercises", "fitness tips",
+            "yoga for beginners", "meditation techniques", "mindfulness exercises",
+            
+            # Travel keywords
+            "cheap flights", "flight booking", "best travel sites", "travel deals",
+            "hotel booking", "cheap hotels", "luxury hotels", "hotel deals",
+            "vacation packages", "best vacation spots", "travel tips", "travel guide",
+            
+            # Food/Recipe keywords
+            "easy recipes", "quick dinner recipes", "healthy recipes", "vegetarian recipes",
+            "pizza recipe", "pasta recipes", "chicken recipes", "dessert recipes",
+            "restaurant near me", "best restaurants", "food delivery", "online food order"
+        ]
+        
+        # Create DataFrame with sample data
+        df = pd.DataFrame({
+            'keyword': sample_keywords,
+            'search_volume': np.random.randint(100, 10000, size=len(sample_keywords)),
+            'competition': np.random.uniform(0.1, 1.0, size=len(sample_keywords)).round(2),
+            'cpc': np.random.uniform(0.5, 5.0, size=len(sample_keywords)).round(2)
+        })
+        
+        return df
+        
+    except Exception as e:
+        log_error(e, "create_sample_dataset")
+        # Return minimal dataset as fallback
+        return pd.DataFrame({
+            'keyword': ['sample keyword 1', 'sample keyword 2', 'sample keyword 3'],
+            'search_volume': [1000, 500, 250]
+        })
+
+# Run the application
+if __name__ == "__main__":
+    main()
