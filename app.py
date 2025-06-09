@@ -6852,189 +6852,194 @@ def main():
                         config_col1, config_col2 = st.columns(2)
                         
                         with config_col1:
-                            st.subheader("🧠 Embedding Settings")
-                            
-                            embedding_method = st.selectbox(
-                                "Embedding method:",
-                                options=["auto", "openai", "sentence_transformers", "tfidf"],
-                                help="Choose how to convert keywords into numerical representations"
-                            )
-                            
-                            if embedding_method in ["auto", "openai"]:
-                                openai_api_key = st.text_input(
-                                    "OpenAI API Key (optional):",
-                                    type="password",
-                                    help="Required for OpenAI embeddings and AI features"
-                                )
-                            else:
-                                openai_api_key = ""
-                            
-                            preprocessing_method = st.selectbox(
-                                "Preprocessing method:",
-                                options=["auto", "basic", "spacy", "textblob"],
-                                help="Text preprocessing approach"
-                            )
-                            
-                            language = st.selectbox(
-                                "Language:",
-                                options=["English", "Spanish", "French", "German", "Portuguese", "Italian", "Dutch"],
-                                help="Language of your keywords"
-                            )
+                        with st.sidebar:
+                            st.header("⚙️ Clustering Configuration")
+
+                            config_col1, config_col2 = st.columns(2)
                         
-                        with config_col2:
-                            st.subheader("🔗 Clustering Settings")
-                            
-                            clustering_method = st.selectbox(
-                                "Clustering algorithm:",
-                                options=["auto", "kmeans", "hierarchical"],
-                                help="Algorithm to group similar keywords"
-                            )
-                            
-                            cluster_option = st.radio(
-                                "Number of clusters:",
-                                options=["Auto-detect", "Manual"],
-                                help="Let the algorithm decide or specify manually"
-                            )
-                            
-                            if cluster_option == "Manual":
-                                num_clusters = st.slider(
-                                    "Target clusters:",
-                                    min_value=2,
-                                    max_value=min(50, len(df_input) // 5),
-                                    value=min(10, len(df_input) // 20),
-                                    help="Number of clusters to create"
-                                )
-                            else:
-                                num_clusters = None
-                            
-                            min_cluster_size = st.slider(
-                                "Minimum cluster size:",
-                                min_value=1,
-                                max_value=10,
-                                value=2,
-                                help="Minimum keywords per cluster"
-                            )
-                        
-                        # Advanced options
-                        with st.expander("🔧 Advanced Options", expanded=False):
-                            adv_col1, adv_col2 = st.columns(2)
-                            
-                            with adv_col1:
-                                st.markdown("#### AI Enhancement")
+                            with config_col1:
+                                st.subheader("🧠 Embedding Settings")
                                 
-                                if openai_api_key:
-                                    ai_model = st.selectbox(
-                                        "AI Model:",
-                                        options=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
-                                        help="Model for AI-powered features"
-                                    )
-                                    
-                                    enable_intent_analysis = st.checkbox(
-                                        "Enable search intent analysis",
-                                        value=True,
-                                        help="Classify keywords by search intent"
-                                    )
-                                    
-                                    enable_quality_analysis = st.checkbox(
-                                        "Enable AI quality analysis",
-                                        value=True,
-                                        help="AI-powered cluster quality assessment"
+                                embedding_method = st.selectbox(
+                                    "Embedding method:",
+                                    options=["auto", "openai", "sentence_transformers", "tfidf"],
+                                    help="Choose how to convert keywords into numerical representations"
+                                )
+                                if embedding_method in ["auto", "openai"]:
+                                    openai_api_key = st.text_input(
+                                        "OpenAI API Key (optional):",
+                                        type="password",
+                                        help="Required for OpenAI embeddings and AI features"
                                     )
                                 else:
-                                    ai_model = "gpt-4o-mini"
-                                    enable_intent_analysis = True
-                                    enable_quality_analysis = False
-                                    st.info("Add OpenAI API key for AI features")
+                                    openai_api_key = ""
+                                
+                                preprocessing_method = st.selectbox(
+                                    "Preprocessing method:",
+                                    options=["auto", "basic", "spacy", "textblob"],
+                                    help="Text preprocessing approach"
+                                )
+                                
+                                language = st.selectbox(
+                                    "Language:",
+                                    options=["English", "Spanish", "French", "German", "Portuguese", "Italian", "Dutch"],
+                                    help="Language of your keywords"
+                                )
                             
-                            with adv_col2:
-                                st.markdown("#### Processing Options")
+                            with config_col2:
+                                st.subheader("🔗 Clustering Settings")
                                 
-                                max_keywords = st.number_input(
-                                    "Max keywords to process:",
-                                    min_value=100,
-                                    max_value=MAX_KEYWORDS,
-                                    value=min(5000, len(df_input)),
-                                    step=100,
-                                    help="Limit for memory efficiency"
+                                clustering_method = st.selectbox(
+                                    "Clustering algorithm:",
+                                    options=["auto", "kmeans", "hierarchical"],
+                                    help="Algorithm to group similar keywords"
                                 )
                                 
-                                reduce_dimensions = st.checkbox(
-                                    "Reduce embedding dimensions",
-                                    value=True,
-                                    help="Use PCA to reduce memory usage"
+                                cluster_option = st.radio(
+                                    "Number of clusters:",
+                                    options=["Auto-detect", "Manual"],
+                                    help="Let the algorithm decide or specify manually"
                                 )
                                 
-                                if reduce_dimensions:
-                                    target_dimensions = st.slider(
-                                        "Target dimensions:",
-                                        min_value=10,
-                                        max_value=300,
-                                        value=100,
-                                        help="Reduced dimension count"
+                                if cluster_option == "Manual":
+                                    num_clusters = st.slider(
+                                        "Target clusters:",
+                                        min_value=2,
+                                        max_value=min(50, len(df_input) // 5),
+                                        value=min(10, len(df_input) // 20),
+                                        help="Number of clusters to create"
                                     )
                                 else:
-                                    target_dimensions = None
-                        
-                        # Cost estimation for OpenAI
-                        if openai_api_key and embedding_method in ["auto", "openai"]:
-                            st.info("💰 Cost Estimation")
-                            cost_col1, cost_col2, cost_col3, cost_col4 = st.columns(4)
-                            
-                            cost_estimate = calculate_estimated_cost(
-                                min(len(df_input), max_keywords),
-                                ai_model,
-                                num_clusters or 10
-                            )
-                            
-                            with cost_col1:
-                                st.metric(
-                                    "Keywords for Embeddings",
-                                    format_number(cost_estimate['processed_keywords'])
+                                    num_clusters = None
+                                
+                                min_cluster_size = st.slider(
+                                    "Minimum cluster size:",
+                                    min_value=1,
+                                    max_value=10,
+                                    value=2,
+                                    help="Minimum keywords per cluster"
                                 )
                             
-                            with cost_col2:
-                                st.metric(
-                                    "Embedding Cost",
-                                    f"${cost_estimate['embedding_cost']:.4f}"
+                            # Advanced options
+                            with st.expander("🔧 Advanced Options", expanded=False):
+                                adv_col1, adv_col2 = st.columns(2)
+                                
+                                with adv_col1:
+                                    st.markdown("#### AI Enhancement")
+                                    
+                                    if openai_api_key:
+                                        ai_model = st.selectbox(
+                                            "AI Model:",
+                                            options=["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"],
+                                            help="Model for AI-powered features"
+                                        )
+                                        
+                                        enable_intent_analysis = st.checkbox(
+                                            "Enable search intent analysis",
+                                            value=True,
+                                            help="Classify keywords by search intent"
+                                        )
+                                        
+                                        enable_quality_analysis = st.checkbox(
+                                            "Enable AI quality analysis",
+                                            value=True,
+                                            help="AI-powered cluster quality assessment"
+                                        )
+                                    else:
+                                        ai_model = "gpt-4o-mini"
+                                        enable_intent_analysis = True
+                                        enable_quality_analysis = False
+                                        st.info("Add OpenAI API key for AI features")
+                                
+                                with adv_col2:
+                                    st.markdown("#### Processing Options")
+                                    
+                                    max_keywords = st.number_input(
+                                        "Max keywords to process:",
+                                        min_value=100,
+                                        max_value=MAX_KEYWORDS,
+                                        value=min(5000, len(df_input)),
+                                        step=100,
+                                        help="Limit for memory efficiency"
+                                    )
+                                    
+                                    reduce_dimensions = st.checkbox(
+                                        "Reduce embedding dimensions",
+                                        value=True,
+                                        help="Use PCA to reduce memory usage"
+                                    )
+                                    
+                                    if reduce_dimensions:
+                                        target_dimensions = st.slider(
+                                            "Target dimensions:",
+                                            min_value=10,
+                                            max_value=300,
+                                            value=100,
+                                            help="Reduced dimension count"
+                                        )
+                                    else:
+                                        target_dimensions = None
+                            
+                            # Cost estimation for OpenAI
+                            if openai_api_key and embedding_method in ["auto", "openai"]:
+                                st.info("💰 Cost Estimation")
+                                cost_col1, cost_col2, cost_col3, cost_col4 = st.columns(4)
+                                
+                                cost_estimate = calculate_estimated_cost(
+                                    min(len(df_input), max_keywords),
+                                    ai_model,
+                                    num_clusters or 10
                                 )
+                                
+                                with cost_col1:
+                                    st.metric(
+                                        "Keywords for Embeddings",
+                                        format_number(cost_estimate['processed_keywords'])
+                                    )
+                                
+                                with cost_col2:
+                                    st.metric(
+                                        "Embedding Cost",
+                                        f"${cost_estimate['embedding_cost']:.4f}"
+                                    )
+                                
+                                with cost_col3:
+                                    st.metric(
+                                        "AI Naming Cost",
+                                        f"${cost_estimate['naming_cost']:.4f}"
+                                    )
+                                
+                                with cost_col4:
+                                    st.metric(
+                                        "Total Estimated Cost",
+                                        f"${cost_estimate['total_cost']:.4f}"
+                                    )
                             
-                            with cost_col3:
-                                st.metric(
-                                    "AI Naming Cost",
-                                    f"${cost_estimate['naming_cost']:.4f}"
-                                )
+                            # Process button
+                            st.markdown("---")
                             
-                            with cost_col4:
-                                st.metric(
-                                    "Total Estimated Cost",
-                                    f"${cost_estimate['total_cost']:.4f}"
-                                )
-                        
-                        # Process button
-                        st.markdown("---")
-                        
-                        if st.button("🚀 Start Clustering Analysis", type="primary", use_container_width=True):
-                            # Store configuration
-                            config = {
-                                'embedding_method': embedding_method,
-                                'openai_api_key': openai_api_key,
-                                'preprocessing_method': preprocessing_method,
-                                'language': language,
-                                'clustering_method': clustering_method,
-                                'num_clusters': num_clusters,
-                                'min_cluster_size': min_cluster_size,
-                                'ai_model': ai_model,
-                                'enable_intent_analysis': enable_intent_analysis,
-                                'enable_quality_analysis': enable_quality_analysis,
-                                'max_keywords': max_keywords,
-                                'reduce_dimensions': reduce_dimensions,
-                                'target_dimensions': target_dimensions
-                            }
-                            
-                            st.session_state.processing_metadata = config
-                            st.session_state.processing_started = True
-                            
-                            # Process data
+                            if st.button("🚀 Start Clustering Analysis", type="primary", use_container_width=True):
+                                # Store configuration
+                                config = {
+                                    'embedding_method': embedding_method,
+                                    'openai_api_key': openai_api_key,
+                                    'preprocessing_method': preprocessing_method,
+                                    'language': language,
+                                    'clustering_method': clustering_method,
+                                    'num_clusters': num_clusters,
+                                    'min_cluster_size': min_cluster_size,
+                                    'ai_model': ai_model,
+                                    'enable_intent_analysis': enable_intent_analysis,
+                                    'enable_quality_analysis': enable_quality_analysis,
+                                    'max_keywords': max_keywords,
+                                    'reduce_dimensions': reduce_dimensions,
+                                    'target_dimensions': target_dimensions
+                                }
+                                
+                                st.session_state.processing_metadata = config
+                                st.session_state.processing_started = True
+                                
+                                # Process data
                             process_keywords(df_input, config)
             
                 # Show sample data option
