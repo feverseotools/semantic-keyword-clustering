@@ -3787,8 +3787,7 @@ def create_cluster_size_chart(df):
             margin=dict(l=200, r=50, t=80, b=50),
             font=dict(size=11),
             coloraxis_colorbar=dict(
-                title="Keywords",
-                titleside="right"
+                title=dict(text="Keywords", side="right")
             )
         )
         
@@ -4083,8 +4082,7 @@ def create_cluster_quality_heatmap(df):
             hovertemplate='%{text}<extra></extra>',
             colorscale='RdYlGn',
             colorbar=dict(
-                title="Average Quality Score",
-                titleside="right"
+                title=dict(text="Average Quality Score", side="right")
             )
         ))
         
@@ -4151,7 +4149,7 @@ def create_search_volume_analysis(df):
             xaxis_tickangle=-45,
             showlegend=False,
             margin=dict(l=60, r=50, t=80, b=120),
-            coloraxis_colorbar=dict(title="Volume", titleside="right")
+            coloraxis_colorbar=dict(title=dict(text="Volume", side="right"))
         )
         
         # Add value annotations
@@ -4549,7 +4547,7 @@ def display_clustering_dashboard(df):
                 quality_hist = px.histogram(
                     df,
                     x='quality_score',
-                    bins=20,
+                    nbins=20,
                     title='Distribution of Quality Scores',
                     labels={'quality_score': 'Quality Score', 'count': 'Number of Keywords'},
                     template='plotly_white'
@@ -4603,7 +4601,7 @@ def display_clustering_dashboard(df):
                     if not non_zero_volumes.empty:
                         vol_hist = px.histogram(
                             non_zero_volumes,
-                            bins=30,
+                            nbins=30,
                             title='Distribution of Non-Zero Search Volumes (Log Scale)',
                             labels={'value': 'Search Volume', 'count': 'Number of Keywords'},
                             template='plotly_white',
