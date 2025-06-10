@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from functools import lru_cache
 from io import StringIO, BytesIO
 from collections import Counter
+from unidecode import unidecode
+from rapidfuzz import fuzz
 
 # Core data processing
 import numpy as np
@@ -2140,9 +2142,10 @@ def generate_cluster_names_openai(representatives, client, model="gpt-4o-mini", 
         
         # Default prompt if none provided
         if not custom_prompt:
-            custom_prompt = """You are an expert SEO strategist analyzing keyword clusters. 
-For each cluster, provide a clear, descriptive name (3-6 words) and a brief description 
-that explains the search intent and content opportunity."""
+            custom_prompt = """You are an expert SEO strategist analyzing keyword clusters.
+For each cluster, provide a clear, descriptive name (3-6 words) and a brief description
+that explains the search intent and content opportunity. Summarize average search volume,
+average CPC, competition level and trend direction if provided."""
         
         cluster_names = {}
         cluster_ids = list(representatives.keys())
@@ -2514,6 +2517,39 @@ def calculate_business_value_scores(cluster_analysis, cluster_sizes, search_volu
         log_error(e, "business_value_calculation")
         return {cluster_id: 5.0 for cluster_id in cluster_analysis.keys()}
 
+def calculate_weighted_cluster_scores(df, weights=None):
+    """Calculate weighted scores for clusters based on search metrics."""
+    try:
+        if weights is None:
+            weights = {
+                'search_volume': 1.0,
+                'cpc': 0.5,
+                'competition': -0.5,
+                'trend': 1.0,
+            }
+
+        scores = {}
+        for cluster_id, group in df.groupby('cluster_id'):
+            volume = group['search_volume'].mean() if 'search_volume' in df.columns else 0
+            cpc = group['cpc'].mean() if 'cpc' in df.columns else 0
+            competition = group['competition'].mean() if 'competition' in df.columns else 0
+            trend = group['trend'].mean() if 'trend' in df.columns else 0
+
+            score = (
+                weights.get('search_volume', 0) * volume +
+                weights.get('cpc', 0) * cpc +
+                weights.get('competition', 0) * competition +
+                weights.get('trend', 0) * trend
+            )
+            scores[cluster_id] = score
+
+        df['cluster_score'] = df['cluster_id'].map(scores)
+        return scores
+
+    except Exception as e:
+        log_error(e, "weighted_cluster_score")
+        return {}
+
 def validate_ai_response(response_data, expected_cluster_ids):
     """Validate AI response format and content"""
     try:
@@ -2879,8 +2915,18 @@ def validate_and_clean_dataframe(df):
         # Remove duplicates (case-insensitive)
         df_clean = df.copy()
         df_clean['keyword_lower'] = df_clean['keyword'].str.lower()
-        df_clean = df_clean.drop_duplicates(subset=['keyword_lower'])
-        df = df_clean.drop(columns=['keyword_lower'])
+        df_clean['keyword_normalized'] = df_clean['keyword_lower'].apply(unidecode)
+        df_clean = df_clean.drop_duplicates(subset=['keyword_normalized'])
+        # Fuzzy deduplication for near duplicates
+        unique_keywords = []
+        keep_indices = []
+        for idx, row in df_clean.iterrows():
+            kw = row['keyword_normalized']
+            if not any(fuzz.ratio(kw, existing) > 90 for existing in unique_keywords):
+                unique_keywords.append(kw)
+                keep_indices.append(idx)
+        df_clean = df_clean.loc[keep_indices]
+        df = df_clean.drop(columns=['keyword_lower', 'keyword_normalized'])
         
         # Remove keywords that are too short or too long
         df = df[(df['keyword'].str.len() >= 2) & (df['keyword'].str.len() <= 200)]
@@ -3179,6 +3225,23 @@ def add_search_volume_data(df, search_volume_col='search_volume'):
         st.warning(f"⚠️ Search volume analysis failed: {str(e)}")
         return df
 
+def add_trend_data(df):
+    """Infer a trend score from monthly search volume columns if available."""
+    try:
+        trend_cols = [col for col in df.columns if re.search(r'search_volume_\d{4}', col)]
+        if len(trend_cols) >= 2:
+            trend_cols = sorted(trend_cols)
+            x = np.arange(len(trend_cols))
+            df['trend'] = df[trend_cols].apply(lambda r: np.polyfit(x, r.values, 1)[0], axis=1)
+        elif 'trend' not in df.columns:
+            df['trend'] = 0.0
+        return df
+    except Exception as e:
+        log_error(e, "trend_calculation")
+        if 'trend' not in df.columns:
+            df['trend'] = 0.0
+        return df
+
 def calculate_cluster_metrics(df):
     """Calculate comprehensive cluster metrics with enhanced analysis"""
     try:
@@ -3329,7 +3392,9 @@ def create_cluster_summary_dataframe(df, metrics=None):
                     'avg_keyword_length': round(cluster_metrics.get('avg_keyword_length', 0), 1),
                     'avg_word_count': round(cluster_metrics.get('avg_word_count', 0), 1),
                 })
-            
+
+            if 'cluster_score' in df.columns:
+                summary_row['weighted_score'] = round(cluster_data['cluster_score'].mean(), 2)            
             summary_data.append(summary_row)
         
         summary_df = pd.DataFrame(summary_data)
@@ -3337,8 +3402,9 @@ def create_cluster_summary_dataframe(df, metrics=None):
         if summary_df.empty:
             return summary_df
         
-        # Sort by business value (combination of size, volume, and quality)
-        if 'total_search_volume' in summary_df.columns:
+        if 'weighted_score' in summary_df.columns:
+            summary_df = summary_df.sort_values('weighted_score', ascending=False)
+        elif 'total_search_volume' in summary_df.columns:
             summary_df = summary_df.sort_values(['total_search_volume', 'keyword_count'], ascending=False)
         else:
             summary_df = summary_df.sort_values('keyword_count', ascending=False)
@@ -4559,6 +4625,8 @@ def display_clustering_dashboard(df):
                     display_cols.append('primary_intent')
                 if 'avg_quality' in top_summary.columns:
                     display_cols.append('avg_quality')
+                if 'weighted_score' in top_summary.columns:
+                    display_cols.append('weighted_score')
                 
                 display_summary = top_summary[display_cols].copy()
                 
@@ -6600,7 +6668,24 @@ def show_settings_actions_tab(df, config):
                     value=False,
                     help="Automatically refresh charts when data changes"
                 )
-            
+                with st.expander("🎚️ Cluster Scoring Weights", expanded=False):
+                    weight_volume = st.slider("Search volume weight", 0.0, 5.0, float(config.get('weight_volume', 1.0)))
+                    weight_cpc = st.slider("CPC weight", 0.0, 5.0, float(config.get('weight_cpc', 0.5)))
+                    weight_comp = st.slider("Competition weight (negative)", -5.0, 0.0, float(config.get('weight_competition', -0.5)))
+                    weight_trend = st.slider("Trend weight", 0.0, 5.0, float(config.get('weight_trend', 1.0)))
+                    if st.button("Apply Weights", key="apply_weights"):
+                        config['weight_volume'] = weight_volume
+                        config['weight_cpc'] = weight_cpc
+                        config['weight_competition'] = weight_comp
+                        config['weight_trend'] = weight_trend
+                        st.session_state['cluster_weights'] = {
+                            'search_volume': weight_volume,
+                            'cpc': weight_cpc,
+                            'competition': weight_comp,
+                            'trend': weight_trend
+                        }
+                        st.success("✅ Weights updated")
+                        
             # Apply settings
             if st.button("💾 Apply Settings", use_container_width=True):
                 new_settings = {
@@ -7555,6 +7640,16 @@ def main():
                                     'reduce_dimensions': reduce_dimensions,
                                     'target_dimensions': target_dimensions
                                 }
+                                config['weight_volume'] = 1.0
+                                config['weight_cpc'] = 0.5
+                                config['weight_competition'] = -0.5
+                                config['weight_trend'] = 1.0
+                                st.session_state['cluster_weights'] = {
+                                    'search_volume': 1.0,
+                                    'cpc': 0.5,
+                                    'competition': -0.5,
+                                    'trend': 1.0
+                                }
                                 
                                 st.session_state.processing_metadata = config
                                 st.session_state.processing_started = True
@@ -7844,11 +7939,15 @@ def process_keywords(df_input, config):
                 # Add search volume analysis
                 if 'search_volume' in results_df.columns:
                     results_df = add_search_volume_data(results_df)
+
+        results_df = add_trend_data(results_df)
         
         # Calculate final metrics
         with st.spinner("Calculating final metrics..."):
             cluster_metrics = calculate_cluster_metrics(results_df)
-        
+            cluster_weights = st.session_state.get('cluster_weights', None)
+            calculate_weighted_cluster_scores(results_df, cluster_weights)
+            
         # Complete processing
         progress_tracker.complete("Processing complete!")
         
