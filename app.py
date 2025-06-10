@@ -8576,7 +8576,24 @@ template='plotly_white'
                 if 'search_intent' in cluster_data.columns:
                     primary_intent = cluster_data['search_intent'].value_counts().index[0]
                     st.info(f"💡 Primary intent: {primary_intent} - align content accordingly")
-        
+
+        # Additional semantic analysis features
+        with st.expander("🧩 Entity Analysis"):
+            from entity_analysis import EntityAnalyzer
+            analyzer = EntityAnalyzer()
+            entities = analyzer.extract_entities(df['keyword'].head(50).tolist())
+            st.json(entities)
+
+        with st.expander("🪄 Keyword Expansion"):
+            from semantic_expansion import SemanticExpansionEngine
+            engine = SemanticExpansionEngine()
+            sample_clusters = {
+                cid: df[df['cluster_id'] == cid]['keyword'].head(5).tolist()
+                for cid in df['cluster_id'].unique()[:3]
+            }
+            expansion = engine.expand_semantic_keywords(sample_clusters)
+            st.write(expansion)
+            
     except Exception as e:
         log_error(e, "advanced_analytics")
         st.error(f"Advanced analytics error: {str(e)}")
