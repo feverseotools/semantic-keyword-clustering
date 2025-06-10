@@ -989,9 +989,21 @@ def analyze_search_intent_bulk(keywords_list, batch_size=1000):
         return ["Unknown"] * len(keywords_list), {"Unknown": 100.0}
 
 @st.cache_data(ttl=3600, max_entries=5)
-def generate_openai_embeddings(keywords_list, client, model="text-embedding-3-small", batch_size=100):
-    """Generate embeddings using OpenAI API with batching and caching"""
-    if not client or not keywords_list:
+def generate_openai_embeddings(keywords_list, _client, model="text-embedding-3-small", batch_size=100):
+    """Generate embeddings using OpenAI API with batching and caching
+
+    Parameters
+    ----------
+    keywords_list : list[str]
+        The keywords to embed.
+    _client : OpenAI
+        Initialized OpenAI client instance.
+    model : str, optional
+        Embedding model name, by default "text-embedding-3-small".
+    batch_size : int, optional
+        Number of keywords per API request, by default 100.
+    """
+    if not _client or not keywords_list:
         return None
     
     if not OPENAI_AVAILABLE:
@@ -1030,7 +1042,7 @@ def generate_openai_embeddings(keywords_list, client, model="text-embedding-3-sm
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
-                        response = client.embeddings.create(
+                        response = _client.embeddings.create(
                             input=clean_batch,
                             model=model
                         )
