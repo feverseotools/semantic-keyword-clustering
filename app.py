@@ -5049,7 +5049,7 @@ def create_cluster_explorer(df):
             with export_col2:
                 # Representatives only export
                 if not rep_keywords.empty:
-rep_csv = rep_keywords.to_csv(index=False)
+                    rep_csv = rep_keywords.to_csv(index=False)
                     st.download_button(
                         label="⭐ Download Representatives Only",
                         data=rep_csv,
@@ -6672,44 +6672,44 @@ def show_settings_actions_tab(df, config):
                     if info['available']:
                         st.success(f"✅ {lib}: Available")
                     else:
-st.warning(f"⚠️ {lib}: {info['message']}")
-           
-           with sys_col2:
-               st.markdown("#### Memory Usage")
-               if PSUTIL_AVAILABLE:
-                   try:
-                       import psutil
-                       process = psutil.Process()
-                       memory_info = process.memory_info()
-                       memory_mb = memory_info.rss / 1024 / 1024
-                       
-                       st.metric("Current Memory", f"{memory_mb:.1f} MB")
-                       st.metric("Peak Memory", f"{st.session_state.memory_monitor.get('peak_memory', 0):.1f} MB")
-                       
-                       # System memory
-                       vm = psutil.virtual_memory()
-                       st.metric("System Memory", f"{vm.percent:.1f}% used")
-                   except Exception as e:
-                       st.info("Memory information unavailable")
-               else:
-                   st.info("Install psutil for memory monitoring")
+                        st.warning(f"⚠️ {lib}: {info['message']}")
+
+            with sys_col2:
+                st.markdown("#### Memory Usage")
+                if PSUTIL_AVAILABLE:
+                    try:
+                        import psutil
+                        process = psutil.Process()
+                        memory_info = process.memory_info()
+                        memory_mb = memory_info.rss / 1024 / 1024
+
+                        st.metric("Current Memory", f"{memory_mb:.1f} MB")
+                        st.metric("Peak Memory", f"{st.session_state.memory_monitor.get('peak_memory', 0):.1f} MB")
+
+                        # System memory
+                        vm = psutil.virtual_memory()
+                        st.metric("System Memory", f"{vm.percent:.1f}% used")
+                    except Exception as e:
+                        st.info("Memory information unavailable")
+                else:
+                    st.info("Install psutil for memory monitoring")
        
-       # Debug information
-       with st.expander("🐛 Debug Information", expanded=False):
-           debug_col1, debug_col2 = st.columns(2)
-           
-           with debug_col1:
-               st.markdown("#### Data Information")
-               debug_info = {
-                   "DataFrame Shape": df.shape if df is not None else "N/A",
-                   "DataFrame Columns": list(df.columns) if df is not None else [],
-                   "Memory Usage (MB)": round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2) if df is not None else 0,
-                   "Null Values": df.isnull().sum().to_dict() if df is not None else {},
-                   "Data Types": df.dtypes.astype(str).to_dict() if df is not None else {}
-               }
-               st.json(debug_info)
-           
-           with debug_col2:
+        # Debug information
+        with st.expander("🐛 Debug Information", expanded=False):
+            debug_col1, debug_col2 = st.columns(2)
+
+            with debug_col1:
+                st.markdown("#### Data Information")
+                debug_info = {
+                    "DataFrame Shape": df.shape if df is not None else "N/A",
+                    "DataFrame Columns": list(df.columns) if df is not None else [],
+                    "Memory Usage (MB)": round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2) if df is not None else 0,
+                    "Null Values": df.isnull().sum().to_dict() if df is not None else {},
+                    "Data Types": df.dtypes.astype(str).to_dict() if df is not None else {}
+                }
+                st.json(debug_info)
+
+            with debug_col2:
                st.markdown("#### Processing Information")
                processing_info = {
                    "Config": {k: str(v) for k, v in config.items() if k != 'openai_api_key'},
@@ -6720,38 +6720,37 @@ st.warning(f"⚠️ {lib}: {info['message']}")
                }
                st.json(processing_info)
        
-       # Export session configuration
-       st.subheader("📤 Export Configuration")
-       
-       if st.button("📋 Export Session Configuration", use_container_width=True):
-           try:
-               config_export = {
-                   "timestamp": datetime.now().isoformat(),
-                   "configuration": {k: v for k, v in config.items() if k != 'openai_api_key'},
-                   "settings": st.session_state.get('app_settings', {}),
-                   "data_summary": {
-                       "total_keywords": len(df) if df is not None else 0,
-                       "total_clusters": df['cluster_id'].nunique() if df is not None else 0,
-                       "columns": list(df.columns) if df is not None else []
-                   }
-               }
-               
-               config_json = json.dumps(config_export, indent=2)
-               timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-               
-               st.download_button(
-                   label="💾 Download Configuration",
-                   data=config_json,
-                   file_name=f"clustering_config_{timestamp}.json",
-                   mime="application/json",
-                   help="Save configuration for future use"
-               )
-           except Exception as e:
-               st.error(f"Failed to export configuration: {str(e)}")
-       
-   except Exception as e:
-       log_error(e, "settings_actions_tab")
-       st.error(f"Settings tab error: {str(e)}")
+        # Export session configuration
+        st.subheader("📤 Export Configuration")
+
+        if st.button("📋 Export Session Configuration", use_container_width=True):
+            try:
+                config_export = {
+                    "timestamp": datetime.now().isoformat(),
+                    "configuration": {k: v for k, v in config.items() if k != 'openai_api_key'},
+                    "settings": st.session_state.get('app_settings', {}),
+                    "data_summary": {
+                        "total_keywords": len(df) if df is not None else 0,
+                        "total_clusters": df['cluster_id'].nunique() if df is not None else 0,
+                        "columns": list(df.columns) if df is not None else []
+                    }
+                }
+
+                config_json = json.dumps(config_export, indent=2)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                st.download_button(
+                    label="💾 Download Configuration",
+                    data=config_json,
+                    file_name=f"clustering_config_{timestamp}.json",
+                    mime="application/json",
+                    help="Save configuration for future use",
+                )
+            except Exception as e:
+                st.error(f"Failed to export configuration: {str(e)}")
+    except Exception as e:
+        log_error(e, "settings_actions_tab")
+        st.error(f"Settings tab error: {str(e)}")
 
 def refine_small_clusters(df, min_size=3):
    """Refine small clusters by merging with similar ones"""
@@ -7605,14 +7604,12 @@ def main():
                                 
                                 # Process data
                                 process_keywords(df_input, config)
-            
-            # Help section
-            else:
-                st.info("💡 No file uploaded yet. Upload a CSV file with keywords to get started!")
-                
-                # Show demo section
-                st.markdown("---")
-                st.subheader("🎯 What This Tool Does")
+                            # Help section
+                            else:
+                                st.info("💡 No file uploaded yet. Upload a CSV file with keywords to get started!")
+                                # Show demo section
+                                st.markdown("---")
+                                st.subheader("🎯 What This Tool Does")
                 
                 demo_col1, demo_col2, demo_col3 = st.columns(3)
                 
