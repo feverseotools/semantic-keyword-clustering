@@ -988,7 +988,7 @@ def analyze_search_intent_bulk(keywords_list, batch_size=1000):
         log_error(e, "bulk_intent_analysis")
         return ["Unknown"] * len(keywords_list), {"Unknown": 100.0}
 
-@st.cache_data(ttl=3600, max_entries=5)
+@st.cache_data(ttl=3600, max_entries=5, hash_funcs={OpenAI: lambda _: None})
 def generate_openai_embeddings(keywords_list, _client, model="text-embedding-3-small", batch_size=100):
     """Generate embeddings using OpenAI API with batching and caching
 
