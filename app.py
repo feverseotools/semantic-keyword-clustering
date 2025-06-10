@@ -3787,7 +3787,7 @@ def create_cluster_size_chart(df):
             margin=dict(l=200, r=50, t=80, b=50),
             font=dict(size=11),
             coloraxis_colorbar=dict(
-                title=dict(text="Keywords", side="right")
+                title="Keywords"
             )
         )
         
@@ -4082,7 +4082,7 @@ def create_cluster_quality_heatmap(df):
             hovertemplate='%{text}<extra></extra>',
             colorscale='RdYlGn',
             colorbar=dict(
-                title=dict(text="Average Quality Score", side="right")
+                title="Average Quality Score"
             )
         ))
         
@@ -4149,7 +4149,7 @@ def create_search_volume_analysis(df):
             xaxis_tickangle=-45,
             showlegend=False,
             margin=dict(l=60, r=50, t=80, b=120),
-            coloraxis_colorbar=dict(title=dict(text="Volume", side="right"))
+            coloraxis_colorbar=dict(title="Volume")
         )
         
         # Add value annotations
