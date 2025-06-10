@@ -7220,7 +7220,8 @@ def main():
                     uploaded_file = st.file_uploader(
                         "Upload your keyword CSV file",
                         type=['csv'],
-                        help="CSV file should contain a 'keyword' column. Optional columns: search_volume, competition, cpc"
+                        help="CSV file should contain a 'keyword' column. Optional columns: search_volume, competition, cpc",
+                        key="keyword_csv_uploader"
                     )
                 
                 with upload_col2:
@@ -7638,10 +7639,6 @@ def main():
         if st.button("🔄 Reset Application"):
             clear_all_session_data()
             st.rerun()
-
-# Run the application
-if __name__ == "__main__":
-    main()
 
 def process_keywords(df_input, config):
     """Main processing pipeline for keyword clustering"""
