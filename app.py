@@ -1,8 +1,3 @@
-"""
-Advanced Semantic Keyword Clustering Application
-Block 1: Imports, Configuration, and Constants
-"""
-
 import os
 import time
 import json
@@ -260,9 +255,6 @@ OPENAI_PRICING = {
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "gpt-4-turbo": {"input": 10.00, "output": 30.00}
 }
-"""
-Block 2: Utility Functions and Resource Management
-"""
 
 def initialize_session_state():
     """Initialize session state variables"""
@@ -618,9 +610,6 @@ def calculate_entropy(values):
         
     except Exception:
         return 0
-"""
-Block 3: Text Preprocessing Functions
-"""
 
 def preprocess_keywords_basic(keywords_list, language="English"):
     """Basic keyword preprocessing using NLTK"""
@@ -996,9 +985,6 @@ def analyze_search_intent_bulk(keywords_list, batch_size=1000):
     except Exception as e:
         log_error(e, "bulk_intent_analysis")
         return ["Unknown"] * len(keywords_list), {"Unknown": 100.0}
-"""
-Block 4: Embedding Generation Functions
-"""
 
 @st.cache_data(ttl=3600, max_entries=5)
 def generate_openai_embeddings(keywords_list, client, model="text-embedding-3-small", batch_size=100):
@@ -1395,9 +1381,6 @@ def reduce_embedding_dimensions(embeddings, target_dim=100, variance_threshold=0
         log_error(e, "dimension_reduction")
         st.warning(f"⚠️ Dimension reduction failed: {str(e)}. Using original embeddings.")
         return embeddings
-"""
-Block 5: Clustering Algorithms
-"""
 
 def determine_optimal_clusters(embeddings, max_clusters=20, min_clusters=2):
     """Determine optimal number of clusters using elbow method and silhouette analysis"""
@@ -1863,9 +1846,6 @@ def refine_clusters(embeddings, initial_labels, min_cluster_size=2):
         })
         st.warning(f"⚠️ Cluster refinement failed: {str(e)}. Using original clusters.")
         return initial_labels
-"""
-Block 6: Cluster Analysis Functions
-"""
 
 def find_representative_keywords(embeddings, keywords, cluster_labels, top_k=5):
     """Find representative keywords for each cluster with enhanced error handling"""
@@ -2281,9 +2261,6 @@ def create_fallback_cluster_names(representatives):
             }
     
     return cluster_names
-"""
-Block 7: AI-Powered Analysis Functions
-"""
 
 def analyze_cluster_quality_ai(representatives, coherence_scores, client=None, model="gpt-4o-mini"):
     """AI-powered cluster quality analysis"""
@@ -2752,9 +2729,6 @@ def optimize_batch_processing(total_items, available_memory_mb=1000, complexity_
     except Exception as e:
         log_error(e, "batch_optimization")
         return min(5, total_items)  # Safe fallback
-"""
-Block 8: Data Processing and DataFrame Management
-"""
 
 def load_csv_file(uploaded_file, csv_format="auto"):
     """Load and validate CSV file with enhanced error handling"""
@@ -3204,9 +3178,6 @@ def add_search_volume_data(df, search_volume_col='search_volume'):
         log_error(e, "search_volume_analysis")
         st.warning(f"⚠️ Search volume analysis failed: {str(e)}")
         return df
-"""
-Block 9: Metrics and Summary Functions
-"""
 
 def calculate_cluster_metrics(df):
     """Calculate comprehensive cluster metrics with enhanced analysis"""
@@ -3682,9 +3653,6 @@ def create_clustering_summary_metrics(df):
     except Exception as e:
         log_error(e, "summary_metrics")
         return {'error': f"Failed to calculate metrics: {str(e)}"}
-"""
-Block 10: Visualization Functions
-"""
 
 def create_cluster_size_chart(df):
     """Create cluster size distribution chart with enhanced styling"""
@@ -4323,9 +4291,6 @@ def create_representative_keywords_chart(df, top_clusters=10):
         log_error(e, "representative_keywords_chart")
         st.error(f"Failed to create representative keywords chart: {str(e)}")
         return None
-"""
-Block 11: Dashboard and Analysis Display Functions
-"""
 
 def display_clustering_dashboard(df):
     """Display comprehensive clustering dashboard with enhanced metrics"""
@@ -5361,9 +5326,6 @@ def show_data_analysis_tab(df, config):
     except Exception as e:
         log_error(e, "data_analysis_tab")
         st.error(f"Data analysis error: {str(e)}")
-"""
-Block 12: Export and Report Functions
-"""
 
 def show_export_options(df):
     """Show comprehensive export options with download buttons"""
@@ -5962,9 +5924,6 @@ def create_json_export(df):
     except Exception as e:
         log_error(e, "json_export_creation")
         return {"error": f"Failed to create JSON export: {str(e)}"}
-"""
-Block 13: Report Generation and Settings Management
-"""
 
 def generate_comprehensive_report(df, config):
     """Generate comprehensive analysis report"""
@@ -7151,9 +7110,6 @@ def show_system_requirements():
    except Exception as e:
        log_error(e, "show_system_requirements")
        st.error(f"Error displaying system requirements: {str(e)}")
-"""
-Block 14: Main Application Function
-"""
 
 def main():
     """Main application function"""
@@ -7686,9 +7642,6 @@ def main():
 # Run the application
 if __name__ == "__main__":
     main()
-"""
-Block 15: Processing Pipeline Functions
-"""
 
 def process_keywords(df_input, config):
     """Main processing pipeline for keyword clustering"""
